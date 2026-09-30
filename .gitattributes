@@ -1,0 +1,6 @@
+# Normaliza finales de línea. Los scripts que se ejecutan dentro de Docker (Linux)
+# deben conservar LF aunque el repositorio se clone en Windows.
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.bin binary

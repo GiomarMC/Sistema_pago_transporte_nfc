@@ -1,0 +1,8 @@
+{
+  "url": "http://127.0.0.1:8000",
+  "token_operador": "PEGAR_TOKEN_DEL_OPERADOR",
+  "validadores": {
+    "101": "PEGAR_TOKEN_DEL_VALIDADOR_101",
+    "102": "PEGAR_TOKEN_DEL_VALIDADOR_102"
+  }
+}

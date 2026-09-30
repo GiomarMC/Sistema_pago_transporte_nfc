@@ -1,0 +1,28 @@
+# --- Secretos y configuración local (NUNCA subir) ---
+servidor_api/.env
+transporte/api.json
+transporte/claves/
+
+# --- Datos locales ---
+transporte/datos/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+servidor_api/staticfiles/
+
+# --- Editores y sistema ---
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Fase anterior del proyecto (control de acceso con Android y EV3) ---
+actuador-ev3/
+lector-android-s22/
+tarjeta-samsung-hce/
+CONTRATO-INTERFAZ.md
+GUIA-TECNICA-APP.md
+INFORME-AVANCE-NFC.md

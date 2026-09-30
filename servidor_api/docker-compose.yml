@@ -1,0 +1,36 @@
+# Servidor del sistema de transporte: API + panel de administración + PostgreSQL.
+#   docker compose up -d --build
+# La configuración (contraseñas, clave secreta) se lee de .env (ver .env.example).
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-transporte}
+      POSTGRES_USER: ${POSTGRES_USER:-transporte}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en el archivo .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  web:
+    build: .
+    env_file: .env
+    environment:
+      # Dentro de Docker la base de datos es el servicio "db"
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+    restart: unless-stopped
+
+volumes:
+  pgdata:
