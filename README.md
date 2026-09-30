@@ -430,6 +430,37 @@ sistema".
 - Si se pierde, las tarjetas emitidas con ella no se pueden volver a leer ni
   reescribir con este sistema.
 
+**Dónde colocarla al recibirla.** La carpeta `claves/` no viene en el
+repositorio: créala dentro de `transporte/` y copia ahí el archivo, con este
+nombre exacto:
+
+```
+transporte/
+|-- claves/
+|   `-- clave_maestra.bin      <- aquí (32 bytes)
+|-- api.json
+|-- validador.py
+`-- ...
+```
+
+```bash
+# Linux / macOS (desde la raíz del repositorio)
+mkdir -p transporte/claves
+cp /ruta/donde/la/recibiste/clave_maestra.bin transporte/claves/
+chmod 600 transporte/claves/clave_maestra.bin
+
+# Windows (PowerShell, desde la raíz del repositorio)
+New-Item -ItemType Directory -Force transporte\claves
+Copy-Item C:\ruta\donde\la\recibiste\clave_maestra.bin transporte\claves\
+```
+
+**Cópiala antes de usar el lector por primera vez.** Si ejecutas un programa
+sin ella, se crea una clave nueva y se muestra el aviso
+`[!] Clave maestra nueva creada en ...`. Si te pasa, borra ese archivo, copia
+el correcto y vuelve a emitir las tarjetas que hayas grabado con la clave
+equivocada. Si están protegidas con esa clave, restablécelas primero con
+`restablecer_tarjeta.py` mientras la clave equivocada siga en su sitio.
+
 ### 7.6 Validadores en otros equipos de la red
 
 1. Averigua la IP del equipo que ejecuta el servidor: `ipconfig` (Windows),
