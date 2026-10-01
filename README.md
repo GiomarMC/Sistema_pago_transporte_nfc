@@ -76,6 +76,7 @@ firmada del saldo para poder cobrar sin conexión.
 |---|---|---|
 | Servidor central | `servidor_api/` | Python 3.13, Django 6.1, Django REST Framework, PostgreSQL 17, Docker |
 | Programas del lector (validador, emisión, recarga) | `transporte/` | Python 3.9+, pyscard (PC/SC), SQLite |
+| Validador de bus (dispositivo, opcional) | `pantalla_esp32/` | ESP32 en C++ (PlatformIO), pantalla LCD SSD1283A, microSD |
 | Lector NFC | - | ACS ACR122U (USB, chip NXP PN532) |
 | Tarjetas | - | NXP NTAG215 (pruebas). Previsto: NTAG 424 DNA |
 
@@ -230,6 +231,8 @@ n.º de cuenta. El resto está en el servidor.
 |       |-- admin.py               Panel de administración
 |       |-- management/commands/  crear_validador, crear_operador, config_cliente, importar_sqlite
 |       `-- tests/                 Tests de la API
+|-- pantalla_esp32/                Validador de bus con ESP32, pantalla y microSD (ver su README)
+|-- docs/                          Informe de conexiones y pruebas del dispositivo (PDF)
 `-- transporte/                    Programas que usan el lector NFC
     |-- validador.py               Validador del bus
     |-- emitir_tarjeta.py          Emisión de tarjetas
@@ -239,6 +242,8 @@ n.º de cuenta. El resto está en el servidor.
     |-- restablecer_tarjeta.py     Deja una tarjeta de pruebas como de fábrica
     |-- detectar_ultralight.py     Identifica el tipo de tarjeta y muestra su memoria
     |-- validador_local.py         Base de datos local del validador y sincronización
+    |-- pantalla.py                Envío de resultados a la pantalla ESP32 (modo A)
+    |-- puente_nfc.py              Presta el ACR122U al validador de la ESP32 (modo B)
     |-- api_cliente.py             Cliente HTTP de la API
     |-- config.py                  Tarifas por defecto, formato de montos
     |-- api.json.example           Plantilla de URL y tokens
@@ -470,6 +475,23 @@ equivocada. Si están protegidas con esa clave, restablécelas primero con
    `"url": "http://192.168.1.50:8000"`.
 4. Copia también la clave maestra (ver 7.5).
 
+### 7.7 Validador de bus con ESP32 (opcional)
+
+El dispositivo que iría en el bus (ESP32 con pantalla LCD y microSD) tiene su
+propia guía: [`pantalla_esp32/README.md`](pantalla_esp32/README.md). Funciona de
+dos formas:
+
+- **Modo A:** `validador.py` sigue cobrando en el ordenador y la ESP32 solo
+  muestra el resultado en la pantalla (`validador.py --pantalla auto`).
+- **Modo B:** el validador corre en la ESP32 y el ordenador solo le presta el
+  ACR122U (`puente_nfc.py`). Sirve cualquier ordenador con Linux, Windows o
+  macOS como puente. La sincronización por WiFi con el servidor está pendiente.
+
+En los dos casos el servidor no cambia: el dispositivo sustituye al validador
+del ordenador, no al servidor. Las conexiones, la carga de los programas y las
+pruebas de cada componente están en esa guía y en
+`docs/informe-conexiones-validador-esp32.pdf`.
+
 ## 8. Uso
 
 Todos los comandos se ejecutan desde la carpeta `transporte/` (en Windows,
@@ -655,6 +677,8 @@ Pendiente:
 
 - Probar los programas del lector con el ACR122U en Windows y macOS.
 - Migrar a tarjetas NTAG 424 DNA (AES-128).
-- Indicación visual y sonora en el lector (LED verde o rojo, pitidos distintos).
+- Probar la pantalla ESP32 + LCD con el hardware real (el programa compila y el
+  protocolo se probó con una placa simulada).
+- Validador autónomo en la ESP32 con un módulo PN532 (sin ordenador en el bus).
 - HTTPS para usar el servidor fuera de la red local.
 - Guardar la clave maestra en un módulo seguro (SAM) en lugar de un archivo.

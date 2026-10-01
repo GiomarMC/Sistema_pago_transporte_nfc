@@ -91,14 +91,16 @@ class NTAG215:
     def _apdu(self, datos):
         try:
             resp, sw1, sw2 = self.conn.transmit(list(datos))
-        except CardConnectionException as e:
-            # Tras re-activar la tarjeta, pcscd puede marcar la conexión como
-            # "reiniciada". Se reconecta sin tocar la tarjeta y se reintenta.
-            if "reset" not in str(e).lower():
+        except CardConnectionException:
+            # Tras re-activar la tarjeta, el servicio PC/SC puede marcar la conexión
+            # como "reiniciada". Se reconecta sin tocar la tarjeta y se reintenta una
+            # vez. (No se mira el texto del error: en Windows llega traducido.)
+            try:
+                self.conn.disconnect()
+                self.conn.connect(disposition=SCARD_LEAVE_CARD)
+                resp, sw1, sw2 = self.conn.transmit(list(datos))
+            except (CardConnectionException, NoCardException) as e:
                 raise ErrorTarjeta(f"se perdió la comunicación con la tarjeta: {e}") from e
-            self.conn.disconnect()
-            self.conn.connect(disposition=SCARD_LEAVE_CARD)
-            resp, sw1, sw2 = self.conn.transmit(list(datos))
         if sw1 == 0x61:  # firmware antiguo del ACR122U
             resp, sw1, sw2 = self.conn.transmit([0xFF, 0xC0, 0x00, 0x00, sw2])
         return bytes(resp), (sw1 << 8) | sw2
@@ -117,6 +119,11 @@ class NTAG215:
             self.reactivar()
             raise ErrorTarjeta(f"la tarjeta rechazó el comando {cmd[0]:02X}")
         return resp[3:]
+
+    def comando(self, cmd) -> bytes:
+        """Comando nativo de la tarjeta (para el puente de la ESP32). Lanza
+        ErrorTarjeta si la tarjeta lo rechaza; queda reactivada para el siguiente."""
+        return self._nativo(list(cmd))
 
     def reactivar(self):
         """Vuelve a seleccionar la tarjeta. Pierde la autenticación con contraseña."""
