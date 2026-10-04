@@ -61,6 +61,9 @@ class Tarjeta(models.Model):
     def __str__(self):
         return f"Tarjeta {self.id} · {self.uid} ({self.estado})"
 
+    class Meta:
+        indexes = [models.Index(fields=["estado"], name="tarjeta_estado_idx")]
+
 
 class Recarga(models.Model):
     cuenta = models.ForeignKey(Cuenta, on_delete=models.PROTECT, related_name="recargas")
@@ -76,6 +79,7 @@ class Recarga(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["cuenta", "seq"], name="recarga_seq_unica")]
         ordering = ["cuenta", "seq"]
+        indexes = [models.Index(fields=["aplicada_en"], name="recarga_aplicada_idx")]
 
     def __str__(self):
         return f"Recarga {self.seq} · cuenta {self.cuenta_id} · {soles(self.monto)}"
@@ -97,6 +101,10 @@ class Movimiento(models.Model):
 
     class Meta:
         ordering = ["-fecha", "-id"]
+        indexes = [
+            models.Index(fields=["tipo", "-fecha"], name="mov_tipo_fecha_idx"),
+            models.Index(fields=["validador", "-fecha"], name="mov_val_fecha_idx"),
+        ]
 
     def __str__(self):
         return f"{self.tipo} {soles(self.monto)} · cuenta {self.cuenta_id}"
@@ -108,9 +116,15 @@ class Alerta(models.Model):
     tipo = models.CharField(max_length=60)
     detalle = models.TextField(blank=True)
     revisada = models.BooleanField(default=False)
+    revisada_en = models.DateTimeField(null=True, blank=True)
+    revisada_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="alertas_revisadas",
+    )
 
     class Meta:
         ordering = ["-fecha", "-id"]
+        indexes = [models.Index(fields=["revisada", "-fecha"], name="alerta_rev_fecha_idx")]
 
     def __str__(self):
         return f"{self.tipo} · {self.fecha:%Y-%m-%d %H:%M}"

@@ -1,4 +1,5 @@
 from django.contrib import admin, messages
+from django.utils import timezone
 
 from . import servicios
 from .models import Alerta, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, Validador, soles
@@ -111,10 +112,15 @@ class MovimientoAdmin(admin.ModelAdmin):
 
 @admin.register(Alerta)
 class AlertaAdmin(admin.ModelAdmin):
-    list_display = ["fecha", "tipo", "tarjeta", "detalle", "revisada"]
+    list_display = ["fecha", "tipo", "tarjeta", "detalle", "revisada", "revisada_por", "revisada_en"]
     list_filter = ["revisada", "tipo"]
-    list_editable = ["revisada"]
-    readonly_fields = ["fecha", "tipo", "tarjeta", "detalle"]
+    readonly_fields = ["fecha", "tipo", "tarjeta", "detalle", "revisada_por", "revisada_en"]
+
+    def save_model(self, request, obj, form, change):
+        if obj.revisada and obj.revisada_en is None:
+            obj.revisada_en = timezone.now()
+            obj.revisada_por = request.user
+        super().save_model(request, obj, form, change)
 
 
 @admin.register(Validador)

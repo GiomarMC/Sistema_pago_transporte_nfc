@@ -1,0 +1,19 @@
+{% load static %}
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Ingresar · Ruta</title><link rel="stylesheet" href="{% static 'panel/panel.css' %}"></head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-brand"><span class="brand-mark" aria-hidden="true">R</span><strong>ruta<span class="brand-dot">.</span></strong></div>
+    <div class="eyebrow">CENTRO DE CONTROL</div>
+    <h1>Todo el sistema,<br>en un solo lugar.</h1>
+    <p>Accede con tu cuenta de operador para revisar viajes, tarjetas, validadores y alertas.</p>
+    {% if form.errors %}<div class="notice error" role="alert">Usuario o contraseña incorrectos.</div>{% endif %}
+    <form method="post" class="login-form">{% csrf_token %}
+      <label for="id_username">Usuario</label><input id="id_username" name="username" type="text" autocomplete="username" required autofocus>
+      <label for="id_password">Contraseña</label><input id="id_password" name="password" type="password" autocomplete="current-password" required>
+      <input type="hidden" name="next" value="{{ next }}">
+      <button class="button primary wide" type="submit">Ingresar al panel <span aria-hidden="true">→</span></button>
+    </form>
+    <small>Acceso reservado a operadores autorizados.</small>
+  </main>
+</body></html>

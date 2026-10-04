@@ -54,6 +54,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'transporte',
+    'panel',
 ]
 
 MIDDLEWARE = [
@@ -138,6 +139,9 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+LOGIN_URL = '/panel/ingresar/'
+LOGIN_REDIRECT_URL = '/panel/'
 
 
 # Email

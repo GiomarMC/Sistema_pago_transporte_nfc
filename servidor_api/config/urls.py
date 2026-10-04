@@ -6,6 +6,7 @@ admin.site.site_title = "Transporte"
 admin.site.index_title = "Gestión"
 
 urlpatterns = [
+    path("panel/", include("panel.urls")),
     path("admin/", admin.site.urls),
     path("api/", include("transporte.urls")),
 ]
