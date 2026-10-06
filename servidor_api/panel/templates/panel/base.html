@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <title>{{ titulo|default:"Panel" }} · Ruta</title>
+  <title>{{ titulo|default:"Panel" }} · SubePe</title>
   <link rel="stylesheet" href="{% static 'panel/panel.css' %}">
   <script src="{% static 'panel/panel.js' %}" defer></script>
 </head>
@@ -13,9 +13,9 @@
   <a class="skip-link" href="#contenido">Saltar al contenido</a>
   <div class="app-shell">
     <aside class="sidebar" id="navegacion" aria-label="Navegación principal">
-      <a class="brand" href="{% url 'panel:inicio' %}" aria-label="Ruta, inicio del panel">
-        <span class="brand-mark" aria-hidden="true">R</span>
-        <span><strong>ruta<span class="brand-dot">.</span></strong><small>centro de control</small></span>
+      <a class="brand" href="{% url 'panel:inicio' %}" aria-label="SubePe, inicio del panel">
+        <span class="brand-mark" aria-hidden="true">S</span>
+        <span><strong>Sube<span class="brand-dot">Pe</span></strong><small>centro de control</small></span>
       </a>
       <div class="sidebar-label">OPERACIÓN</div>
       <nav>
@@ -26,7 +26,7 @@
         <a class="nav-link {% if request.resolver_match.url_name == 'alertas' %}active{% endif %}" href="{% url 'panel:alertas' %}" {% if request.resolver_match.url_name == 'alertas' %}aria-current="page"{% endif %}><span aria-hidden="true">◇</span> Alertas</a>
       </nav>
       <div class="sidebar-bottom">
-        <div class="side-note"><span class="live-dot" aria-hidden="true"></span><span>Datos del servidor<br><small>La ESP32 modo B aún no sincroniza</small></span></div>
+        <div class="side-note"><span class="live-dot" aria-hidden="true"></span><span>Datos del servidor<br><small>Los validadores sincronizan por WiFi</small></span></div>
         {% if request.user.is_staff %}<a class="admin-link" href="/admin/">Administración Django <span aria-hidden="true">↗</span></a>{% endif %}
         <form method="post" action="{% url 'panel:logout' %}">{% csrf_token %}<button class="logout" type="submit">Cerrar sesión <span aria-hidden="true">→</span></button></form>
       </div>
@@ -41,7 +41,7 @@
         {% if messages %}<div class="messages" role="status" aria-live="polite">{% for message in messages %}<div class="notice {{ message.tags }}">{{ message }}</div>{% endfor %}</div>{% endif %}
         {% block content %}{% endblock %}
       </main>
-      <footer class="footer">Ruta · Panel de operaciones <span>Los viajes se muestran cuando llegan al servidor.</span></footer>
+      <footer class="footer">SubePe · Panel de operaciones <span>Los viajes se muestran cuando llegan al servidor.</span></footer>
     </div>
   </div>
 </body>
