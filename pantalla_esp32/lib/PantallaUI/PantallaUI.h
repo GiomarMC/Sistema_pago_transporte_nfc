@@ -18,4 +18,9 @@ void espera(const String &l1, const String &l2);
 // Llamar en cada vuelta de loop(): vuelve a la espera cuando toca.
 void actualizar();
 
+// Pantalla fija con un título y hasta 6 líneas (p. ej. los datos del portal de
+// configuración WiFi). Se queda hasta llamar a cerrarInformacion().
+void informacion(const String &titulo, const String lineas[], int n);
+void cerrarInformacion();
+
 }  // namespace ui

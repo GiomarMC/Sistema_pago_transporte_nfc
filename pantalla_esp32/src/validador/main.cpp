@@ -13,6 +13,9 @@
  * Cargar:  pio run -e validador -t upload
  * Primera vez (configura número de validador y clave maestra en la microSD):
  *          python3 puente_nfc.py --configurar --validador 103
+ * Con sincronización por WiFi (sincronizador.cpp), además:
+ *          python3 puente_nfc.py --configurar --validador 103 --wifi <red de 2,4 GHz>
+ * Redes WiFi desde el celular (portal.cpp): mantener pulsado BOOT 3 s.
  */
 
 #include <Arduino.h>
@@ -22,11 +25,15 @@
 #include <string.h>
 
 #include "almacen.h"
+#include "portal.h"
+#include "sincronizador.h"
 
 namespace {
 
 constexpr uint32_t MARGEN_DOBLE_TOQUE = 60;            // s: otro toque aquí no se cobra
 constexpr uint32_t RESINCRONIZAR_HORA = 10 * 60000UL;  // ms
+constexpr uint8_t PIN_BOOT = 0;                        // botón BOOT de la placa
+constexpr uint32_t PULSACION_PORTAL = 3000;            // ms pulsado para abrir el portal WiFi
 
 LectorPuente lector(Serial);
 Almacen almacen;
@@ -37,6 +44,21 @@ uint32_t ahoraUnix() { return baseUnix ? baseUnix + (millis() - baseMillis) / 10
 void log(const String &texto) {
   Serial.print('#');
   Serial.println(texto);
+}
+
+Sincronizador sincronizador(almacen, log);
+PortalWifi portal(almacen, log);
+String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
+uint32_t botonDesde = 0, ultimoSaludo = 0;
+
+// true cuando BOOT lleva PULSACION_PORTAL ms pulsado
+bool botonMantenido() {
+  if (digitalRead(PIN_BOOT) != LOW) {
+    botonDesde = 0;
+    return false;
+  }
+  if (!botonDesde) botonDesde = millis();
+  return millis() - botonDesde >= PULSACION_PORTAL;
 }
 
 String soles(int32_t c) {
@@ -169,7 +191,9 @@ void pantallaEspera() {
   } else if (!almacen.configurado()) {
     ui::espera("Sin configurar", "puente --configurar");
   } else {
-    ui::espera("Bus " + String(almacen.validador()), "Sin subir: " + String(almacen.pendientes()));
+    const String &wifi = sincronizador.estado();
+    ui::espera("Bus " + String(almacen.validador()) + (wifi.length() ? "  " + wifi : ""),
+               "Sin subir: " + String(almacen.pendientes()));
   }
 }
 
@@ -201,12 +225,46 @@ void setup() {
   Serial.begin(115200);
   ui::iniciar();
   ui::espera("Validador", "Iniciando...");
+  pinMode(PIN_BOOT, INPUT_PULLUP);
   almacen.iniciar();
   pantallaEspera();
+  // Sin ninguna red guardada, el portal se abre solo (se cierra a los 10 min sin uso)
+  if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) portal.iniciar();
 }
 
 void loop() {
+  if (portal.activo()) {
+    // Mientras se configura el WiFi no se cobra
+    if (portal.atender()) {
+      botonDesde = 0;
+      sincronizador.reiniciarWifi();
+      pantallaEspera();
+    } else if (lector.conectado() && millis() - ultimoSaludo > 3000) {
+      // El puente reinicia la placa si deja de oírla: se le saluda de vez en cuando
+      String config;
+      lector.saludar(config);
+      ultimoSaludo = millis();
+    }
+    delay(2);
+    return;
+  }
+  if (botonMantenido() && almacen.listo() && almacen.configurado()) {
+    portal.iniciar();
+    return;
+  }
+
   ui::actualizar();
+  if (sincronizador.atender()) {
+    if (sincronizador.horaServidor()) {  // la hora del servidor permite cobrar sin el puente
+      baseUnix = sincronizador.horaServidor();
+      baseMillis = sincronizador.millisHora();
+    }
+    pantallaEspera();  // actualiza "Sin subir"
+  }
+  if (sincronizador.estado() != estadoMostrado) {
+    estadoMostrado = sincronizador.estado();
+    pantallaEspera();
+  }
 
   if (!lector.conectado()) {
     if (!conectarPuente()) {
@@ -217,7 +275,15 @@ void loop() {
     pantallaEspera();
   }
   if (!almacen.listo() || !almacen.configurado()) {
-    delay(500);
+    // Sin microSD o sin configuración no se cobra, pero se sigue saludando al
+    // puente (así sabe que la placa está viva y puede enviar la configuración)
+    delay(2000);
+    String config;
+    if (lector.saludar(config) && config.length()) {
+      log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
+                                        : "ERROR: no se pudo guardar la configuración");
+      pantallaEspera();
+    }
     return;
   }
   if (millis() - ultimaHora > RESINCRONIZAR_HORA) sincronizarHora();

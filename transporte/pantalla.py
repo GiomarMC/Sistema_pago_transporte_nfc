@@ -18,6 +18,31 @@ VELOCIDAD = 115200
 CHIPS_ESP32 = {0x10C4: "CP210x", 0x1A86: "CH340", 0x0403: "FTDI", 0x303A: "Espressif"}
 
 
+def abrir_esp32(serial_mod, puerto, timeout):
+    """Abre el puerto de la ESP32 y la reinicia de forma limpia en modo normal.
+
+    En las placas ESP32 las señales DTR y RTS del puerto controlan el arranque
+    (DTR -> GPIO0, RTS -> EN). Al abrir el puerto, el sistema puede moverlas de
+    forma que la placa arranque en "modo de carga de programa" y se quede
+    esperando un firmware. Para evitarlo: GPIO0 en alto (DTR inactivo) y un
+    pulso en EN (RTS) para reiniciar, y esperar a que arranque.
+    """
+    ser = serial_mod.Serial()
+    ser.port = puerto
+    ser.baudrate = VELOCIDAD
+    ser.timeout = timeout
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    ser.dtr = False
+    ser.rts = True       # EN a nivel bajo: reinicio
+    time.sleep(0.1)
+    ser.rts = False      # EN libre con GPIO0 en alto: arranque normal
+    time.sleep(1.5)      # tiempo de arranque de la ESP32
+    ser.reset_input_buffer()
+    return ser
+
+
 def buscar_puerto():
     """Puerto de la ESP32 en Linux, Windows o macOS, por el chip USB de la placa."""
     from serial.tools import list_ports
@@ -65,10 +90,7 @@ class Pantalla:
                 self.ser.close()
             except Exception:
                 pass
-        self.ser = self._serial.Serial(self.puerto, VELOCIDAD, timeout=0.5)
-        # Al abrir el puerto la ESP32 se reinicia: esperar a que arranque
-        time.sleep(2.0)
-        self.ser.reset_input_buffer()
+        self.ser = abrir_esp32(self._serial, self.puerto, timeout=0.5)
         if not self._responde():
             raise RuntimeError(f"la placa en {self.puerto} no respondió como pantalla")
         self.funciona = True

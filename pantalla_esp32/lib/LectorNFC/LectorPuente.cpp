@@ -55,7 +55,7 @@ bool LectorPuente::pedir(const String &peticion, String &respuesta, uint32_t esp
           return true;
         }
         linea = "";
-      } else if (c != '\r' && linea.length() < 400) {
+      } else if (c != '\r' && linea.length() < 800) {
         linea += c;
       }
     }

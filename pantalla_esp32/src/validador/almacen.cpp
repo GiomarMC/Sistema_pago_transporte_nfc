@@ -87,6 +87,7 @@ bool Almacen::iniciar() {
     if (sp > 0) ultimaOp_[l.substring(0, sp).toInt()] = l.substring(sp + 1).toInt();
   });
   cargarListas();
+  cargarRedes();
   return true;
 }
 
@@ -107,10 +108,16 @@ void Almacen::cargarConfig() {
 }
 
 void Almacen::cargarListas() {
+  // Se recargan enteras en cada sincronización: el servidor manda la lista completa
   tarifas_.clear();
-  tarifas_[1] = {"general", 130};     // por defecto, hasta la primera sincronización
-  tarifas_[2] = {"estudiante", 80};
-  porLinea(leerArchivo("/tarifas.txt"), [&](const String &l) {
+  listaNegra_.clear();
+  recargas_.clear();
+  const String tarifas = leerArchivo("/tarifas.txt");
+  if (tarifas.length() == 0) {  // por defecto, hasta la primera sincronización
+    tarifas_[1] = {"general", 130};
+    tarifas_[2] = {"estudiante", 80};
+  }
+  porLinea(tarifas, [&](const String &l) {
     int a = l.indexOf(' '), b = l.lastIndexOf(' ');
     if (a > 0 && b > a) tarifas_[l.substring(0, a).toInt()] = {l.substring(a + 1, b), (int32_t)l.substring(b + 1).toInt()};
   });
@@ -138,6 +145,7 @@ bool Almacen::guardarConfig(const String &pares) {
   for (auto &kv : config_) texto += kv.first + "=" + kv.second + "\n";
   if (!escribirArchivo("/config.txt", texto)) return false;
   cargarConfig();
+  cargarRedes();  // por si llegó una red nueva con --configurar --wifi
   return configurado();
 }
 
@@ -233,4 +241,82 @@ bool Almacen::registrarIncidencia(uint32_t fecha, uint32_t idTarjeta, const Stri
              "\",\"monto\":null,\"saldo_final\":null,\"operacion\":null,\"contador\":null," +
              "\"recarga_hasta\":null,\"detalle\":" + jsonTexto(detalle) + "}";
   return agregarEvento(j);
+}
+
+String Almacen::eventosPendientes(size_t max, std::vector<uint32_t> &ids) {
+  ids.clear();
+  String json = "[";
+  File f = SD.open("/eventos.txt", FILE_READ);
+  if (!f) return "[]";
+  while (f.available() && ids.size() < max) {
+    String l = f.readStringUntil('\n');
+    l.trim();
+    // Una línea cortada (corte de corriente al escribirla) no se envía
+    if (!l.startsWith("{\"id\":") || !l.endsWith("}")) continue;
+    uint32_t id = l.substring(6).toInt();
+    if (id <= ultimoSubido_) continue;
+    if (ids.size()) json += ",";
+    json += l;
+    ids.push_back(id);
+  }
+  f.close();
+  return json + "]";
+}
+
+void Almacen::marcarSubidos(uint32_t hastaId) {
+  if (hastaId <= ultimoSubido_) return;
+  ultimoSubido_ = hastaId;
+  guardarEstado();
+}
+
+bool Almacen::guardarListas(const String &listaNegra, const String &tarifas, const String &recargas) {
+  bool ok = escribirArchivo("/lista_negra.txt", listaNegra) && escribirArchivo("/tarifas.txt", tarifas) &&
+            escribirArchivo("/recargas.txt", recargas);
+  cargarListas();
+  return ok;
+}
+
+void Almacen::cargarRedes() {
+  redes_.clear();
+  porLinea(leerArchivo("/redes.txt"), [&](const String &l) {
+    int tab = l.indexOf('\t');
+    if (tab > 0) redes_.push_back({l.substring(0, tab), l.substring(tab + 1)});
+  });
+  // La red de config.txt (puente_nfc.py --configurar --wifi) también cuenta
+  const String ssid = config("wifi_ssid");
+  if (ssid.length()) {
+    bool esta = false;
+    for (auto &r : redes_) esta = esta || r.ssid == ssid;
+    if (!esta) redes_.push_back({ssid, config("wifi_clave")});
+  }
+}
+
+bool Almacen::guardarRedes() {
+  String t;
+  for (auto &r : redes_) t += r.ssid + "\t" + r.clave + "\n";
+  return escribirArchivo("/redes.txt", t);
+}
+
+bool Almacen::guardarRed(const String &ssid, const String &clave) {
+  for (size_t i = 0; i < redes_.size(); i++) {
+    if (redes_[i].ssid == ssid) {
+      redes_.erase(redes_.begin() + i);
+      break;
+    }
+  }
+  redes_.insert(redes_.begin(), {ssid, clave});
+  if (redes_.size() > MAX_REDES) redes_.resize(MAX_REDES);
+  return guardarRedes();
+}
+
+bool Almacen::olvidarRed(const String &ssid) {
+  for (size_t i = 0; i < redes_.size(); i++) {
+    if (redes_[i].ssid == ssid) {
+      redes_.erase(redes_.begin() + i);
+      if (!guardarRedes()) return false;
+      // Si era la de config.txt, se quita también de ahí para que no vuelva
+      return config("wifi_ssid") != ssid || guardarConfig("wifi_ssid=;wifi_clave=");
+    }
+  }
+  return true;
 }

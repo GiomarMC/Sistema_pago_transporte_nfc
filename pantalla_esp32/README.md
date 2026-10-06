@@ -344,6 +344,7 @@ En `transporte/`:
 | La pantalla queda en blanco tras reconectarla | Reinicia la ESP32 (botón EN o desconectar y conectar el USB): la pantalla solo se configura al arrancar. Desconecta el USB antes de tocar cables. |
 | Todas las tarjetas salen "No emitida por el sistema" | La clave maestra de la ESP32 no es la de las tarjetas. Configura de nuevo (7.1) desde el PC que tiene la clave correcta. |
 | La pantalla dice "Sin lector" | El puente no está en marcha o se cerró. Arranca `puente_nfc.py`. |
+| El puente dice "No se encontró la ESP32", aunque la placa está encendida y la pantalla funciona | El ordenador no reconoce la placa por USB. En Linux, `journalctl -k` muestra `device descriptor read error -71`. Casi siempre es **un cable USB que solo carga** (alimenta, pero no transmite datos): usa otro cable de datos. Si no, prueba a girar el conector USB-C y otro puerto. Ningún comando con `sudo` lo arregla. |
 | El puente dice que no encuentra el lector | Tras reiniciar el ordenador, el ACR122U a veces no se inicializa: desconéctalo y vuelve a conectarlo, y ejecuta `sudo systemctl restart pcscd`. |
 | `could not open port` o `Permission denied` | El puerto lo usa otro programa (solo uno a la vez: validador, puente, monitor serie o carga de firmware), o falta el grupo `dialout` en Linux. |
 | La carga del firmware falla en `Unable to verify flash chip connection` | Usa `upload_speed = 115200` (ya fijado) y otro cable USB de datos. |

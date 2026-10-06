@@ -31,6 +31,7 @@ Arduino_GFX *gfx = new Arduino_SSD1283A(bus, PIN_RST, 0 /* rotación */);
 String esperaLinea1 = "Validador";
 String esperaLinea2 = "";
 uint32_t volverAEsperaEn = 0;   // 0 = la pantalla de espera ya está dibujada
+bool informacionFija = false;   // pantalla de información: no se sustituye sola
 
 // Escribe `texto` centrado en la línea `y`, con el tamaño más grande (hasta
 // `tamMax`) con el que cabe en el ancho. Devuelve la altura usada.
@@ -122,13 +123,34 @@ void resultado(char tipo, const String &l1, const String &l2, const String &l3) 
 void espera(const String &l1, const String &l2) {
   esperaLinea1 = l1;
   esperaLinea2 = l2;
-  if (volverAEsperaEn == 0) pantallaEspera();
+  if (volverAEsperaEn == 0 && !informacionFija) pantallaEspera();
 }
 
 void actualizar() {
-  if (volverAEsperaEn != 0 && (int32_t)(millis() - volverAEsperaEn) >= 0) {
+  if (!informacionFija && volverAEsperaEn != 0 && (int32_t)(millis() - volverAEsperaEn) >= 0) {
     pantallaEspera();
   }
+}
+
+void informacion(const String &titulo, const String lineas[], int n) {
+  informacionFija = true;
+  gfx->fillScreen(COLOR_ESPERA);
+  gfx->fillRect(0, 0, ANCHO, 22, BLANCO);
+  textoCentrado(titulo, 7, 1, COLOR_ESPERA);
+  int y = 30;
+  for (int i = 0; i < n && y < ALTO - 8; i++) {
+    // Las líneas que empiezan por '*' van grandes (datos que hay que teclear)
+    if (lineas[i].startsWith("*")) {
+      y += textoCentrado(lineas[i].substring(1), y, 2, BLANCO) + 6;
+    } else {
+      y += textoCentrado(lineas[i], y, 1, BLANCO) + 4;
+    }
+  }
+}
+
+void cerrarInformacion() {
+  informacionFija = false;
+  pantallaEspera();
 }
 
 }  // namespace ui
