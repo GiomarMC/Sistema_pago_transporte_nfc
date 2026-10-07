@@ -104,3 +104,92 @@ class PanelTests(TestCase):
         self.assertEqual(cliente.post(ruta, {"motivo": "pérdida"}).status_code, 403)
         self.tarjeta.refresh_from_db()
         self.assertEqual(self.tarjeta.estado, "activa")
+
+
+class UsuariosTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.admin = User.objects.create_superuser(username="admin", password="prueba-segura-123")
+        self.operador = User.objects.create_user(username="operadora", password="prueba-segura-123")
+        self.operador.groups.add(Group.objects.get(name="operadores"))
+
+    def solicitar(self, usuario="nuevo", **extra):
+        datos = {"username": usuario, "first_name": "Luis", "last_name": "Mamani",
+                 "email": "", "password1": "Volcan-Misti-27", "password2": "Volcan-Misti-27"}
+        datos.update(extra)
+        return Client().post(reverse("panel:solicitar_acceso"), datos)
+
+    def test_registro_queda_pendiente_sin_acceso(self):
+        cliente = Client()
+        respuesta = cliente.post(reverse("panel:solicitar_acceso"), {
+            "username": "nuevo", "first_name": "Luis", "last_name": "Mamani",
+            "password1": "Volcan-Misti-27", "password2": "Volcan-Misti-27"})
+        self.assertRedirects(respuesta, reverse("panel:inicio"), target_status_code=403)
+        nuevo = get_user_model().objects.get(username="nuevo")
+        self.assertTrue(nuevo.groups.filter(name="solicitudes").exists())
+        self.assertFalse(nuevo.groups.filter(name="operadores").exists())
+        pagina = cliente.get(reverse("panel:viajes"))
+        self.assertEqual(pagina.status_code, 403)
+        self.assertContains(pagina, "esperando la aprobación", status_code=403)
+
+    def test_registro_valida_datos(self):
+        self.assertEqual(self.solicitar(password2="otra-cosa-99").status_code, 200)
+        self.assertEqual(self.solicitar(password1="12345678", password2="12345678").status_code, 200)
+        self.assertEqual(self.solicitar(first_name="").status_code, 200)
+        self.assertEqual(self.solicitar(usuario="OPERADORA").status_code, 200)  # ya existe
+        self.assertFalse(get_user_model().objects.filter(groups__name="solicitudes").exists())
+
+    def test_registro_se_cierra_con_muchas_pendientes(self):
+        grupo = Group.objects.get(name="solicitudes")
+        for n in range(50):
+            get_user_model().objects.create_user(username=f"spam{n}").groups.add(grupo)
+        respuesta = self.solicitar()
+        self.assertContains(respuesta, "demasiadas solicitudes")
+        self.assertFalse(get_user_model().objects.filter(username="nuevo").exists())
+
+    def test_usuarios_solo_para_superusuarios(self):
+        ruta = reverse("panel:usuarios")
+        self.client.force_login(self.operador)
+        self.assertEqual(self.client.get(ruta).status_code, 403)
+        self.assertNotContains(self.client.get(reverse("panel:inicio")), ruta)
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("panel:inicio")), ruta)
+        self.assertEqual(self.client.get(ruta).status_code, 200)
+
+    def test_aprobar_y_rechazar(self):
+        self.solicitar("luis")
+        self.solicitar("intruso")
+        User = get_user_model()
+        luis, intruso = User.objects.get(username="luis"), User.objects.get(username="intruso")
+        self.client.force_login(self.admin)
+        self.assertContains(self.client.get(reverse("panel:usuarios")), "intruso")
+        self.client.post(reverse("panel:gestionar_usuario", args=[luis.pk]), {"accion": "aprobar"})
+        self.client.post(reverse("panel:gestionar_usuario", args=[intruso.pk]), {"accion": "rechazar"})
+        self.assertFalse(User.objects.filter(username="intruso").exists())
+        self.assertTrue(luis.groups.filter(name="operadores").exists())
+        self.assertFalse(luis.groups.filter(name="solicitudes").exists())
+        cliente = Client()
+        cliente.force_login(luis)
+        self.assertEqual(cliente.get(reverse("panel:inicio")).status_code, 200)
+        # Un operador ya aprobado no se puede "rechazar" (borrar) con la acción de solicitudes
+        self.client.post(reverse("panel:gestionar_usuario", args=[luis.pk]), {"accion": "rechazar"})
+        self.assertTrue(User.objects.filter(username="luis").exists())
+
+    def test_desactivar_quita_el_acceso(self):
+        ruta = reverse("panel:gestionar_usuario", args=[self.operador.pk])
+        self.client.force_login(self.admin)
+        self.client.post(ruta, {"accion": "desactivar"})
+        self.operador.refresh_from_db()
+        self.assertFalse(self.operador.is_active)
+        self.assertFalse(Client().login(username="operadora", password="prueba-segura-123"))
+        self.client.post(ruta, {"accion": "reactivar"})
+        self.operador.refresh_from_db()
+        self.assertTrue(self.operador.is_active)
+
+    def test_no_se_desactiva_a_administradores(self):
+        self.client.force_login(self.admin)
+        ruta = reverse("panel:gestionar_usuario", args=[self.admin.pk])
+        self.assertEqual(self.client.post(ruta, {"accion": "desactivar"}).status_code, 400)
+        self.assertEqual(self.client.get(ruta).status_code, 405)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)

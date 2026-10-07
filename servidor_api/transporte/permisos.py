@@ -1,6 +1,8 @@
 from rest_framework.permissions import BasePermission
 
 GRUPO_OPERADORES = "operadores"
+# Cuentas creadas con "Solicitar acceso" en el panel, hasta que un superusuario las aprueba
+GRUPO_SOLICITUDES = "solicitudes"
 
 
 class EsValidador(BasePermission):

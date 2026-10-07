@@ -1,0 +1,12 @@
+{% load static %}
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Solicitud pendiente · SubePe</title><link rel="stylesheet" href="{% static 'panel/panel.css' %}"></head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-brand"><span class="brand-mark" aria-hidden="true">S</span><strong>Sube<span class="brand-dot">Pe</span></strong></div>
+    <div class="eyebrow">SOLICITUD PENDIENTE</div>
+    <h1>Hola, {{ request.user.first_name|default:request.user.username }}.</h1>
+    <p>Tu cuenta <strong>{{ request.user.username }}</strong> está esperando la aprobación de un administrador. Cuando la aprueben, vuelve a esta página para entrar al panel.</p>
+    <form method="post" action="{% url 'panel:logout' %}">{% csrf_token %}<button class="button subtle wide" type="submit">Cerrar sesión</button></form>
+  </main>
+</body></html>

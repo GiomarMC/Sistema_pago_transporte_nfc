@@ -1,0 +1,26 @@
+{% load static %}
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Solicitar acceso · SubePe</title><link rel="stylesheet" href="{% static 'panel/panel.css' %}"></head>
+<body class="login-body">
+  <main class="login-card">
+    <div class="login-brand"><span class="brand-mark" aria-hidden="true">S</span><strong>Sube<span class="brand-dot">Pe</span></strong></div>
+    <div class="eyebrow">CENTRO DE CONTROL</div>
+    <h1>Solicitar acceso</h1>
+    <p>Crea tu cuenta. Podrás entrar al panel cuando un administrador apruebe la solicitud.</p>
+    {% if cerrado %}
+    <div class="notice error" role="alert">Hay demasiadas solicitudes sin revisar. Inténtalo más tarde o pide a un administrador que te cree la cuenta.</div>
+    {% else %}
+    {% if form.non_field_errors %}<div class="notice error" role="alert">{{ form.non_field_errors|join:" " }}</div>{% endif %}
+    <form method="post" class="login-form" novalidate>{% csrf_token %}
+      {% for campo in form %}
+      <label for="{{ campo.id_for_label }}">{{ campo.label }}</label>
+      {{ campo }}
+      {% for error in campo.errors %}<p class="field-error">{{ error }}</p>{% endfor %}
+      {% endfor %}
+      <small class="muted">La contraseña necesita al menos 8 caracteres, no solo números, y no puede parecerse a tu usuario ni ser muy común.</small>
+      <button class="button primary wide" type="submit">Enviar solicitud <span aria-hidden="true">→</span></button>
+    </form>
+    {% endif %}
+    <small>¿Ya tienes cuenta? <a class="text-link" href="{% url 'panel:login' %}">Ingresar</a></small>
+  </main>
+</body></html>

@@ -24,6 +24,7 @@
         <a class="nav-link {% if request.resolver_match.url_name == 'cuentas' or request.resolver_match.url_name == 'cuenta_detalle' %}active{% endif %}" href="{% url 'panel:cuentas' %}" {% if request.resolver_match.url_name == 'cuentas' or request.resolver_match.url_name == 'cuenta_detalle' %}aria-current="page"{% endif %}><span aria-hidden="true">⌕</span> Cuentas y tarjetas</a>
         <a class="nav-link {% if request.resolver_match.url_name == 'validadores' %}active{% endif %}" href="{% url 'panel:validadores' %}" {% if request.resolver_match.url_name == 'validadores' %}aria-current="page"{% endif %}><span aria-hidden="true">◫</span> Validadores</a>
         <a class="nav-link {% if request.resolver_match.url_name == 'alertas' %}active{% endif %}" href="{% url 'panel:alertas' %}" {% if request.resolver_match.url_name == 'alertas' %}aria-current="page"{% endif %}><span aria-hidden="true">◇</span> Alertas</a>
+        {% if request.user.is_superuser %}<a class="nav-link {% if request.resolver_match.url_name == 'usuarios' %}active{% endif %}" href="{% url 'panel:usuarios' %}" {% if request.resolver_match.url_name == 'usuarios' %}aria-current="page"{% endif %}><span aria-hidden="true">◎</span> Usuarios</a>{% endif %}
       </nav>
       <div class="sidebar-bottom">
         <div class="side-note"><span class="live-dot" aria-hidden="true"></span><span>Datos del servidor<br><small>Los validadores sincronizan por WiFi</small></span></div>

@@ -7,6 +7,7 @@ app_name = "panel"
 
 urlpatterns = [
     path("ingresar/", auth_views.LoginView.as_view(template_name="panel/login.html", redirect_authenticated_user=True), name="login"),
+    path("solicitar-acceso/", views.solicitar_acceso, name="solicitar_acceso"),
     path("salir/", auth_views.LogoutView.as_view(next_page="panel:login"), name="logout"),
     path("", views.inicio, name="inicio"),
     path("cuentas/", views.cuentas, name="cuentas"),
@@ -16,4 +17,6 @@ urlpatterns = [
     path("validadores/", views.validadores, name="validadores"),
     path("alertas/", views.alertas, name="alertas"),
     path("alertas/<int:alerta_id>/revisar/", views.revisar_alerta, name="revisar_alerta"),
+    path("usuarios/", views.usuarios, name="usuarios"),
+    path("usuarios/<int:usuario_id>/", views.gestionar_usuario, name="gestionar_usuario"),
 ]

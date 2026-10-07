@@ -1,6 +1,8 @@
 from datetime import datetime, time, timedelta
 
 from django.contrib import messages
+from django.contrib.auth import get_user_model, login
+from django.contrib.auth.models import Group
 from django.db import transaction
 from django.db.models import Count, Q, Sum
 from django.db.models.functions import TruncDate
@@ -12,11 +14,15 @@ from django.utils.dateparse import parse_date
 
 from transporte import servicios
 from transporte.models import Alerta, Cuenta, Movimiento, Recarga, Tarjeta, Validador
+from transporte.permisos import GRUPO_OPERADORES, GRUPO_SOLICITUDES
 
-from .auth import operador_requerido
+from .auth import operador_requerido, superusuario_requerido
+from .forms import SolicitudAccesoForm
 
 TAM_PAGINA = 30
 MINUTOS_SIN_SYNC = 5
+# Tope de solicitudes sin revisar: el registro es público y así no se llena de cuentas basura
+MAX_SOLICITUDES_PENDIENTES = 50
 
 
 def _cursor(request):
@@ -196,3 +202,61 @@ def revisar_alerta(request, alerta_id):
         )
         messages.success(request, f"Alerta {alerta_id} marcada como revisada.")
     return redirect("panel:alertas")
+
+
+def solicitar_acceso(request):
+    if request.user.is_authenticated:
+        return redirect("panel:inicio")
+    pendientes = get_user_model().objects.filter(groups__name=GRUPO_SOLICITUDES).count()
+    cerrado = pendientes >= MAX_SOLICITUDES_PENDIENTES
+    form = SolicitudAccesoForm(request.POST or None)
+    if request.method == "POST" and not cerrado and form.is_valid():
+        with transaction.atomic():
+            usuario = form.save()
+            usuario.groups.add(Group.objects.get(name=GRUPO_SOLICITUDES))
+        login(request, usuario)
+        return redirect("panel:inicio")
+    return render(request, "panel/registro.html", {"form": form, "cerrado": cerrado})
+
+
+@superusuario_requerido
+def usuarios(request):
+    User = get_user_model()
+    pendientes = User.objects.filter(groups__name=GRUPO_SOLICITUDES).order_by("date_joined")
+    con_acceso = (
+        User.objects.filter(Q(groups__name=GRUPO_OPERADORES) | Q(is_staff=True))
+        .distinct().order_by("-is_superuser", "username")
+    )
+    return render(request, "panel/usuarios.html", {
+        "titulo": "Usuarios", "pendientes": pendientes, "con_acceso": con_acceso,
+    })
+
+
+@superusuario_requerido
+@require_POST
+def gestionar_usuario(request, usuario_id):
+    accion = request.POST.get("accion", "")
+    with transaction.atomic():
+        usuario = get_object_or_404(get_user_model().objects.select_for_update(), pk=usuario_id)
+        pendiente = usuario.groups.filter(name=GRUPO_SOLICITUDES).exists()
+        if accion in {"aprobar", "rechazar"} and not pendiente:
+            messages.warning(request, f"La solicitud de {usuario.username} ya fue resuelta.")
+        elif accion == "aprobar":
+            usuario.groups.remove(Group.objects.get(name=GRUPO_SOLICITUDES))
+            usuario.groups.add(Group.objects.get(name=GRUPO_OPERADORES))
+            messages.success(request, f"{usuario.username} ya puede entrar al panel.")
+        elif accion == "rechazar":
+            usuario.delete()
+            messages.success(request, f"Solicitud de {usuario.username} rechazada y eliminada.")
+        elif accion in {"desactivar", "reactivar"}:
+            if usuario == request.user or usuario.is_superuser:
+                return HttpResponseBadRequest("No se puede desactivar a un administrador ni a uno mismo.")
+            usuario.is_active = accion == "reactivar"
+            usuario.save(update_fields=["is_active"])
+            if usuario.is_active:
+                messages.success(request, f"{usuario.username} puede volver a entrar.")
+            else:
+                messages.success(request, f"{usuario.username} ya no puede entrar al panel ni usar la API.")
+        else:
+            return HttpResponseBadRequest("Acción desconocida.")
+    return redirect("panel:usuarios")
