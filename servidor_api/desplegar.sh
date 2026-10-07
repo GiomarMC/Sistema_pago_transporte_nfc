@@ -14,12 +14,20 @@ main() {
   local compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
   echo "== Código"
+  local antes
+  antes=$(git rev-parse HEAD)
   git fetch --quiet origin main
   git reset --quiet --hard origin/main
   git log -1 --format="   %h %s (%an)"
 
   echo "== Contenedores (las migraciones se aplican al arrancar web)"
   $compose up -d --build --remove-orphans 2>&1 | grep -vE "^ *#|^$" | tail -5
+  # El Caddyfile se monta como archivo: git lo reemplaza por otro y el contenedor
+  # seguiría leyendo el anterior, así que se recrea (los certificados se conservan)
+  if ! git diff --quiet "$antes" HEAD -- Caddyfile; then
+    echo "   Caddyfile cambió: recreando caddy"
+    $compose up -d --force-recreate caddy 2>&1 | tail -1
+  fi
 
   echo "== Esperando a Django"
   for _ in $(seq 1 30); do
