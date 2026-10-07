@@ -8,6 +8,8 @@
 #include <set>
 #include <vector>
 
+#include "raices_tls.h"
+
 namespace {
 
 constexpr uint32_t INTERVALO = 30000;        // ms entre sincronizaciones correctas
@@ -55,6 +57,7 @@ bool Sincronizador::atender() {
     estado_ = "Sin WiFi";
     if (wifiConectado_) {
       wifiConectado_ = false;
+      cerrarConexion();
       log_("WiFi perdido; se sigue cobrando sin conexión");
     }
     // WiFi.begin no bloquea: la conexión avanza mientras se sigue cobrando. Si una
@@ -117,6 +120,13 @@ void Sincronizador::reiniciarWifi() {
   wifiConectado_ = false;
   red_ = 0;
   ipServidor_ = IPAddress();
+  cerrarConexion();
+}
+
+void Sincronizador::cerrarConexion() {
+  http_.end();
+  plano_.stop();
+  seguro_.stop();
 }
 
 void Sincronizador::fallo(const String &motivo) {
@@ -133,28 +143,43 @@ bool Sincronizador::sincronizar() {
   url += "/api/sync/";
   if (!resolverNombre(url)) return false;
 
-  WiFiClient cliente;
-  HTTPClient http;
-  http.setConnectTimeout(2000);
-  http.setTimeout(4000);
-  if (!http.begin(cliente, url)) {
+  // Si cambió el servidor (nueva configuración), la conexión abierta ya no sirve
+  if (url != urlActual_) {
+    cerrarConexion();
+    urlActual_ = url;
+  }
+  const bool https = url.startsWith("https://");
+  if (https && !seguroListo_) {
+    seguro_.setCACert(RAICES_TLS);
+    seguro_.setHandshakeTimeout(10);  // s
+    seguroListo_ = true;
+  }
+  WiFiClient &cliente = https ? static_cast<WiFiClient &>(seguro_) : plano_;
+  http_.setReuse(true);
+  http_.setConnectTimeout(https ? 5000 : 2000);  // por internet se tarda más que en la red local
+  http_.setTimeout(https ? 8000 : 4000);
+  if (!http_.begin(cliente, url)) {
     fallo("URL del servidor no válida: " + url);
     return false;
   }
-  http.addHeader("Content-Type", "application/json");
-  http.addHeader("Accept", "application/json");
-  http.addHeader("Authorization", "Token " + almacen_.config("token"));
-  const int codigo = http.POST("{\"validador\":" + String(almacen_.validador()) + ",\"eventos\":" + eventos + "}");
+  http_.addHeader("Content-Type", "application/json");
+  http_.addHeader("Accept", "application/json");
+  http_.addHeader("Authorization", "Token " + almacen_.config("token"));
+  const int codigo = http_.POST("{\"validador\":" + String(almacen_.validador()) + ",\"eventos\":" + eventos + "}");
   if (codigo != 200) {
     String motivo = codigo < 0 ? HTTPClient::errorToString(codigo) : "HTTP " + String(codigo);
     if (codigo == 401 || codigo == 403) motivo += " (token no válido o validador inactivo)";
-    http.end();
+    char tls[100];
+    if (https && codigo < 0 && seguro_.lastError(tls, sizeof(tls))) {
+      motivo += String(" (TLS: ") + tls + ")";  // p. ej. certificado no reconocido
+    }
+    cerrarConexion();           // la próxima vez, conexión nueva
     ipServidor_ = IPAddress();  // por si cambió de IP: se vuelve a buscar
     fallo(motivo + " en " + url);
     return false;
   }
-  const String cuerpo = http.getString();
-  http.end();
+  const String cuerpo = http_.getString();
+  http_.end();  // con reuse, la conexión queda abierta para la próxima vez
   const uint32_t recibido = millis();
 
   JsonDocument doc;

@@ -3,13 +3,18 @@
 // guarda la lista negra, las recargas pendientes, las tarifas y la hora.
 //
 // Necesita al menos una red WiFi guardada (portal de configuración o
-// config.txt) y en config.txt: servidor (http://IP:puerto o
-// http://nombre.local:puerto, que se busca en la red local por mDNS) y
-// token (el del validador en el servidor). Sin ellos no hace nada: el validador
-// sigue cobrando y acumula los eventos en la microSD.
+// config.txt) y en config.txt: servidor y token (el del validador en el
+// servidor). Sin ellos no hace nada: el validador sigue cobrando y acumula los
+// eventos en la microSD. El servidor puede ser:
+//   https://dominio          servidor en internet; se verifica su certificado
+//                            con las raíces de Let's Encrypt (raices_tls.h)
+//   http://IP:puerto         servidor de pruebas en la red local
+//   http://nombre.local:puerto  ídem, buscando el ordenador por mDNS
 #pragma once
 #include <Arduino.h>
+#include <HTTPClient.h>
 #include <IPAddress.h>
+#include <WiFiClientSecure.h>
 
 #include "almacen.h"
 
@@ -37,6 +42,16 @@ class Sincronizador {
   bool sincronizar();
   bool resolverNombre(String &url);  // "nombre.local" -> IP (mDNS)
   void fallo(const String &motivo);
+  void cerrarConexion();
+
+  // Se conservan entre sincronizaciones para reutilizar la conexión (keep-alive):
+  // con HTTPS, cada conexión nueva cuesta 1-3 s de negociación TLS, durante los
+  // que el validador no cobra
+  WiFiClient plano_;
+  WiFiClientSecure seguro_;
+  HTTPClient http_;
+  bool seguroListo_ = false;
+  String urlActual_;  // a qué servidor apunta la conexión abierta
 
   Almacen &almacen_;
   Registro log_;

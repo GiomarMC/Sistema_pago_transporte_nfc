@@ -172,8 +172,9 @@ def main():
     p.add_argument("--wifi", help="con --configurar: red WiFi de 2,4 GHz para sincronizar con "
                                   "el servidor (el token sale de api.json)")
     p.add_argument("--wifi-clave", help="contraseña del WiFi (si no se indica, se pide)")
-    p.add_argument("--servidor", help="URL del servidor vista desde la ESP32 (por defecto, la de "
-                                      "api.json con la IP de este ordenador en la red local)")
+    p.add_argument("--servidor", help="URL del servidor vista desde la ESP32, p. ej. "
+                                      "https://subepe.duckdns.org (por defecto, la de api.json). "
+                                      "Sin --wifi, cambia solo servidor y token")
     p.add_argument("--detalle", action="store_true", help="mostrar cada comando")
     p.add_argument("--simular", action="store_true",
                    help="probar la ESP32 con tarjetas virtuales (sin ACR122U); ver simular_tarjetas.py")
@@ -193,7 +194,11 @@ def main():
         if args.wifi:
             pares.update(config_wifi(args))
         elif args.servidor:  # solo cambia el servidor; el WiFi guardado se conserva
-            pares["servidor"] = args.servidor
+            import api_cliente
+            # El token es distinto en cada servidor: se envía el de api.json
+            pares.update(servidor=args.servidor, token=api_cliente.token_validador(args.validador))
+            print(f"La ESP32 sincronizará con {args.servidor} (token de api.json, "
+                  f"servidor {api_cliente._conf()['url']})")
         for clave, valor in pares.items():
             valor = str(valor)
             if not valor.isascii() or any(c in valor for c in ";\r\n"):

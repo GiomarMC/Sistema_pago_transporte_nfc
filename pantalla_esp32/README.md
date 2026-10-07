@@ -55,7 +55,7 @@ Contenido:
 | Lector NFC | ACR122U en el ordenador | ACR122U en el ordenador, usado a través del puente | Módulo PN532 conectado a la ESP32 |
 | Papel del ordenador | Hace todo y envía el resultado a la pantalla | Solo presta el lector (`puente_nfc.py`): reenvía comandos, sin lógica | Ninguno |
 | Dónde se guardan los viajes | Base de datos local del ordenador | microSD de la ESP32 | microSD de la ESP32 |
-| Sincronización con el servidor | Sí (`validador.py`) | **Pendiente** (fase 4, por WiFi) | Por WiFi |
+| Sincronización con el servidor | Sí (`validador.py`) | **Por WiFi**, desde la ESP32 (sección 7.5) | Por WiFi |
 | Firmware de la ESP32 | `esp32dev` | `validador` | `validador` (con otro lector) |
 
 El modo B simula el validador independiente: todo el programa corre en la
@@ -195,7 +195,7 @@ tarjetas).
    `[ESP32] Validador 103 listo`. Cierra con `Ctrl+C`.
 
 Usa un número de validador que exista en el servidor (por ejemplo, uno creado
-con `crear_validador`), para que la sincronización de la fase 4 funcione sin
+con `crear_validador`), para que la sincronización por WiFi (7.5) funcione sin
 cambios. Solo hay que configurarla una vez: la configuración queda en la
 microSD.
 
@@ -269,17 +269,62 @@ Lo mismo que `validador.py`, en el mismo orden:
 | Azul, "Sin configurar" | Falta la configuración (sección 7.1) |
 | Azul, "Error microSD" | No hay tarjeta microSD o no se puede leer |
 
+### 7.5 Sincronización con el servidor por WiFi
+
+La ESP32 sube sola los viajes de la microSD a `/api/sync/` cada 30 segundos y
+recibe la lista negra, las recargas pendientes, las tarifas y la hora. Sin red
+sigue cobrando y acumula los viajes hasta que vuelva la conexión. La primera
+línea de la pantalla indica el estado: `WiFi OK`, `Sin WiFi` o `Sin servidor`.
+
+Necesita tres datos en `config.txt`:
+
+| Dato | Cómo se configura |
+|---|---|
+| Red WiFi (2,4 GHz) | Desde el celular, con el portal (abajo), o con `--wifi` en el puente |
+| `servidor` | Con el puente: `--servidor` |
+| `token` (del validador en ese servidor) | Lo pone el puente, sacándolo de `transporte/api.json` |
+
+**Servidor en internet (HTTPS).** Con `api.json` apuntando al servidor
+desplegado (`https://subepe.duckdns.org`), desde el ordenador con la clave
+maestra:
+
+```bash
+cd transporte
+python3 puente_nfc.py --configurar --validador 105 --servidor https://subepe.duckdns.org
+```
+
+Así cambian solo el servidor y el token; las redes WiFi guardadas se conservan.
+La ESP32 verifica el certificado del servidor con las raíces de Let's Encrypt
+incluidas en el firmware (`src/validador/raices_tls.h`), así que el token nunca
+viaja sin cifrar ni se entrega a un servidor falso. Por eso el servidor debe
+usar Let's Encrypt (ya fijado en `servidor_api/Caddyfile`). La conexión se
+mantiene abierta entre sincronizaciones: la negociación TLS (1-3 s, durante los
+que no se cobra) solo se repite si se corta.
+
+**Servidor en la red local (pruebas).** `--servidor http://192.168.1.50:8000`
+o `http://nombre.local:8000` (el ordenador se busca por mDNS; no funciona entre
+las bandas de 2,4 y 5 GHz de algunos routers). Con `--wifi "Mi red"` se
+configuran a la vez la red, el servidor y el token.
+
+**Portal WiFi desde el celular.** Para cambiar de red sin ordenador, mantén
+pulsado el botón BOOT 3 segundos (o arranca sin redes guardadas). La pantalla
+muestra una red `Validador-105` y su contraseña; al conectarse, el celular abre
+solo la página para elegir la red (aunque tenga datos móviles). Guarda hasta 5
+redes y las prueba en orden. El portal no muestra ni cambia la clave maestra ni
+el token.
+
 ## 8. Datos en la microSD
 
 Archivos de texto, para poder revisarlos en un ordenador si hace falta:
 
 | Archivo | Contenido |
 |---|---|
-| `config.txt` | `validador=103`, `clave_maestra=<64 caracteres hex>` (y en la fase 4, WiFi, servidor y token) |
+| `config.txt` | `validador=103`, `clave_maestra=<64 caracteres hex>`, `servidor`, `token` y la red WiFi configurada con el puente |
+| `redes.txt` | Redes WiFi guardadas desde el portal (`nombre<TAB>contraseña`, una por línea) |
 | `eventos.txt` | Un JSON por línea: cada viaje, incidencia o fraude, en el formato que espera `/api/sync/` |
 | `estado.txt` | Siguiente n.º de evento y último subido al servidor |
 | `ultima_op.txt` | Última operación vista de cada tarjeta (detecta copias restauradas) |
-| `lista_negra.txt`, `tarifas.txt`, `recargas.txt` | Los escribirá la sincronización. Si no existen, se usan las tarifas por defecto (general S/ 1.30, estudiante S/ 0.80) y listas vacías |
+| `lista_negra.txt`, `tarifas.txt`, `recargas.txt` | Los escribe la sincronización. Si no existen, se usan las tarifas por defecto (general S/ 1.30, estudiante S/ 0.80) y listas vacías |
 
 Ejemplo de una línea de `eventos.txt` (valores de ejemplo):
 
@@ -287,7 +332,7 @@ Ejemplo de una línea de `eventos.txt` (valores de ejemplo):
 {"id":1,"tipo":"viaje","fecha":"2026-10-01T21:11:49+00:00","tarjeta_id":4,"uid":"04B3E121CA2A81","monto":80,"saldo_final":710,"operacion":9,"contador":31,"recarga_hasta":null,"detalle":null}
 ```
 
-**Cuidado:** `config.txt` contiene la clave maestra en texto plano. Quien tenga
+**Cuidado:** `config.txt` contiene la clave maestra y el token en texto plano. Quien tenga
 la microSD puede leerla. Para el proyecto es aceptable; en un sistema real la
 clave iría en un chip seguro (SAM) o en la memoria cifrada de la ESP32.
 
@@ -349,7 +394,9 @@ En `transporte/`:
 | `could not open port` o `Permission denied` | El puerto lo usa otro programa (solo uno a la vez: validador, puente, monitor serie o carga de firmware), o falta el grupo `dialout` en Linux. |
 | La carga del firmware falla en `Unable to verify flash chip connection` | Usa `upload_speed = 115200` (ya fijado) y otro cable USB de datos. |
 | "Error microSD" en la pantalla | Tarjeta no insertada, de más de 32 GB o no FAT32, o cableado de la microSD (prueba con el firmware `prueba`). |
-| Cobra pero el saldo de la cuenta no baja en el servidor | Es lo esperado hasta la fase 4: los viajes se quedan en `eventos.txt` de la microSD. |
+| Cobra pero el saldo de la cuenta no baja en el servidor | Los viajes suben al sincronizar (cada 30 s con WiFi). Mira el estado en la pantalla y la consola del puente. |
+| La pantalla dice "Sin WiFi" | La red no es de 2,4 GHz, la contraseña es incorrecta o no hay señal. Corrígela con el portal (botón BOOT 3 s). |
+| La pantalla dice "Sin servidor" | La consola del puente muestra el motivo: `HTTP 401` es un token que no es de ese servidor (vuelve a configurar con `--servidor`); un error `TLS` es un certificado que no es de Let's Encrypt; `connection refused` o un tiempo agotado, el servidor caído o una URL mal escrita. |
 
 ## 12. Estado y pendientes
 
@@ -360,17 +407,17 @@ Probado (1 de octubre de 2026):
 - Modo B con tarjetas reales: cobro aceptado en unos 470 ms y rechazos de
   tarjetas no emitidas en unos 130 ms.
 - Test del formato en la ESP32: el C++ coincide byte a byte con el Python.
+- Sincronización por WiFi con el servidor en la red local (HTTP) y portal WiFi
+  desde un celular con datos móviles activos.
 
 Pendiente:
 
 - **Probar el puente y la pantalla en Windows y macOS.** El código evita lo
   específico de Linux (el puerto se detecta solo y los errores del lector no
   dependen del idioma del sistema), pero solo se ha probado en Fedora 42.
-- **Fase 4, sincronización por WiFi:** subir `eventos.txt` a `/api/sync/` y
-  guardar la lista negra, las tarifas y las recargas que devuelve el servidor.
-  Requiere una red de 2,4 GHz sin aislamiento entre dispositivos (por ejemplo,
-  el punto de acceso de un móvil). Mientras tanto, la ESP32 no conoce los
-  bloqueos hechos solo en el servidor ni las recargas remotas.
+- **Probar en la placa la sincronización por HTTPS** con el servidor en
+  internet: compila y la cadena de certificados se verificó en el ordenador con
+  las mismas raíces, pero falta probarla en la ESP32.
 - **Lector PN532** conectado a la ESP32 (implementar `LectorPN532` sobre la
   interfaz `LectorNFC`), con lo que el ordenador deja de hacer falta en el bus y
   el cobro bajaría de los 470 ms actuales.
