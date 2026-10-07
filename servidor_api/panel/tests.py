@@ -33,6 +33,9 @@ class PanelTests(TestCase):
         self.client.force_login(self.operador)
         self.assertEqual(self.client.get(reverse("panel:inicio")).status_code, 200)
 
+    def test_raiz_lleva_al_panel(self):
+        self.assertRedirects(self.client.get("/"), reverse("panel:inicio"), target_status_code=302)
+
     def test_busqueda_exacta_por_dni_y_uid(self):
         self.client.force_login(self.operador)
         ruta = reverse("panel:cuentas")
