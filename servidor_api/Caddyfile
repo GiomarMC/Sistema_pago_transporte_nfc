@@ -1,0 +1,6 @@
+# Proxy con HTTPS automático (certificado de Let's Encrypt) para el servidor en
+# internet. Lo usa docker-compose.prod.yml; DOMINIO se define en .env.
+{$DOMINIO} {
+	encode gzip
+	reverse_proxy web:8000
+}

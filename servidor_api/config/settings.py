@@ -41,6 +41,15 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost").split(",")]
 
+# Despliegue con HTTPS detrás de Caddy (docker-compose.prod.yml): Caddy recibe
+# HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original.
+if os.environ.get("DJANGO_HTTPS", "0") == "1":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    # Formularios del panel (inicio de sesión...) enviados desde el dominio
+    CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in ALLOWED_HOSTS if h and h != "*"]
+
 
 # Application definition
 
