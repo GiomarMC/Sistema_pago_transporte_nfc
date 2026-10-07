@@ -1,0 +1,85 @@
+# CI/CD del servidor (servidor_api):
+#   - en cada pull request y push: tests de Django con PostgreSQL
+#   - en push a main, si los tests pasan: despliegue en la VM de Oracle Cloud
+#
+# Secretos del repositorio (Settings → Secrets and variables → Actions):
+#   VM_HOST         IP pública de la VM
+#   VM_SSH_KEY      clave privada de despliegue (en la VM solo puede ejecutar desplegar.sh)
+#   VM_KNOWN_HOSTS  huella SSH de la VM (ssh-keyscan), para no conectarse a un impostor
+name: Servidor
+
+on:
+  push:
+    branches: [main]
+    paths: ["servidor_api/**", ".github/workflows/servidor.yml"]
+  pull_request:
+    paths: ["servidor_api/**", ".github/workflows/servidor.yml"]
+  workflow_dispatch:  # botón "Run workflow" para desplegar a mano
+
+env:
+  URL_PUBLICA: https://subepe.duckdns.org
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: transporte
+          POSTGRES_USER: transporte
+          POSTGRES_PASSWORD: solo-para-tests
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U transporte" --health-interval 5s
+          --health-timeout 5s --health-retries 20
+    defaults:
+      run:
+        working-directory: servidor_api
+    env:
+      DJANGO_SECRET_KEY: solo-para-tests
+      POSTGRES_HOST: localhost
+      POSTGRES_PASSWORD: solo-para-tests
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: servidor_api/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test
+
+  desplegar:
+    needs: tests
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: despliegue
+      cancel-in-progress: false
+    environment:
+      name: produccion
+      url: ${{ env.URL_PUBLICA }}
+    steps:
+      - name: Desplegar en la VM
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/despliegue && chmod 600 ~/.ssh/despliegue
+          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # En la VM esta clave solo ejecuta servidor_api/desplegar.sh
+          ssh -i ~/.ssh/despliegue -o BatchMode=yes -o StrictHostKeyChecking=yes "ubuntu@$VM_HOST"
+
+      - name: Comprobar el servidor público
+        run: |
+          for i in $(seq 1 10); do
+            codigo=$(curl -s -o /dev/null -w "%{http_code}" "$URL_PUBLICA/panel/ingresar/" || true)
+            echo "intento $i: HTTP $codigo"
+            [ "$codigo" = "200" ] && exit 0
+            sleep 5
+          done
+          exit 1
