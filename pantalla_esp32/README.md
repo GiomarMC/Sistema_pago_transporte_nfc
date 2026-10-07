@@ -285,12 +285,12 @@ Necesita tres datos en `config.txt`:
 | `token` (del validador en ese servidor) | Lo pone el puente, sacándolo de `transporte/api.json` |
 
 **Servidor en internet (HTTPS).** Con `api.json` apuntando al servidor
-desplegado (`https://subepe.duckdns.org`), desde el ordenador con la clave
+desplegado (`https://subepe.app`), desde el ordenador con la clave
 maestra:
 
 ```bash
 cd transporte
-python3 puente_nfc.py --configurar --validador 105 --servidor https://subepe.duckdns.org
+python3 puente_nfc.py --configurar --validador 105 --servidor https://subepe.app
 ```
 
 Así cambian solo el servidor y el token; las redes WiFi guardadas se conservan.

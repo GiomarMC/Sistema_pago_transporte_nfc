@@ -173,7 +173,7 @@ def main():
                                   "el servidor (el token sale de api.json)")
     p.add_argument("--wifi-clave", help="contraseña del WiFi (si no se indica, se pide)")
     p.add_argument("--servidor", help="URL del servidor vista desde la ESP32, p. ej. "
-                                      "https://subepe.duckdns.org (por defecto, la de api.json). "
+                                      "https://subepe.app (por defecto, la de api.json). "
                                       "Sin --wifi, cambia solo servidor y token")
     p.add_argument("--detalle", action="store_true", help="mostrar cada comando")
     p.add_argument("--simular", action="store_true",

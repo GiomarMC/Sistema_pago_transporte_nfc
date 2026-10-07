@@ -17,7 +17,7 @@ on:
   workflow_dispatch:  # botón "Run workflow" para desplegar a mano
 
 env:
-  URL_PUBLICA: https://subepe.duckdns.org
+  URL_PUBLICA: https://subepe.app
 
 jobs:
   tests:
