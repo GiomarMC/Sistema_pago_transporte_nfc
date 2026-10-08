@@ -1,0 +1,61 @@
+# Copia de seguridad diaria de la base de datos del servidor en internet.
+#
+# GitHub entra a la VM con la clave de despliegue (solo puede desplegar o
+# "respaldar"), recibe un pg_dump, comprueba que se puede leer, lo cifra con
+# RESPALDO_CLAVE y lo guarda 30 días como artifact de esta ejecución. El
+# repositorio es público: la copia nunca se sube sin cifrar.
+#
+# Secretos: VM_HOST, VM_SSH_KEY, VM_KNOWN_HOSTS (los del despliegue) y
+#           RESPALDO_CLAVE (contraseña de cifrado; guárdala también fuera de GitHub)
+# Restaurar: ver "Copias de seguridad" en el README.
+name: Respaldo
+
+on:
+  schedule:
+    - cron: "0 8 * * *"  # todos los días a las 03:00 de Perú
+  workflow_dispatch:     # botón "Run workflow" para sacar una copia ahora
+
+jobs:
+  respaldo:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: despliegue  # no coincide con un despliegue en curso
+      cancel-in-progress: false
+    steps:
+      - name: Copia de la base de datos
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/despliegue && chmod 600 ~/.ssh/despliegue
+          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/despliegue -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "ubuntu@$VM_HOST" respaldar > respaldo.dump
+          ls -l respaldo.dump
+
+      - name: Comprobar que la copia se puede restaurar
+        run: |
+          # Con el pg_restore de la misma versión que el servidor (PostgreSQL 17)
+          docker run --rm -i postgres:17-alpine pg_restore --list < respaldo.dump > contenido.txt
+          echo "Tablas en la copia: $(grep -c ' TABLE DATA ' contenido.txt)"
+          grep -q ' TABLE DATA public transporte_cuenta ' contenido.txt
+
+      - name: Cifrar
+        env:
+          RESPALDO_CLAVE: ${{ secrets.RESPALDO_CLAVE }}
+        run: |
+          [ -n "$RESPALDO_CLAVE" ] || { echo "Falta el secreto RESPALDO_CLAVE"; exit 1; }
+          nombre="respaldo-$(date -u +%Y%m%d-%H%M).dump.gpg"
+          printf '%s' "$RESPALDO_CLAVE" | gpg --batch --yes --pinentry-mode loopback \
+            --passphrase-fd 0 --symmetric --cipher-algo AES256 -o "$nombre" respaldo.dump
+          shred -u respaldo.dump
+          echo "NOMBRE=$nombre" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NOMBRE }}
+          path: ${{ env.NOMBRE }}
+          retention-days: 30
+          if-no-files-found: error

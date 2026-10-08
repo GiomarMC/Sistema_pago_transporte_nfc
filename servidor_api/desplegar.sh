@@ -6,11 +6,19 @@
 #   command="bash ~/Sistema_pago_transporte_nfc/servidor_api/desplegar.sh",restrict ssh-ed25519 ...
 # También se puede lanzar a mano en la VM. El .env no se toca (no está en git).
 #
+# Con esa misma clave, el comando "respaldar" no despliega: devuelve una copia de
+# la base de datos (respaldar.sh), para .github/workflows/respaldo.yml.
+#
 # Todo va dentro de main(): bash lee el archivo mientras lo ejecuta, y el
 # "git reset" de abajo puede cambiar este mismo script.
 main() {
   set -euo pipefail
   cd "$(dirname "$0")"
+  case "${SSH_ORIGINAL_COMMAND:-}" in
+    "") ;;  # sin comando: desplegar
+    respaldar) exec bash respaldar.sh ;;
+    *) echo "Comando no permitido: $SSH_ORIGINAL_COMMAND" >&2; return 1 ;;
+  esac
   local compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
   echo "== Código"

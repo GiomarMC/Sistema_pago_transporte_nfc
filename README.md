@@ -485,12 +485,53 @@ dos formas:
   muestra el resultado en la pantalla (`validador.py --pantalla auto`).
 - **Modo B:** el validador corre en la ESP32 y el ordenador solo le presta el
   ACR122U (`puente_nfc.py`). Sirve cualquier ordenador con Linux, Windows o
-  macOS como puente. La sincronización por WiFi con el servidor está pendiente.
+  macOS como puente. La ESP32 sincroniza sola con el servidor por WiFi (también
+  por HTTPS con el servidor en internet, sección 7.8).
 
 En los dos casos el servidor no cambia: el dispositivo sustituye al validador
 del ordenador, no al servidor. Las conexiones, la carga de los programas y las
 pruebas de cada componente están en esa guía y en
 `docs/informe-conexiones-validador-esp32.pdf`.
+
+### 7.8 Servidor en internet
+
+Para las pruebas del ecosistema, el servidor está en una VM de Oracle Cloud
+(capa gratuita) en **https://subepe.app** (también `https://subepe.duckdns.org`).
+Corre el mismo `docker-compose.yml` más `docker-compose.prod.yml`, que añade
+**Caddy** con certificado HTTPS automático de Let's Encrypt.
+
+**Despliegue automático.** Cada push a `main` que toque `servidor_api/` pasa los
+tests en GitHub Actions y, si pasan, se despliega solo
+(`.github/workflows/servidor.yml`). GitHub entra a la VM con una clave que solo
+puede ejecutar `servidor_api/desplegar.sh`. Los cambios de los compañeros llegan
+a la VM sin acceso a ella: basta con juntarlos en `main`.
+
+**Acceso al panel.** En https://subepe.app/panel/ → «Solicitar acceso». Un
+superusuario aprueba la cuenta en la sección Usuarios del panel.
+
+**Configuración de la VM** (`servidor_api/.env`, no está en git): como
+`.env.example`, más `DOMINIO=subepe.app, subepe.duckdns.org`,
+`DJANGO_ALLOWED_HOSTS=subepe.app,subepe.duckdns.org` y `DJANGO_HTTPS=1`.
+
+**Copias de seguridad.** Cada noche (03:00 de Perú), `.github/workflows/respaldo.yml`
+saca una copia de la base de datos, comprueba que se puede leer, la **cifra** y
+la guarda 30 días en la pestaña Actions del repositorio (ejecución «Respaldo» →
+*Artifacts*). Para sacar una copia en el momento: Actions → Respaldo → *Run
+workflow*. Para restaurar una:
+
+```bash
+# 1. Descifrar (pide la contraseña RESPALDO_CLAVE; la tiene quien administra el servidor)
+gpg --decrypt respaldo-AAAAMMDD-HHMM.dump.gpg > respaldo.dump
+# 2. Llevarla a la VM y cargarla (reemplaza los datos actuales)
+scp respaldo.dump ubuntu@<IP de la VM>:
+ssh ubuntu@<IP de la VM> 'cd Sistema_pago_transporte_nfc/servidor_api && bash restaurar.sh ~/respaldo.dump'
+```
+
+Secretos del repositorio (Settings → Secrets and variables → Actions):
+`VM_HOST`, `VM_SSH_KEY`, `VM_KNOWN_HOSTS` (despliegue y copias) y
+`RESPALDO_CLAVE` (cifrado de las copias; sin ella no se pueden recuperar, así
+que también hay que guardarla fuera de GitHub). Al cambiar de VM se actualizan
+`VM_HOST` y `VM_KNOWN_HOSTS`, y el registro DNS de los dominios.
 
 ## 8. Uso
 
