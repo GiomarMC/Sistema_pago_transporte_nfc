@@ -4,11 +4,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 
 from . import servicios
-from .models import Cuenta, Recarga, Tarjeta
+from .models import Cuenta, EstadoSync, Recarga, Tarjeta
 from .permisos import EsOperador, EsValidador
 from .serializers import (BloqueoSerializer, ConfirmarEmisionSerializer, CuentaSalida,
                           EmisionSerializer, EntregaSerializer, EventoSerializer,
                           MovimientoSalida, RecargaSalida, RecargaSerializer, SyncSerializer,
+                          SyncV2Serializer,
                           TarjetaSalida)
 
 
@@ -25,16 +26,45 @@ def sync(request):
     El número de validador sale del token, no del cuerpo de la petición."""
     entrada = SyncSerializer(data=request.data)
     entrada.is_valid(raise_exception=True)
-    eventos = []
-    for ev in entrada.validated_data["eventos"]:
+    return Response(servicios.sincronizar(request.user.validador,
+                                         _validar_eventos(entrada.validated_data["eventos"])))
+
+
+def _validar_eventos(eventos):
+    validos = []
+    for ev in eventos:
         s = EventoSerializer(data=ev)
         if s.is_valid():
             datos = dict(s.validated_data)
             datos["fecha"] = datos["fecha"].isoformat()
-            eventos.append(datos)
+            validos.append(datos)
         else:  # se procesa igual para dejar alerta y confirmarlo
-            eventos.append({**ev, "tipo": "invalido"})
-    return Response(servicios.sincronizar(request.user.validador, eventos))
+            validos.append({**ev, "tipo": "invalido"})
+    return validos
+
+
+@api_view(["POST"])
+@permission_classes([EsValidador])
+def sync_v2(request):
+    """Sube hasta 40 eventos y devuelve una página de cambios con cursor."""
+    try:
+        longitud = int(request.META.get("CONTENT_LENGTH") or 0)
+    except ValueError:
+        return Response({"error": "Content-Length inválido"}, status=400)
+    if longitud > 65536 or len(request.body) > 65536:
+        return Response({"error": "petición mayor de 64 KiB"}, status=413)
+    entrada = SyncV2Serializer(data=request.data)
+    entrada.is_valid(raise_exception=True)
+    datos = entrada.validated_data
+    cursor = datos["cursor"]
+    hasta_version = datos.get("hasta_version")
+    ultima_version = EstadoSync.objects.get(pk=1).ultima_version
+    if cursor > ultima_version or (hasta_version is not None and hasta_version > ultima_version):
+        return Response({"error": "cursor o hasta_version futuro"}, status=400)
+    return Response(servicios.sincronizar_v2(
+        request.user.validador, _validar_eventos(datos["eventos"]), cursor,
+        hasta_version, datos["limite"],
+    ))
 
 
 # --- Emisión -----------------------------------------------------------------

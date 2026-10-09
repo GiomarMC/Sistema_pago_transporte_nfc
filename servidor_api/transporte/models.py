@@ -7,7 +7,7 @@ Todos los montos están en céntimos de sol.
 """
 
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
 
 
 def soles(centimos):
@@ -28,6 +28,11 @@ class Tarifa(models.Model):
 
     def __str__(self):
         return f"{self.nombre} ({soles(self.precio)})"
+
+    def save(self, *args, **kwargs):
+        # La señal que publica el cambio debe confirmar junto con el precio.
+        with transaction.atomic():
+            return super().save(*args, **kwargs)
 
 
 class Cuenta(models.Model):
@@ -145,3 +150,19 @@ class Validador(models.Model):
 
     def __str__(self):
         return f"Validador {self.numero} {self.descripcion}".strip()
+
+
+class EstadoSync(models.Model):
+    """Fila única que serializa las versiones de los cambios para validadores."""
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=1)
+    ultima_version = models.BigIntegerField(default=0)
+
+
+class CambioSync(models.Model):
+    """Registro inmutable: permite descargar cambios sin repetir listas enteras."""
+
+    version = models.BigIntegerField(primary_key=True)
+    tipo = models.CharField(max_length=10)       # tarjeta | recarga | tarifa
+    accion = models.CharField(max_length=10)     # poner | quitar
+    datos = models.JSONField()

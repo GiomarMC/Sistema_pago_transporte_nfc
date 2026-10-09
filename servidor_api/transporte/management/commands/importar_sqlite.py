@@ -7,6 +7,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connection, transaction
 
 from transporte.models import Alerta, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta
+from transporte.sync_cambios import registrar_recarga, registrar_tarjeta
 
 
 def _fecha(texto):
@@ -39,17 +40,21 @@ class Command(BaseCommand):
             # Última recarga de la cuenta que ya existía cuando se emitió la tarjeta
             previas = [r["seq"] for r in recargas
                        if r["cuenta_id"] == t["cuenta_id"] and _fecha(r["creada"]) <= emitida]
-            Tarjeta.objects.create(id=t["id"], uid=t["uid"], cuenta_id=t["cuenta_id"],
-                                   estado=t["estado"], bloqueada_en=_fecha(t["bloqueada_en"]),
-                                   recarga_inicial=max(previas, default=0))
+            tarjeta = Tarjeta.objects.create(id=t["id"], uid=t["uid"], cuenta_id=t["cuenta_id"],
+                                             estado=t["estado"], bloqueada_en=_fecha(t["bloqueada_en"]),
+                                             recarga_inicial=max(previas, default=0))
             Tarjeta.objects.filter(id=t["id"]).update(emitida=emitida)
+            if tarjeta.estado in (Tarjeta.Estado.BLOQUEADA, Tarjeta.Estado.ANULADA):
+                registrar_tarjeta(tarjeta.id)
 
         for r in recargas:
-            Recarga.objects.create(id=r["id"], cuenta_id=r["cuenta_id"], seq=r["seq"],
-                                   monto=r["monto"], origen=r["origen"],
-                                   aplicada_en=_fecha(r["aplicada_en"]),
-                                   aplicada_por=r["aplicada_por"], tarjeta_id=r["tarjeta_id"])
+            recarga = Recarga.objects.create(id=r["id"], cuenta_id=r["cuenta_id"], seq=r["seq"],
+                                             monto=r["monto"], origen=r["origen"],
+                                             aplicada_en=_fecha(r["aplicada_en"]),
+                                             aplicada_por=r["aplicada_por"], tarjeta_id=r["tarjeta_id"])
             Recarga.objects.filter(id=r["id"]).update(creada=_fecha(r["creada"]))
+            if recarga.aplicada_en is None:
+                registrar_recarga(recarga, pendiente=True)
 
         for m in bd.execute("SELECT * FROM movimientos"):
             Movimiento.objects.create(

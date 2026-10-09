@@ -7,6 +7,9 @@ tenga conexión a internet. Un servidor central guarda las cuentas, recibe los
 viajes cuando los buses se conectan, gestiona las recargas (en ventanilla o
 remotas, tipo Yape) y detecta tarjetas robadas, clonadas o manipuladas.
 
+Para repartir el trabajo de escalabilidad entre cinco o seis personas, ver el
+[plan de tareas y criterios de entrega](docs/plan-escalabilidad.md).
+
 Contenido:
 
 1. [Qué hace el sistema](#1-qué-hace-el-sistema)
@@ -607,6 +610,7 @@ Todas las rutas empiezan por `/api/` y requieren la cabecera
 | Método y ruta | Quién | Para qué |
 |---|---|---|
 | `POST /api/sync/` | Validador | Sube eventos; recibe lista negra, recargas pendientes y tarifas |
+| `POST /api/sync/v2/` | Validador | Sube hasta 40 eventos y descarga cambios por cursor, en páginas de hasta 100 |
 | `POST /api/emisiones/` | Operador | Reserva un n.º de tarjeta (y crea la cuenta si es nueva) |
 | `POST /api/emisiones/{id}/confirmar/` | Operador | Activa la tarjeta tras grabarla |
 | `POST /api/emisiones/{id}/cancelar/` | Operador | Libera la reserva si la grabación falló |
@@ -644,6 +648,10 @@ Respuesta:
 
 Tipos de evento: `viaje`, `incidencia` (se registra como alerta) y `fraude` (se
 registra y bloquea la tarjeta).
+
+El [contrato de sincronización v2](docs/contrato-sync-v2.md) explica los
+cursores, las páginas, el arranque inicial y la transición desde v1. La ESP32
+y el validador Python aún usan v1 hasta que se adapten en T2.
 
 Comandos de gestión (con Docker, anteponer `docker compose exec web`):
 

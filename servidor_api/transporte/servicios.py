@@ -11,7 +11,8 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
-from .models import Alerta, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, soles
+from .models import Alerta, Cuenta, EstadoSync, Movimiento, Recarga, Tarifa, Tarjeta, soles
+from .sync_cambios import pagina, registrar_recarga, registrar_tarjeta
 
 VALIDADOR_EMISOR = 0
 PUNTO_RECARGA = 900
@@ -44,11 +45,13 @@ def alertar(tarjeta, tipo, detalle=""):
     Alerta.objects.create(tarjeta=tarjeta, tipo=tipo, detalle=detalle)
 
 
+@transaction.atomic
 def bloquear(tarjeta, motivo, tipo="bloqueo automático"):
     if tarjeta.estado == Tarjeta.Estado.ACTIVA:
         tarjeta.estado = Tarjeta.Estado.BLOQUEADA
         tarjeta.bloqueada_en = timezone.now()
         tarjeta.save(update_fields=["estado", "bloqueada_en"])
+        registrar_tarjeta(tarjeta.id)
     alertar(tarjeta, tipo, motivo)
 
 
@@ -63,6 +66,7 @@ def crear_recarga(id_cuenta, monto, origen) -> Recarga:
     cuenta = _cuenta_bloqueada(id_cuenta)
     seq = (cuenta.recargas.aggregate(m=Max("seq"))["m"] or 0) + 1
     recarga = Recarga.objects.create(cuenta=cuenta, seq=seq, monto=monto, origen=origen)
+    registrar_recarga(recarga, pendiente=True)
     registrar_movimiento(cuenta, None, "recarga", monto, ref=f"R{recarga.id}")
     return recarga
 
@@ -78,15 +82,22 @@ def recargas_para_tarjeta(id_cuenta, ultima_en_tarjeta):
     return total, hasta
 
 
+@transaction.atomic
 def entregar_recargas(tarjeta, hasta_seq, por, fecha=None):
     """Marca como entregadas las recargas hasta hasta_seq, solo si la tarjeta es
     la activa de la cuenta (si un bus desactualizado las grabó en una tarjeta ya
     bloqueada, siguen pendientes para la tarjeta nueva)."""
     if tarjeta.estado != Tarjeta.Estado.ACTIVA:
         return 0
-    return Recarga.objects.filter(cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq,
-                                  aplicada_en__isnull=True).update(
+    pendientes = list(Recarga.objects.select_for_update().filter(
+        cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq, aplicada_en__isnull=True))
+    if not pendientes:
+        return 0
+    Recarga.objects.filter(pk__in=[r.pk for r in pendientes]).update(
         aplicada_en=fecha or timezone.now(), aplicada_por=por, tarjeta=tarjeta)
+    for recarga in pendientes:
+        registrar_recarga(recarga, pendiente=False)
+    return len(pendientes)
 
 
 @transaction.atomic
@@ -130,9 +141,14 @@ def confirmar_emision(id_tarjeta, contador=None):
     cuenta = _cuenta_bloqueada(tarjeta.cuenta_id)
     ahora = timezone.now()
 
-    Tarjeta.objects.filter(uid=tarjeta.uid, estado__in=[Tarjeta.Estado.ACTIVA,
-                                                        Tarjeta.Estado.PENDIENTE]) \
-        .exclude(pk=tarjeta.pk).update(estado=Tarjeta.Estado.ANULADA, bloqueada_en=ahora)
+    anteriores = list(Tarjeta.objects.select_for_update().filter(
+        uid=tarjeta.uid, estado__in=[Tarjeta.Estado.ACTIVA, Tarjeta.Estado.PENDIENTE])
+        .exclude(pk=tarjeta.pk).values_list("pk", flat=True))
+    if anteriores:
+        Tarjeta.objects.filter(pk__in=anteriores).update(
+            estado=Tarjeta.Estado.ANULADA, bloqueada_en=ahora)
+        for id_anterior in anteriores:
+            registrar_tarjeta(id_anterior)
     reemplazadas = list(cuenta.tarjetas.filter(estado=Tarjeta.Estado.ACTIVA).exclude(pk=tarjeta.pk))
     for t in reemplazadas:
         bloquear(t, f"reemplazada por la tarjeta {tarjeta.id}", tipo="reemplazo")
@@ -162,9 +178,15 @@ def cancelar_emision(id_tarjeta):
 @transaction.atomic
 def anular_por_uid(uid):
     """Tarjeta física restablecida a fábrica: sus emisiones dejan de ser válidas."""
-    return Tarjeta.objects.filter(uid=uid, estado__in=[Tarjeta.Estado.ACTIVA,
-                                                       Tarjeta.Estado.PENDIENTE]) \
-        .update(estado=Tarjeta.Estado.ANULADA, bloqueada_en=timezone.now())
+    ids = list(Tarjeta.objects.select_for_update().filter(
+        uid=uid, estado__in=[Tarjeta.Estado.ACTIVA, Tarjeta.Estado.PENDIENTE])
+        .values_list("pk", flat=True))
+    if ids:
+        Tarjeta.objects.filter(pk__in=ids).update(
+            estado=Tarjeta.Estado.ANULADA, bloqueada_en=timezone.now())
+        for tarjeta_id in ids:
+            registrar_tarjeta(tarjeta_id)
+    return len(ids)
 
 
 # --- Sincronización con validadores -------------------------------------------
@@ -172,6 +194,23 @@ def anular_por_uid(uid):
 def sincronizar(validador, eventos):
     """Aplica los eventos del validador y devuelve lo que necesita para operar
     sin conexión. Idempotente: los eventos ya recibidos se ignoran."""
+    aceptados = procesar_lote(validador, eventos)
+
+    return {
+        "validador": validador.numero,
+        "aceptados": aceptados,
+        "lista_negra": list(Tarjeta.objects.filter(
+            estado__in=[Tarjeta.Estado.BLOQUEADA, Tarjeta.Estado.ANULADA])
+            .order_by("id").values_list("id", flat=True)),
+        "recargas": list(Recarga.objects.filter(aplicada_en__isnull=True)
+                         .order_by("cuenta_id", "seq").values("cuenta_id", "seq", "monto")),
+        "tarifas": {str(t.codigo): [t.nombre, t.precio] for t in Tarifa.objects.all()},
+        "hora_servidor": timezone.now().isoformat(timespec="seconds"),
+    }
+
+
+def procesar_lote(validador, eventos):
+    """Procesamiento compartido por v1 y v2; conserva referencias idempotentes."""
     aceptados = []
     for ev in eventos:
         try:
@@ -184,15 +223,23 @@ def sincronizar(validador, eventos):
 
     validador.ultima_sync = timezone.now()
     validador.save(update_fields=["ultima_sync"])
+    return aceptados
+
+
+def sincronizar_v2(validador, eventos, cursor, hasta_version, limite):
+    """Confirma eventos y entrega una página acotada de un corte estable."""
+    aceptados = procesar_lote(validador, eventos)
+    if hasta_version is None:
+        hasta_version = EstadoSync.objects.get(pk=1).ultima_version
+    cambios, siguiente, hay_mas = pagina(cursor, hasta_version, limite)
     return {
+        "version": 2,
         "validador": validador.numero,
         "aceptados": aceptados,
-        "lista_negra": list(Tarjeta.objects.filter(
-            estado__in=[Tarjeta.Estado.BLOQUEADA, Tarjeta.Estado.ANULADA])
-            .order_by("id").values_list("id", flat=True)),
-        "recargas": list(Recarga.objects.filter(aplicada_en__isnull=True)
-                         .order_by("cuenta_id", "seq").values("cuenta_id", "seq", "monto")),
-        "tarifas": {str(t.codigo): [t.nombre, t.precio] for t in Tarifa.objects.all()},
+        "cambios": cambios,
+        "siguiente_cursor": siguiente,
+        "hasta_version": hasta_version,
+        "hay_mas": hay_mas,
         "hora_servidor": timezone.now().isoformat(timespec="seconds"),
     }
 

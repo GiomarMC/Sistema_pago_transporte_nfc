@@ -4,6 +4,7 @@ from . import views
 
 urlpatterns = [
     path("sync/", views.sync),
+    path("sync/v2/", views.sync_v2),
     path("emisiones/", views.emision_reservar),
     path("emisiones/<int:id_tarjeta>/confirmar/", views.emision_confirmar),
     path("emisiones/<int:id_tarjeta>/cancelar/", views.emision_cancelar),

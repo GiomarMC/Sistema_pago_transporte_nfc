@@ -23,6 +23,20 @@ class SyncSerializer(serializers.Serializer):
     eventos = serializers.ListField(child=serializers.DictField(), allow_empty=True)
 
 
+class SyncV2Serializer(serializers.Serializer):
+    cursor = serializers.IntegerField(min_value=0, default=0, max_value=9223372036854775807)
+    hasta_version = serializers.IntegerField(min_value=0, required=False,
+                                              max_value=9223372036854775807)
+    limite = serializers.IntegerField(min_value=1, max_value=100, default=50)
+    eventos = serializers.ListField(child=serializers.DictField(), allow_empty=True,
+                                     max_length=40, default=list)
+
+    def validate(self, datos):
+        if "hasta_version" in datos and datos["hasta_version"] < datos["cursor"]:
+            raise serializers.ValidationError("hasta_version no puede ser menor que cursor")
+        return datos
+
+
 class EmisionSerializer(serializers.Serializer):
     uid = serializers.RegexField(r"^[0-9A-F]{8,20}$")
     cuenta = serializers.IntegerField(required=False)
