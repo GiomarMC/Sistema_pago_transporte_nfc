@@ -1,10 +1,14 @@
 # Plan de trabajo: validadores y servidor a mayor escala
 
-Este documento reparte el siguiente avance entre **seis personas**. Cada tarea
-puede convertirse en un issue y un pull request (PR). Si el equipo es de cinco,
-las tareas T1–T5 son la primera ronda y T6 se hace en la siguiente. **No se ha
-demostrado todavía que el sistema soporte decenas de miles de pasajeros**:
+Este documento detalla T1–T6 para un equipo de **cinco o seis personas**. Cada
+tarea puede convertirse en un issue y un pull request (PR). Como T1 ya está
+implementada en una rama, cinco personas pueden tomar T2–T6 en paralelo.
+**No se ha demostrado todavía que el sistema soporte decenas de miles de pasajeros**:
 primero hay que corregir el intercambio de datos y medirlo.
+
+El [backlog completo](tareas-completas.md) incluye las tareas posteriores.
+T1 ya está implementada en la rama `tarea/T1-sync-api`; faltan revisión,
+pruebas de CI con PostgreSQL e integración en `main`.
 
 ## Escenario común para las pruebas
 
@@ -41,7 +45,7 @@ primero hay que corregir el intercambio de datos y medirlo.
 
 | Tarea | Responsable | Trabajo principal | Dependencia |
 |---|---|---|---|
-| [T1](#t1--sincronización-incremental-en-la-api) | Por asignar | API y contrato de sincronización | Acordar contrato con T2 |
+| [T1](#t1--sincronización-incremental-en-la-api) | Implementada en rama | API y contrato de sincronización | Revisar PR e integrar |
 | [T2](#t2--firmware-esp32-y-almacenamiento-local) | Por asignar | ESP32 y microSD | Contrato de T1 para integración |
 | [T3](#t3--pruebas-de-carga-y-base-de-datos) | Por asignar | Generador, mediciones y consultas | Repetir tras integrar T1 |
 | [T4](#t4--panel-de-operaciones-con-muchos-registros) | Por asignar | Búsqueda y vistas operativas | Datos de T3 para medir |

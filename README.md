@@ -7,8 +7,9 @@ tenga conexión a internet. Un servidor central guarda las cuentas, recibe los
 viajes cuando los buses se conectan, gestiona las recargas (en ventanilla o
 remotas, tipo Yape) y detecta tarjetas robadas, clonadas o manipuladas.
 
-Para repartir el trabajo de escalabilidad entre cinco o seis personas, ver el
-[plan de tareas y criterios de entrega](docs/plan-escalabilidad.md).
+Para repartir el trabajo entre cinco o seis personas, ver el
+[backlog completo con prioridades y criterios de entrega](docs/tareas-completas.md).
+El [plan de escalabilidad](docs/plan-escalabilidad.md) detalla T1–T6.
 
 Contenido:
 
