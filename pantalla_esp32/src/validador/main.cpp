@@ -6,9 +6,12 @@
  * la microSD y muestra el resultado en la pantalla. Es la misma lógica que
  * transporte/validador.py.
  *
- * Por ahora el lector ACR122U sigue en el ordenador: transporte/puente_nfc.py solo
- * reenvía los comandos (LectorPuente). Con un PN532 conectado a la ESP32 bastará
- * con cambiar LectorPuente por un LectorPN532; el resto no cambia.
+ * El lector es un PN532 conectado a la ESP32 (LectorPN532): no necesita el
+ * ordenador. La hora la da el servidor en cada sincronización por WiFi.
+ *
+ * El ordenador solo hace falta para configurar el validador. Con puente_nfc.py
+ * abierto, la ESP32 recibe la configuración y la hora por el cable USB
+ * (LectorPuente, que ya no se usa como lector).
  *
  * Cargar:  pio run -e validador -t upload
  * Primera vez (configura número de validador y clave maestra en la microSD):
@@ -20,6 +23,7 @@
 
 #include <Arduino.h>
 #include <Formato.h>
+#include <LectorPN532.h>
 #include <LectorPuente.h>
 #include <PantallaUI.h>
 #include <string.h>
@@ -31,14 +35,15 @@
 namespace {
 
 constexpr uint32_t MARGEN_DOBLE_TOQUE = 60;            // s: otro toque aquí no se cobra
-constexpr uint32_t RESINCRONIZAR_HORA = 10 * 60000UL;  // ms
 constexpr uint8_t PIN_BOOT = 0;                        // botón BOOT de la placa
 constexpr uint32_t PULSACION_PORTAL = 3000;            // ms pulsado para abrir el portal WiFi
 
-LectorPuente lector(Serial);
+// PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32
+LectorPN532 lector(Wire, 21, 22, 32);
+LectorPuente puente(Serial);  // ordenador opcional: configuración y hora
 Almacen almacen;
 
-uint32_t baseUnix = 0, baseMillis = 0, ultimaHora = 0;
+uint32_t baseUnix = 0, baseMillis = 0;
 uint32_t ahoraUnix() { return baseUnix ? baseUnix + (millis() - baseMillis) / 1000 : 0; }
 
 void log(const String &texto) {
@@ -49,7 +54,7 @@ void log(const String &texto) {
 Sincronizador sincronizador(almacen, log);
 PortalWifi portal(almacen, log);
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
-uint32_t botonDesde = 0, ultimoSaludo = 0;
+uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
 
 // true cuando BOOT lleva PULSACION_PORTAL ms pulsado
 bool botonMantenido() {
@@ -101,7 +106,7 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   const String uidHex = aHex(uid, lenUid);
   const uint32_t ahora = ahoraUnix();
   if (!almacen.listo()) return aviso("Error microSD", "No se puede cobrar");
-  if (!ahora) return aviso("Sin hora", "Reinicie el puente");
+  if (!ahora) return aviso("Sin hora", "Conecte el WiFi");
 
   uint8_t pwd[4], pack[2], packTarjeta[2];
   tt::contrasena(almacen.claveMaestra(), uid, lenUid, pwd, pack);
@@ -187,9 +192,11 @@ void pantallaEspera() {
   if (!almacen.listo()) {
     ui::espera("Error microSD", "Revise la tarjeta SD");
   } else if (!lector.conectado()) {
-    ui::espera("Sin lector", "Inicie puente_nfc.py");
+    ui::espera("Sin lector", "Revise el PN532");
   } else if (!almacen.configurado()) {
     ui::espera("Sin configurar", "puente --configurar");
+  } else if (!ahoraUnix()) {
+    ui::espera("Bus " + String(almacen.validador()) + "  Sin hora", "Esperando el WiFi");
   } else {
     const String &wifi = sincronizador.estado();
     ui::espera("Bus " + String(almacen.validador()) + (wifi.length() ? "  " + wifi : ""),
@@ -197,26 +204,45 @@ void pantallaEspera() {
   }
 }
 
-void sincronizarHora() {
-  uint32_t h = lector.horaUnix();
-  if (h) {
-    baseUnix = h;
-    baseMillis = millis();
-    ultimaHora = millis();
-  }
+void guardarConfig(const String &config) {
+  log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
+                                    : "ERROR: no se pudo guardar la configuración");
 }
 
-bool conectarPuente() {
+// El ordenador es opcional: con puente_nfc.py abierto envía la configuración
+// (--configurar) y la hora. Se le saluda mientras falte alguna de las dos o
+// mientras conteste; cada saludo sin respuesta espera 1,5 s.
+void atenderPuente() {
+  const bool falta = !almacen.configurado() || !ahoraUnix();
+  if (!falta && !puente.conectado()) return;
+  if (millis() - ultimoSaludo < (puente.conectado() ? 3000 : 10000)) return;
+  ultimoSaludo = millis();
+  const bool estaba = puente.conectado();
   String config;
-  if (!lector.saludar(config)) return false;
-  if (config.length()) {
-    log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
-                                      : "ERROR: no se pudo guardar la configuración");
+  if (!puente.saludar(config)) {
+    if (estaba) log("Ordenador desconectado");
+    return;
   }
-  sincronizarHora();
-  log("Validador " + String(almacen.validador()) + " listo. Eventos sin subir: " +
-      String(almacen.pendientes()));
-  return true;
+  if (config.length()) guardarConfig(config);
+  if (!sincronizador.horaServidor()) {  // la del servidor tiene preferencia
+    const uint32_t h = puente.horaUnix();
+    if (h) {
+      baseUnix = h;
+      baseMillis = millis();
+    }
+  }
+  if (!estaba) log("Ordenador conectado. Validador " + String(almacen.validador()) + ", eventos sin subir: " +
+                   String(almacen.pendientes()));
+  pantallaEspera();
+}
+
+void iniciarLector() {
+  if (lector.iniciar()) {
+    log("Lector " + lector.version() + " listo");
+  } else {
+    log("ERROR: el PN532 no responde. Revise los cables y el interruptor (I2C: 1 en ON, 2 en OFF)");
+  }
+  ultimoIntentoLector = millis();
 }
 
 }  // namespace
@@ -227,6 +253,7 @@ void setup() {
   ui::espera("Validador", "Iniciando...");
   pinMode(PIN_BOOT, INPUT_PULLUP);
   almacen.iniciar();
+  iniciarLector();
   pantallaEspera();
   // Sin ninguna red guardada, el portal se abre solo (se cierra a los 10 min sin uso)
   if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) portal.iniciar();
@@ -239,10 +266,10 @@ void loop() {
       botonDesde = 0;
       sincronizador.reiniciarWifi();
       pantallaEspera();
-    } else if (lector.conectado() && millis() - ultimoSaludo > 3000) {
+    } else if (puente.conectado() && millis() - ultimoSaludo > 3000) {
       // El puente reinicia la placa si deja de oírla: se le saluda de vez en cuando
       String config;
-      lector.saludar(config);
+      puente.saludar(config);
       ultimoSaludo = millis();
     }
     delay(2);
@@ -266,32 +293,28 @@ void loop() {
     pantallaEspera();
   }
 
+  atenderPuente();
+
   if (!lector.conectado()) {
-    if (!conectarPuente()) {
-      pantallaEspera();
-      delay(1000);
-      return;
-    }
-    pantallaEspera();
-  }
-  if (!almacen.listo() || !almacen.configurado()) {
-    // Sin microSD o sin configuración no se cobra, pero se sigue saludando al
-    // puente (así sabe que la placa está viva y puede enviar la configuración)
-    delay(2000);
-    String config;
-    if (lector.saludar(config) && config.length()) {
-      log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
-                                        : "ERROR: no se pudo guardar la configuración");
+    if (millis() - ultimoIntentoLector > 3000) {
+      iniciarLector();
       pantallaEspera();
     }
+    delay(10);
     return;
   }
-  if (millis() - ultimaHora > RESINCRONIZAR_HORA) sincronizarHora();
+  if (!almacen.listo() || !almacen.configurado()) {
+    delay(10);
+    return;
+  }
 
   uint8_t uid[10];
   size_t lenUid = 0;
   if (!lector.esperarTarjeta(300, uid, lenUid)) {
-    if (!lector.conectado()) pantallaEspera();
+    if (!lector.conectado()) {
+      log("ERROR: el PN532 dejó de responder");
+      pantallaEspera();
+    }
     return;
   }
 

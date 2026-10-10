@@ -3,9 +3,10 @@
 Puente entre el lector ACR122U (en este ordenador) y el validador que corre en la
 ESP32 (pantalla_esp32, entorno "validador").
 
-El puente no tiene lógica: no sabe de saldos, firmas ni tarifas. Solo reenvía a
-la tarjeta los comandos que pide la ESP32 y le devuelve las respuestas. Cuando la
-ESP32 tenga su propio lector (PN532), este programa deja de hacer falta.
+El puente no tiene lógica: no sabe de saldos, firmas ni tarifas. Desde que la
+ESP32 tiene su propio lector (PN532), solo hace falta para configurarla
+(--configurar) y para ver sus mensajes; también le da la hora si arranca sin
+WiFi. Sigue sabiendo reenviar comandos a la tarjeta del ACR122U (LectorPuente).
 
     python3 puente_nfc.py                                  # detecta el puerto de la ESP32
     python3 puente_nfc.py --puerto COM3                    # o se indica (Windows: COMx,
