@@ -1,7 +1,7 @@
 // Acceso a la tarjeta NTAG215, independiente del lector físico.
 //
-// Hoy: LectorPuente (el ACR122U está en el ordenador y puente_nfc.py reenvía los
-// comandos por USB). Después: un LectorPN532 conectado directamente a la ESP32.
+// LectorPN532: PN532 conectado directamente a la ESP32 (el que usa el validador).
+// LectorPuente: el ACR122U del ordenador, a través de puente_nfc.py por USB.
 // Para cambiar de lector solo hay que implementar esta interfaz.
 #pragma once
 #include <Arduino.h>

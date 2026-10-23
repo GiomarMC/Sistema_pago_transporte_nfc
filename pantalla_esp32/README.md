@@ -1,9 +1,10 @@
 # Validador de bus con ESP32
 
-Dispositivo que va en el bus: una ESP32 con una pantalla LCD de 1.6" y un lector
-de tarjetas microSD. Muestra al pasajero el resultado de cada toque y, en el modo
-validador, hace todo el cobro por sí misma: verifica la tarjeta, descuenta la
-tarifa, graba el nuevo saldo y guarda el viaje en la microSD.
+Dispositivo que va en el bus: una ESP32 con un lector NFC PN532, una pantalla LCD
+de 1.6" y un lector de tarjetas microSD. En el modo validador hace todo el cobro
+por sí misma, sin ordenador: lee la tarjeta, la verifica, descuenta la tarifa,
+graba el nuevo saldo, guarda el viaje en la microSD, muestra el resultado y sube
+los viajes al servidor por WiFi.
 
 Este dispositivo **no sustituye al servidor**: sustituye al validador que corría
 en el ordenador (`transporte/validador.py`). El servidor sigue siendo la fuente
@@ -18,9 +19,9 @@ Contenido:
 4. [Instalación de las herramientas](#4-instalación-de-las-herramientas)
 5. [Programas de la ESP32](#5-programas-de-la-esp32)
 6. [Modo A: validador en el ordenador + pantalla](#6-modo-a-validador-en-el-ordenador--pantalla)
-7. [Modo B: validador en la ESP32 + puente](#7-modo-b-validador-en-la-esp32--puente)
+7. [Modo B: validador autónomo en la ESP32](#7-modo-b-validador-autónomo-en-la-esp32)
 8. [Datos en la microSD](#8-datos-en-la-microsd)
-9. [Protocolo del puente](#9-protocolo-del-puente)
+9. [Protocolo con el ordenador](#9-protocolo-con-el-ordenador)
 10. [Estructura de la carpeta](#10-estructura-de-la-carpeta)
 11. [Solución de problemas](#11-solución-de-problemas)
 12. [Estado y pendientes](#12-estado-y-pendientes)
@@ -49,20 +50,19 @@ Contenido:
 
 ## 2. Modos de funcionamiento
 
-| | Modo A | Modo B | Futuro |
-|---|---|---|---|
-| Quién cobra | El ordenador (`validador.py`) | **La ESP32** | La ESP32 |
-| Lector NFC | ACR122U en el ordenador | ACR122U en el ordenador, usado a través del puente | Módulo PN532 conectado a la ESP32 |
-| Papel del ordenador | Hace todo y envía el resultado a la pantalla | Solo presta el lector (`puente_nfc.py`): reenvía comandos, sin lógica | Ninguno |
-| Dónde se guardan los viajes | Base de datos local del ordenador | microSD de la ESP32 | microSD de la ESP32 |
-| Sincronización con el servidor | Sí (`validador.py`) | **Por WiFi**, desde la ESP32 (sección 7.5) | Por WiFi |
-| Firmware de la ESP32 | `esp32dev` | `validador` | `validador` (con otro lector) |
+| | Modo A | Modo B |
+|---|---|---|
+| Quién cobra | El ordenador (`validador.py`) | **La ESP32** |
+| Lector NFC | ACR122U en el ordenador | **PN532 conectado a la ESP32** |
+| Papel del ordenador | Hace todo y envía el resultado a la pantalla | Ninguno en el bus. Solo para configurarla la primera vez (`puente_nfc.py --configurar`) |
+| Dónde se guardan los viajes | Base de datos local del ordenador | microSD de la ESP32 |
+| Sincronización con el servidor | Sí (`validador.py`) | **Por WiFi**, desde la ESP32 (sección 7.5) |
+| Firmware de la ESP32 | `esp32dev` | `validador` |
 
-El modo B simula el validador independiente: todo el programa corre en la
-ESP32 y el ordenador hace de "cable largo" hasta el lector. Cuando llegue el
-PN532 solo cambia la pieza que habla con la tarjeta (`lib/LectorNFC/`); la
-lógica de cobro, la microSD y la pantalla siguen igual, y el ordenador deja de
-hacer falta.
+Hasta el 10 de octubre de 2026, el modo B usaba el ACR122U del ordenador a
+través de `puente_nfc.py` ("cable largo" hasta el lector). Con el PN532 solo
+cambió la pieza que habla con la tarjeta (`lib/LectorNFC/LectorPN532`); la
+lógica de cobro, la microSD y la pantalla son las mismas.
 
 ## 3. Hardware y conexiones
 
@@ -73,11 +73,11 @@ hacer falta.
 | Lector microSD | Módulo de 6 pines rotulados 3V3, CS, MOSI, CLK, MISO, GND (va a 3,3 V) |
 | Tarjeta microSD | 32 GB o menos, en FAT32 (probado con 8 GB) |
 | Protoboard y cables dupont | |
-| Lector NFC | ACS ACR122U, conectado al ordenador |
+| Lector NFC | Módulo PN532 (rojo, con conector I2C de 4 pines y SPI de 8), en modo I2C |
 
 La placa rotula cada pin como P + su número de GPIO (P5 = GPIO5). Posiciones
 contadas desde arriba, con la antena arriba y el conector USB abajo. La pantalla
-va toda al lado derecho y la microSD al izquierdo; cada una en su propio bus SPI.
+y la microSD van cada una en su propio bus SPI; el PN532, en el bus I2C.
 
 | Pantalla | ESP32 | Lado y posición |
 |---|---|---|
@@ -99,7 +99,22 @@ va toda al lado derecho y la microSD al izquierdo; cada una en su propio bus SPI
 | GND | GND | Izquierdo, 14.º |
 | MOSI | P13 | Izquierdo, 15.º |
 
-- **Nada va al pin 5V.** La pantalla y la microSD trabajan a 3,3 V.
+| PN532 | ESP32 | Lado y posición |
+|---|---|---|
+| VCC (conector de arriba) | 3V3 (por la línea de 3,3 V del protoboard) | Izquierdo, 1.º |
+| GND (conector de arriba) | GND | Derecho, 7.º |
+| SDA | P21 | Derecho, 6.º |
+| SCL | P22 | Derecho, 3.º |
+| IRQ (conector de la derecha) | P32 | Izquierdo, 7.º |
+| RSTO | Sin conectar | |
+
+- **Interruptor del PN532 en I2C: 1 en ON, 2 en OFF**, cambiado con el módulo
+  sin alimentación (solo lo lee al encenderse). De fábrica viene en HSU (los
+  dos en OFF): en ese modo el validador muestra "Sin lector".
+- **Nada va al pin 5V.** La pantalla, la microSD y el PN532 trabajan a 3,3 V
+  (con 5 V, el PN532 pondría SDA y SCL a 5 V).
+- No uses los pines P0, P2, P12 y P15 ni SD0-SD3, CMD y CLK: un módulo
+  conectado ahí impide que la ESP32 arranque o lea su memoria.
 - Desconecta el USB de la ESP32 antes de poner o quitar cables.
 
 El informe `docs/informe-conexiones-validador-esp32.pdf` tiene los diagramas de
@@ -139,7 +154,7 @@ Todos se compilan y cargan desde esta carpeta. El puerto puede indicarse con
 |---|---|---|
 | `esp32dev` | Pantalla del modo A: muestra lo que le envía `validador.py` | `pio run -e esp32dev -t upload` |
 | `prueba` | Prueba de componentes: colores de la pantalla, escritura y lectura de la microSD, eco por USB | `pio run -e prueba -t upload` y después `pio device monitor` |
-| `validador` | Validador completo del modo B | `pio run -e validador -t upload` |
+| `validador` | Validador autónomo del modo B, con el PN532 | `pio run -e validador -t upload` |
 
 Test del formato de la tarjeta, que se ejecuta en la propia ESP32 y compara el
 C++ con ejemplos generados por el código Python:
@@ -176,74 +191,59 @@ resultado. Si la pantalla se desconecta, el validador sigue cobrando y la
 reconecta sola en cuanto vuelve (lo revisa cada 5 segundos mientras no hay
 tarjetas).
 
-## 7. Modo B: validador en la ESP32 + puente
+## 7. Modo B: validador autónomo en la ESP32
 
 ### 7.1 Primera vez: configurar la ESP32
 
 1. Carga el firmware `validador` con la microSD insertada.
 2. La ESP32 necesita su número de validador y **la misma clave maestra con la
    que se emitieron las tarjetas** (`transporte/claves/clave_maestra.bin`; ver
-   la sección 7.5 del README principal). El puente se los envía y la ESP32 los
-   guarda en la microSD:
+   la sección 7.5 del README principal). Con la ESP32 conectada por USB al
+   ordenador que tiene la clave (no hace falta el ACR122U):
 
    ```bash
    cd transporte
-   python3 puente_nfc.py --configurar --validador 103
+   python3 puente_nfc.py --configurar --validador 105 --servidor https://subepe.app
    ```
 
-   La consola debe mostrar `[ESP32] Configuración guardada en la microSD` y
-   `[ESP32] Validador 103 listo`. Cierra con `Ctrl+C`.
+   La consola debe mostrar `[ESP32] Configuración guardada en la microSD`. Cierra
+   con `Ctrl+C`.
+3. Añade una red WiFi de 2,4 GHz con el portal (sección 7.5).
 
 Usa un número de validador que exista en el servidor (por ejemplo, uno creado
-con `crear_validador`), para que la sincronización por WiFi (7.5) funcione sin
-cambios. Solo hay que configurarla una vez: la configuración queda en la
-microSD.
+con `crear_validador`). Solo hay que configurarla una vez: la configuración
+queda en la microSD.
 
 ### 7.2 Uso diario
 
-Con el ACR122U y la ESP32 conectados al ordenador:
+Basta con alimentar la ESP32 por USB (cargador, batería externa o el
+ordenador). Al arrancar:
 
-```bash
-cd transporte
-python3 puente_nfc.py        # en Windows: python puente_nfc.py
+```
+1,6 s   Lector PN532 v1.6 listo
+1,6 s   Conectando al WiFi MUNOZ...
+9,2 s   WiFi conectado a MUNOZ: IP 192.168.100.10, señal -37 dBm
+14,3 s  Sincronizado: 0 eventos subidos, 0 pendientes, 0 en lista negra, 0 recargas pendientes
 ```
 
-El puente busca solo el puerto de la ESP32 por el chip USB de la placa (CP210x,
-CH340...). Si hay varias placas conectadas, indica cuál con `--puerto`
-(`/dev/ttyUSB0` en Linux, `COM3` en Windows, `/dev/cu.usbserial-XXXX` en macOS).
-
-- La pantalla muestra "Acerque su tarjeta", el número de bus y cuántos viajes
-  quedan sin subir al servidor.
-- Cada toque aparece en la consola tal como lo informa la ESP32:
+- **La hora la da el servidor** en la primera sincronización: la ESP32 no tiene
+  reloj con pila. Hasta entonces la pantalla dice "Sin hora" y no cobra. Si
+  después se pierde el WiFi, sigue cobrando con normalidad.
+- Sin WiFi al arrancar, también toma la hora del ordenador si está conectada
+  por USB con `puente_nfc.py` abierto.
+- Para ver qué hace, con la ESP32 conectada al ordenador: `pio device monitor`
+  o `python3 puente_nfc.py` (muestra cada toque):
 
   ```
-  16:11:49  [ESP32] PASA 04B3E121CA2A81 | Estudiante S/ 0.80 | Saldo S/ 7.10 (469 ms)
-  16:11:55  [ESP32] RECHAZADA 0412BD11CE2A81 | Tarjeta no valida | No emitida por el sistema (129 ms)
+  14:24:40  [ESP32] PASA 04653E22CA2A81 | General S/ 1.30 | Saldo S/ 3.70 (329 ms)
+  13:32:46  [ESP32] RECHAZADA 04B3E121CA2A81 | Saldo insuficiente | Saldo S/ 0.70 (92 ms)
   ```
 
-- `--detalle` muestra además cada comando que pide la ESP32 y su respuesta.
-- Al abrir el puente, la ESP32 tarda unos 2 segundos en saludar y quedar lista.
+### 7.3 El ordenador ya no hace falta en el bus
 
-### 7.3 Cualquier ordenador puede hacer de puente
-
-El puente no guarda nada ni toma decisiones: la lógica está en la ESP32 y la
-configuración y los viajes, en su microSD. Por eso sirve **cualquier ordenador
-con Linux, Windows o macOS**, no solo el que la configuró. Un iPhone o iPad no
-sirve: iOS no permite usar lectores de tarjetas USB ni ejecutar el puente.
-
-| El ordenador puente necesita | No necesita |
-|---|---|
-| El ACR122U funcionando (sección 7.4 del README principal: en Linux, `pcscd` y el driver `pn533` desactivado; en Windows, el driver de ACS; en macOS, nada o el driver de ACS) | La clave maestra |
-| Python 3.9 o superior con `pyscard` y `pyserial` (`pip install -r transporte/requirements.txt`) | El servidor, Docker, `api.json` o la base de datos |
-| La carpeta `transporte/` del repositorio | Volver a configurar la ESP32 |
-| **La hora del sistema correcta** (automática): la ESP32 no tiene reloj con pila y toma la hora del puente al conectarse | |
-
-Solo hace falta la clave maestra para **cambiar** la configuración de la ESP32
-(otra microSD, otro número de validador): `--configurar` debe ejecutarse desde
-un ordenador con la clave con la que se emitieron las tarjetas.
-
-Para comprobar que el lector funciona en un ordenador nuevo, antes de usar el
-puente: `python3 detectar_ultralight.py --una` con una tarjeta encima.
+`puente_nfc.py` solo se usa para configurar la ESP32 (y como monitor). No guarda
+nada ni toma decisiones, así que sirve cualquier ordenador con Linux, Windows o
+macOS y Python con `pyserial`. Solo `--configurar` necesita la clave maestra.
 
 ### 7.4 Qué hace la ESP32 en cada toque
 
@@ -265,7 +265,8 @@ Lo mismo que `validador.py`, en el mismo orden:
 | Verde, PASE | Cobro aceptado (tarifa, saldo y recarga aplicada si la hubo) o "Ya pagado" |
 | Rojo, RECHAZADA | Saldo insuficiente, tarjeta bloqueada, tarjeta no válida o no emitida |
 | Ámbar, ATENCION | Lectura cortada: el pasajero debe volver a acercar la tarjeta (no se cobró) |
-| Azul, "Sin lector" | El puente no está en marcha |
+| Azul, "Sin lector" | El PN532 no responde: cables o interruptor (sección 3) |
+| Azul, "Sin hora" | Aún no sincronizó con el servidor; espera al WiFi |
 | Azul, "Sin configurar" | Falta la configuración (sección 7.1) |
 | Azul, "Error microSD" | No hay tarjeta microSD o no se puede leer |
 
@@ -336,26 +337,24 @@ Ejemplo de una línea de `eventos.txt` (valores de ejemplo):
 la microSD puede leerla. Para el proyecto es aceptable; en un sistema real la
 clave iría en un chip seguro (SAM) o en la memoria cifrada de la ESP32.
 
-## 9. Protocolo del puente
+## 9. Protocolo con el ordenador
 
 Una línea de texto ASCII por mensaje, a 115200 baudios por el USB de la ESP32.
-La ESP32 pregunta y el puente responde:
+El validador solo saluda al ordenador mientras le falta la configuración o la
+hora, o mientras este conteste:
 
 | ESP32 envía | Puente responde | Significado |
 |---|---|---|
 | `>n HOLA` | `<n OK PUENTE 1` o `<n CFG clave=valor;...` | Saludo (con `--configurar`, entrega la configuración) |
-| `>n HORA` | `<n OK <unix>` | Hora del ordenador (la ESP32 no tiene reloj con pila) |
-| `>n ESPERA ms` | `<n OK <uid>` o `<n NADA` | Espera una tarjeta hasta `ms` milisegundos |
-| `>n CMD <hex>` | `<n OK <hex>` o `<n ERR motivo>` | Comando nativo de la tarjeta (autenticar, leer, contador) |
-| `>n ESCRIBE pag <hex>` | `<n OK` o `<n ERR motivo>` | Escribe páginas consecutivas de 4 bytes |
-| `>n FIN` | `<n OK` | Termina la sesión dejando la tarjeta sin autenticar |
-| `>n RETIRADA ms` | `<n OK` o `<n NADA` | Espera hasta `ms` a que se retire la tarjeta |
+| `>n HORA` | `<n OK <unix>` | Hora del ordenador (la del servidor tiene preferencia) |
 
 - `n` es el número de petición: la respuesta lo repite y la ESP32 descarta
-  cualquier respuesta con otro número. Así, mensajes atrasados o duplicados en
-  el puerto (por ejemplo, saludos enviados mientras el puente estaba cerrado)
-  no pueden desincronizar el diálogo.
+  cualquier respuesta con otro número.
 - Las líneas que empiezan por `#` son mensajes de la ESP32 para la consola.
+- El puente también atiende `ESPERA`, `CMD`, `ESCRIBE`, `FIN` y `RETIRADA`, con
+  los que `LectorPuente` usaba el ACR122U como lector de la ESP32. El firmware
+  ya no los usa, pero `LectorPuente` sigue en `lib/LectorNFC/` por si hace
+  falta volver al ACR122U.
 
 ## 10. Estructura de la carpeta
 
@@ -371,7 +370,7 @@ pantalla_esp32/
 |-- lib/
 |   |-- PantallaUI/             Pantallas de espera, PASE, RECHAZADA y ATENCION
 |   |-- TarjetaTransporte/      Formato de la tarjeta y firmas (copia exacta del Python)
-|   `-- LectorNFC/              Interfaz del lector y LectorPuente; aquí irá LectorPN532
+|   `-- LectorNFC/              Interfaz del lector, LectorPN532 (el del validador) y LectorPuente
 `-- test/test_formato/          Test del formato contra ejemplos del Python
 ```
 
@@ -379,7 +378,7 @@ En `transporte/`:
 
 | Archivo | Para qué |
 |---|---|
-| `puente_nfc.py` | Puente del modo B |
+| `puente_nfc.py` | Configura la ESP32 del modo B y muestra sus mensajes |
 | `pantalla.py` | Envío de resultados a la pantalla en el modo A |
 
 ## 11. Solución de problemas
@@ -388,15 +387,17 @@ En `transporte/`:
 |---|---|
 | La pantalla queda en blanco tras reconectarla | Reinicia la ESP32 (botón EN o desconectar y conectar el USB): la pantalla solo se configura al arrancar. Desconecta el USB antes de tocar cables. |
 | Todas las tarjetas salen "No emitida por el sistema" | La clave maestra de la ESP32 no es la de las tarjetas. Configura de nuevo (7.1) desde el PC que tiene la clave correcta. |
-| La pantalla dice "Sin lector" | El puente no está en marcha o se cerró. Arranca `puente_nfc.py`. |
+| La pantalla dice "Sin lector" | El PN532 no responde. Revisa el interruptor (I2C: 1 en ON, 2 en OFF; se lee al encender, así que desconecta y conecta el USB tras cambiarlo) y los cables SDA→P21, SCL→P22, IRQ→P32. |
+| La ESP32 se reinicia en bucle o no se puede cargar el firmware (`flash read err`, `Failed to communicate with the flash chip`) | Un cable de algún módulo está en P12 o en SD0-SD3/CMD/CLK, o hay un falso contacto en el protoboard. Quita los módulos y conéctalos de uno en uno. |
+| La pantalla dice "Sin hora" | No ha sincronizado con el servidor desde que arrancó. Revisa el WiFi y el servidor. |
 | El puente dice "No se encontró la ESP32", aunque la placa está encendida y la pantalla funciona | El ordenador no reconoce la placa por USB. En Linux, `journalctl -k` muestra `device descriptor read error -71`. Casi siempre es **un cable USB que solo carga** (alimenta, pero no transmite datos): usa otro cable de datos. Si no, prueba a girar el conector USB-C y otro puerto. Ningún comando con `sudo` lo arregla. |
 | El puente dice que no encuentra el lector | Tras reiniciar el ordenador, el ACR122U a veces no se inicializa: desconéctalo y vuelve a conectarlo, y ejecuta `sudo systemctl restart pcscd`. |
 | `could not open port` o `Permission denied` | El puerto lo usa otro programa (solo uno a la vez: validador, puente, monitor serie o carga de firmware), o falta el grupo `dialout` en Linux. |
 | La carga del firmware falla en `Unable to verify flash chip connection` | Usa `upload_speed = 115200` (ya fijado) y otro cable USB de datos. |
 | "Error microSD" en la pantalla | Tarjeta no insertada, de más de 32 GB o no FAT32, o cableado de la microSD (prueba con el firmware `prueba`). |
-| Cobra pero el saldo de la cuenta no baja en el servidor | Los viajes suben al sincronizar (cada 30 s con WiFi). Mira el estado en la pantalla y la consola del puente. |
+| Cobra pero el saldo de la cuenta no baja en el servidor | Los viajes suben al sincronizar (cada 30 s con WiFi). Mira el estado en la pantalla y los mensajes (`pio device monitor`). |
 | La pantalla dice "Sin WiFi" | La red no es de 2,4 GHz, la contraseña es incorrecta o no hay señal. Corrígela con el portal (botón BOOT 3 s). |
-| La pantalla dice "Sin servidor" | La consola del puente muestra el motivo: `HTTP 401` es un token que no es de ese servidor (vuelve a configurar con `--servidor`); un error `TLS` es un certificado que no es de Let's Encrypt; `connection refused` o un tiempo agotado, el servidor caído o una URL mal escrita. |
+| La pantalla dice "Sin servidor" | Los mensajes de la ESP32 muestran el motivo: `HTTP 401` es un token que no es de ese servidor (vuelve a configurar con `--servidor`); un error `TLS` es un certificado que no es de Let's Encrypt; `connection refused` o un tiempo agotado, el servidor caído o una URL mal escrita. |
 
 ## 12. Estado y pendientes
 
@@ -404,21 +405,27 @@ Probado (1 de octubre de 2026):
 
 - Pantalla, microSD (8 GB) y comunicación USB con el firmware de prueba.
 - Modo A con tarjetas reales.
-- Modo B con tarjetas reales: cobro aceptado en unos 470 ms y rechazos de
-  tarjetas no emitidas en unos 130 ms.
 - Test del formato en la ESP32: el C++ coincide byte a byte con el Python.
-- Sincronización por WiFi con el servidor en la red local (HTTP) y portal WiFi
-  desde un celular con datos móviles activos.
+- Portal WiFi desde un celular con datos móviles activos.
+
+Probado (10 de octubre de 2026), con el PN532 y sin ordenador:
+
+- Arranque, WiFi y sincronización por HTTPS con `https://subepe.app` en unos
+  15 s; la hora se toma del servidor.
+- Cobro completo con escritura y relectura en la tarjeta: 329 ms. El viaje
+  subió al servidor en la siguiente sincronización y el saldo de la cuenta
+  coincide con el de la tarjeta.
+- Rechazos: tarjeta no emitida en 88 ms, saldo insuficiente en 92 ms.
 
 Pendiente:
 
 - **Probar el puente y la pantalla en Windows y macOS.** El código evita lo
   específico de Linux (el puerto se detecta solo y los errores del lector no
   dependen del idioma del sistema), pero solo se ha probado en Fedora 42.
-- **Probar en la placa la sincronización por HTTPS** con el servidor en
-  internet: compila y la cadena de certificados se verificó en el ordenador con
-  las mismas raíces, pero falta probarla en la ESP32.
-- **Lector PN532** conectado a la ESP32 (implementar `LectorPN532` sobre la
-  interfaz `LectorNFC`), con lo que el ordenador deja de hacer falta en el bus y
-  el cobro bajaría de los 470 ms actuales.
+- **Recarga remota entregada por el validador** con el PN532 (recarga por DNI
+  en el servidor y toque en el bus): el código es el mismo que con el puente,
+  pero falta probarlo.
+- **Reloj con pila (DS3231)** en el mismo bus I2C, para cobrar aunque la ESP32
+  arranque sin WiFi.
+- Medir p50/p95 del toque y tasa de fallos frente al ACR122U (tarea T11).
 - Buzzer y LEDs para indicar el resultado sin mirar la pantalla.
