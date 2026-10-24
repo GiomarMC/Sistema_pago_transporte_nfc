@@ -496,7 +496,7 @@ pruebas de cada componente están en esa guía y en
 ### 7.8 Servidor en internet
 
 Para las pruebas del ecosistema, el servidor está en una VM de Oracle Cloud
-(capa gratuita) en **https://subepe.app** (también `https://subepe.duckdns.org`).
+(capa gratuita, VM.Standard.E2.1.Micro) en **https://subepe.app**.
 Corre el mismo `docker-compose.yml` más `docker-compose.prod.yml`, que añade
 **Caddy** con certificado HTTPS automático de Let's Encrypt.
 
@@ -510,8 +510,8 @@ a la VM sin acceso a ella: basta con juntarlos en `main`.
 superusuario aprueba la cuenta en la sección Usuarios del panel.
 
 **Configuración de la VM** (`servidor_api/.env`, no está en git): como
-`.env.example`, más `DOMINIO=subepe.app, subepe.duckdns.org`,
-`DJANGO_ALLOWED_HOSTS=subepe.app,subepe.duckdns.org` y `DJANGO_HTTPS=1`.
+`.env.example`, más `DOMINIO=subepe.app`, `DJANGO_ALLOWED_HOSTS=subepe.app`
+y `DJANGO_HTTPS=1`.
 
 **Copias de seguridad.** Cada noche (03:00 de Perú), `.github/workflows/respaldo.yml`
 saca una copia de la base de datos, comprueba que se puede leer, la **cifra** y
