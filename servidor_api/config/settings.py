@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'transporte',
     'libro',
+    'pagos',
     'panel',
 ]
 
@@ -174,3 +175,7 @@ REST_FRAMEWORK = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+PAGOS_PASARELA = os.environ.get("PAGOS_PASARELA", "simulada")
+PAGOS_WEBHOOK_SECRET = os.environ.get("PAGOS_WEBHOOK_SECRET", SECRET_KEY)
+PAGOS_SIMULADOR_BASE_URL = os.environ.get("PAGOS_SIMULADOR_BASE_URL", "http://localhost:8000")

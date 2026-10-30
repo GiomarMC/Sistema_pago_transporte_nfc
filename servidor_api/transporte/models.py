@@ -78,6 +78,7 @@ class Recarga(models.Model):
     creada = models.DateTimeField(auto_now_add=True)
     aplicada_en = models.DateTimeField(null=True, blank=True,
                                        help_text="Cuándo llegó a la tarjeta (vacío = pendiente)")
+    reembolsada_en = models.DateTimeField(null=True, blank=True)
     aplicada_por = models.PositiveIntegerField(null=True, blank=True)
     tarjeta = models.ForeignKey(Tarjeta, null=True, blank=True, on_delete=models.PROTECT)
 

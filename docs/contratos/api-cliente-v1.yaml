@@ -1,0 +1,41 @@
+{
+  "openapi": "3.1.0",
+  "info": {"title": "SUBEPE: recargas de cliente", "version": "1.0.0"},
+  "paths": {
+    "/recargas/ordenes/": {
+      "post": {
+        "parameters": [{"name": "Idempotency-Key", "in": "header", "required": true,
+          "schema": {"type": "string", "format": "uuid"}}],
+        "requestBody": {"required": true, "content": {"application/json": {"schema": {
+          "type": "object", "required": ["monto"], "properties": {"monto": {"type": "integer", "minimum": 100, "maximum": 20000}}}}}},
+        "responses": {"201": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/OrdenCreada"}}}},
+          "400": {"$ref": "#/components/responses/Error"}, "401": {"$ref": "#/components/responses/Error"},
+          "403": {"$ref": "#/components/responses/Error"}, "409": {"$ref": "#/components/responses/Error"}}
+      },
+      "get": {"responses": {"200": {"content": {"application/json": {"schema": {
+        "type": "array", "items": {"$ref": "#/components/schemas/OrdenDetalle"}}}}}}}
+    },
+    "/recargas/ordenes/{id}/": {
+      "get": {"parameters": [{"name": "id", "in": "path", "required": true,
+        "schema": {"type": "string", "format": "uuid"}}],
+        "responses": {"200": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/OrdenDetalle"}}}},
+          "401": {"$ref": "#/components/responses/Error"}, "403": {"$ref": "#/components/responses/Error"},
+          "404": {"$ref": "#/components/responses/Error"}}}
+    }
+  },
+  "components": {
+    "responses": {"Error": {"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Error"}}}}},
+    "schemas": {
+      "OrdenCreada": {"type": "object", "required": ["id", "estado", "monto", "url_pago", "expira"],
+        "properties": {"id": {"type": "string", "format": "uuid"}, "estado": {"type": "string"},
+          "monto": {"type": "integer"}, "url_pago": {"type": "string"}, "expira": {"type": "string", "format": "date-time"}}},
+      "OrdenDetalle": {"type": "object", "required": ["id", "estado", "monto", "creada", "pagada_en", "acreditada_en"],
+        "properties": {"id": {"type": "string", "format": "uuid"}, "estado": {"type": "string"},
+          "monto": {"type": "integer"}, "creada": {"type": "string", "format": "date-time"},
+          "pagada_en": {"type": ["string", "null"]}, "acreditada_en": {"type": ["string", "null"]}}},
+      "Error": {"type": "object", "required": ["error"], "properties": {"error": {"type": "object",
+        "required": ["codigo", "mensaje", "campos"], "properties": {"codigo": {"type": "string"},
+          "mensaje": {"type": "string"}, "campos": {"type": "object"}}}}}
+    }
+  }
+}

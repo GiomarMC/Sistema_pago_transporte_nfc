@@ -124,7 +124,8 @@ def emision_cancelar(request, id_tarjeta):
 @permission_classes([EsOperador])
 def tarjeta_detalle(request, id_tarjeta):
     tarjeta = get_object_or_404(Tarjeta.objects.select_related("cuenta__tarifa"), pk=id_tarjeta)
-    pendientes = Recarga.objects.filter(cuenta_id=tarjeta.cuenta_id, aplicada_en__isnull=True)
+    pendientes = Recarga.objects.filter(cuenta_id=tarjeta.cuenta_id, aplicada_en__isnull=True,
+                                        reembolsada_en__isnull=True)
     return Response({**TarjetaSalida(tarjeta).data,
                      "recargas_pendientes": RecargaSalida(pendientes, many=True).data})
 

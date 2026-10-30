@@ -127,7 +127,7 @@ def recargas_para_tarjeta(id_cuenta, ultima_en_tarjeta):
     for r in Recarga.objects.filter(cuenta_id=id_cuenta, seq__gt=ultima_en_tarjeta).order_by("seq"):
         if r.seq != hasta + 1:
             break
-        total, hasta = total + r.monto, r.seq
+        total, hasta = total + (0 if r.reembolsada_en else r.monto), r.seq
     return total, hasta
 
 
@@ -139,7 +139,8 @@ def entregar_recargas(tarjeta, hasta_seq, por, fecha=None):
     if tarjeta.estado != Tarjeta.Estado.ACTIVA:
         return 0
     pendientes = list(Recarga.objects.select_for_update().filter(
-        cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq, aplicada_en__isnull=True))
+        cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq, aplicada_en__isnull=True,
+        reembolsada_en__isnull=True))
     if not pendientes:
         return 0
     Recarga.objects.filter(pk__in=[r.pk for r in pendientes]).update(
@@ -251,7 +252,7 @@ def sincronizar(validador, eventos):
         "lista_negra": list(Tarjeta.objects.filter(
             estado__in=[Tarjeta.Estado.BLOQUEADA, Tarjeta.Estado.ANULADA])
             .order_by("id").values_list("id", flat=True)),
-        "recargas": list(Recarga.objects.filter(aplicada_en__isnull=True)
+        "recargas": list(Recarga.objects.filter(aplicada_en__isnull=True, reembolsada_en__isnull=True)
                          .order_by("cuenta_id", "seq").values("cuenta_id", "seq", "monto")),
         "tarifas": {str(t.codigo): [t.nombre, t.precio] for t in Tarifa.objects.all()},
         "hora_servidor": timezone.now().isoformat(timespec="seconds"),
