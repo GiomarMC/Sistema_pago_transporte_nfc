@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from transporte.models import Alerta, Cuenta, Movimiento, Tarifa, Tarjeta, Validador
+from libro.libro import abrir_saldo_existente
 
 
 class PanelTests(TestCase):
@@ -16,7 +17,8 @@ class PanelTests(TestCase):
         self.operador.groups.add(Group.objects.get(name="operadores"))
         self.ajeno = User.objects.create_user(username="ajeno", password="prueba-segura-123")
         tarifa = Tarifa.objects.get(pk=1)
-        self.cuenta = Cuenta.objects.create(nombre="Ana Quispe", documento="71234567", tarifa=tarifa, saldo=920)
+        self.cuenta = Cuenta.objects.create(nombre="Ana Quispe", documento="71234567", tarifa=tarifa)
+        abrir_saldo_existente(self.cuenta, 920)
         self.tarjeta = Tarjeta.objects.create(uid="04AABBCCDDEEFF", cuenta=self.cuenta, estado="activa")
 
     def viaje(self, numero, cuenta=None, tarjeta=None):

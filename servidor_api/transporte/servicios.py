@@ -7,7 +7,7 @@ varios validadores pueden sincronizar a la vez sin pisarse.
 
 from datetime import datetime
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
@@ -30,15 +30,64 @@ def _cuenta_bloqueada(id_cuenta) -> Cuenta:
     return Cuenta.objects.select_for_update().get(pk=id_cuenta)
 
 
+def _mismo_movimiento(anterior, cuenta, tarjeta, tipo, monto, fecha, operacion, validador, contador):
+    return (anterior.cuenta_id == cuenta.pk and anterior.tarjeta_id == (tarjeta.pk if tarjeta else None)
+            and anterior.tipo == tipo and anterior.monto == monto
+            and anterior.operacion == operacion and anterior.validador == validador
+            and anterior.contador == contador and (fecha is None or anterior.fecha == fecha))
+
+
 def registrar_movimiento(cuenta, tarjeta, tipo, monto, *, operacion=None, validador=None,
-                         fecha=None, ref=None, contador=None) -> Movimiento:
-    """Aplica el monto al saldo de la cuenta (que debe estar bloqueada) y lo registra."""
-    cuenta.saldo += monto
-    cuenta.save(update_fields=["saldo"])
-    return Movimiento.objects.create(
-        fecha=fecha or timezone.now(), cuenta=cuenta, tarjeta=tarjeta, tipo=tipo, monto=monto,
-        saldo_final=cuenta.saldo, operacion=operacion, validador=validador, ref=ref,
-        contador=contador)
+                         fecha=None, ref=None, contador=None, origen=None) -> Movimiento:
+    """Saldo, movimiento y asiento en una transacción y bajo bloqueo por cuenta."""
+    from libro.libro import cuenta_cliente, guardar_saldo_contabilizado, registrar
+
+    if not isinstance(monto, int) or isinstance(monto, bool):
+        raise ErrorNegocio("el monto debe expresarse en céntimos enteros")
+    with transaction.atomic():
+        bloqueada = _cuenta_bloqueada(cuenta.pk)
+        if ref:
+            anterior = Movimiento.objects.filter(ref=ref).first()
+            if anterior:
+                if not _mismo_movimiento(anterior, cuenta, tarjeta, tipo, monto, fecha,
+                                         operacion, validador, contador):
+                    raise ErrorNegocio(f"referencia {ref} reutilizada con movimiento distinto")
+                cuenta.saldo = bloqueada.saldo
+                return anterior
+        instante = fecha or timezone.now()
+        try:
+            with transaction.atomic():
+                movimiento = Movimiento.objects.create(
+                    fecha=instante, cuenta=bloqueada, tarjeta=tarjeta, tipo=tipo, monto=monto,
+                    saldo_final=bloqueada.saldo + monto, operacion=operacion, validador=validador,
+                    ref=ref, contador=contador)
+        except IntegrityError:
+            anterior = Movimiento.objects.filter(ref=ref).first() if ref else None
+            if anterior and _mismo_movimiento(anterior, cuenta, tarjeta, tipo, monto, fecha,
+                                               operacion, validador, contador):
+                cuenta.saldo = bloqueada.saldo
+                return anterior
+            if anterior:
+                raise ErrorNegocio(f"referencia {ref} reutilizada con movimiento distinto")
+            raise
+        if not movimiento.ref:
+            movimiento.ref = f"mov-{movimiento.pk}"
+            movimiento.save(update_fields=["ref"])
+        if monto:
+            cliente = cuenta_cliente(bloqueada)
+            if tipo == "viaje":
+                contrapartida = "PASAJES_POR_LIQUIDAR"
+            elif tipo == "recarga":
+                contrapartida = ("CAJA_VENTANILLA" if origen in ("punto", "ventanilla", "emision")
+                                  else "CAJA_PASARELA")
+            else:
+                raise ErrorNegocio(f"tipo monetario sin contrapartida: {tipo}")
+            registrar(tipo, movimiento.ref,
+                      [(cliente.codigo, -monto), (contrapartida, monto)], fecha=instante)
+            bloqueada.saldo += monto
+            guardar_saldo_contabilizado(bloqueada)
+        cuenta.saldo = bloqueada.saldo
+        return movimiento
 
 
 def alertar(tarjeta, tipo, detalle=""):
@@ -67,7 +116,7 @@ def crear_recarga(id_cuenta, monto, origen) -> Recarga:
     seq = (cuenta.recargas.aggregate(m=Max("seq"))["m"] or 0) + 1
     recarga = Recarga.objects.create(cuenta=cuenta, seq=seq, monto=monto, origen=origen)
     registrar_recarga(recarga, pendiente=True)
-    registrar_movimiento(cuenta, None, "recarga", monto, ref=f"R{recarga.id}")
+    registrar_movimiento(cuenta, None, "recarga", monto, ref=f"R{recarga.id}", origen=origen)
     return recarga
 
 

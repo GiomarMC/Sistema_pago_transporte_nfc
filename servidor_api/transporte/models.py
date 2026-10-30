@@ -100,7 +100,7 @@ class Movimiento(models.Model):
     operacion = models.PositiveIntegerField(null=True, blank=True,
                                             help_text="N.º de operación grabado en la tarjeta")
     validador = models.PositiveIntegerField(null=True, blank=True)
-    ref = models.CharField(max_length=40, null=True, blank=True, unique=True,
+    ref = models.CharField(max_length=80, null=True, blank=True, unique=True,
                            help_text="Id único del origen (p. ej. V101-57): evita duplicados")
     contador = models.PositiveIntegerField(null=True, blank=True, help_text="Contador NFC")
 

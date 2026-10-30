@@ -8,6 +8,9 @@ from django.db import connection, transaction
 
 from transporte.models import Alerta, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta
 from transporte.sync_cambios import registrar_recarga, registrar_tarjeta
+from libro.libro import abrir_saldo_existente
+from libro.models import CorteHistorico
+from django.db.models import Max
 
 
 def _fecha(texto):
@@ -30,8 +33,9 @@ class Command(BaseCommand):
         tablas = {f[0] for f in bd.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 
         for c in bd.execute("SELECT * FROM cuentas"):
-            Cuenta.objects.create(id=c["id"], nombre=c["nombre"], documento=c["documento"],
-                                  tarifa=Tarifa.objects.get(codigo=c["tarifa"]), saldo=c["saldo"])
+            cuenta = Cuenta.objects.create(id=c["id"], nombre=c["nombre"], documento=c["documento"],
+                                           tarifa=Tarifa.objects.get(codigo=c["tarifa"]), saldo=0)
+            abrir_saldo_existente(cuenta, c["saldo"])
             Cuenta.objects.filter(id=c["id"]).update(creada=_fecha(c["creada"]))
 
         recargas = list(bd.execute("SELECT * FROM recargas")) if "recargas" in tablas else []
@@ -62,6 +66,14 @@ class Command(BaseCommand):
                 tarjeta_id=m["tarjeta_id"], tipo=m["tipo"], monto=m["monto"],
                 saldo_final=m["saldo_final"], operacion=m["operacion"], validador=m["validador"],
                 ref=m["ref"], contador=m["contador"])
+
+        # Todo el historial importado está representado por la apertura, no por
+        # asientos individuales. El corte lo excluye de verificación por ref.
+        for cuenta_id in Cuenta.objects.values_list("id", flat=True):
+            CorteHistorico.objects.update_or_create(
+                cuenta_id=cuenta_id,
+                defaults={"ultimo_movimiento_id": Movimiento.objects.filter(
+                    cuenta_id=cuenta_id).aggregate(m=Max("id"))["m"] or 0})
 
         existentes = set(Tarjeta.objects.values_list("id", flat=True))
         for a in bd.execute("SELECT * FROM alertas"):
