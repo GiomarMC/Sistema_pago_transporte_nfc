@@ -12,4 +12,7 @@ urlpatterns = [
     path("panel/", include("panel.urls")),
     path("admin/", admin.site.urls),
     path("api/", include("transporte.urls")),
+    path("api/pagos/", include("pagos.urls")),
+    path("api/v1/", include("pagos.api_urls")),
+    path("pagos/", include("pagos.urls_simulador")),
 ]

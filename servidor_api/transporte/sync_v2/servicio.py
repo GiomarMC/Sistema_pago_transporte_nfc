@@ -198,7 +198,7 @@ def _foto_completa(actual: int) -> list[Listas]:
         estado__in=[Tarjeta.Estado.BLOQUEADA, Tarjeta.Estado.ANULADA])
         .order_by("id").values_list("id", flat=True)]
     entradas += [EntradaLista(RECARGA, PENDIENTE, c, s, m) for c, s, m in Recarga.objects.filter(
-        aplicada_en__isnull=True).order_by("cuenta_id", "seq")
+        aplicada_en__isnull=True, reembolsada_en__isnull=True).order_by("cuenta_id", "seq")
         .values_list("cuenta_id", "seq", "monto")]
     trozos = [entradas[i:i + MAX_ENTRADAS] for i in range(0, len(entradas), MAX_ENTRADAS)] or [[]]
     base = _FOTO_INTERMEDIA | ((actual & 0xFFFF) << 15)   # hasta 32767 paquetes

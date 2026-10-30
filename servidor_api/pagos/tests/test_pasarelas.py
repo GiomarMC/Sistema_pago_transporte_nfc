@@ -234,7 +234,10 @@ class ObtenerPasarela(SimpleTestCase):
             obtener_pasarela()
 
     @override_settings(PAGOS_PASARELA="simulada")
-    def test_simulada_aun_no_existe(self):
-        # Se implementa en M11-02; hasta entonces el error lo dice claramente
-        with self.assertRaisesMessage(ImproperlyConfigured, "todavía no está implementada"):
-            obtener_pasarela()
+    def test_simulada_es_la_activa(self):
+        self.assertEqual(obtener_pasarela().nombre, "simulada")
+
+    @override_settings(PAGOS_PASARELA="falsa")
+    def test_una_orden_usa_la_pasarela_que_la_creo(self):
+        self.assertEqual(obtener_pasarela("simulada").nombre, "simulada")
+        self.assertEqual(obtener_pasarela().nombre, "falsa")

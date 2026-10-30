@@ -242,3 +242,6 @@ MQTT_PUERTO = int(os.environ.get("MQTT_PUERTO", "1883"))
 
 # Que las páginas e informes de error oculten también los ajustes con CLAVE o SECRETO
 DEFAULT_EXCEPTION_REPORTER_FILTER = "config.errores.FiltroErrores"
+
+# Dirección pública del simulador de pagos (pasarela simulada, M11)
+PAGOS_SIMULADOR_BASE_URL = os.environ.get("PAGOS_SIMULADOR_BASE_URL", "http://localhost:8000")

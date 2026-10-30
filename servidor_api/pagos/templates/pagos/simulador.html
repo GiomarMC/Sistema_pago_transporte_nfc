@@ -1,0 +1,8 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><title>Pasarela de prueba</title>
+<h1>PASARELA DE PRUEBA, NO ES UN PAGO REAL</h1>
+<p>Recarga de {{ cobro.monto }} céntimos</p>
+<form method="post">{% csrf_token %}
+<label>Webhook <select name="webhook"><option value="normal">Normal</option><option value="doble">Enviar dos veces</option><option value="ninguno">No enviar</option></select></label>
+<button name="decision" value="aprobar">Aprobar</button>
+<button name="decision" value="rechazar">Rechazar</button>
+</form></html>
