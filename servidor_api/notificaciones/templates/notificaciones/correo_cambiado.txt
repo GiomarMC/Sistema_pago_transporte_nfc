@@ -1,0 +1,3 @@
+Se cambió el correo de tu cuenta SubePe
+Hola {{ nombre }}, el correo de tu cuenta SubePe se cambió por {{ correo_nuevo }} el {{ fecha }}.
+Si no fuiste tú, comunícate con nosotros de inmediato.

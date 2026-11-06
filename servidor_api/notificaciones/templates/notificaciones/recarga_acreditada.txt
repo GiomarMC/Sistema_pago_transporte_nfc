@@ -1,0 +1,3 @@
+Recarga acreditada: {{ monto }}
+Hola {{ nombre }}, acreditamos una recarga de {{ monto }} en tu cuenta SubePe el {{ fecha }}.
+El saldo se aplicará a tu tarjeta cuando la uses en un validador del bus.

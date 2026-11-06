@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'transporte',
     'panel',
+    'notificaciones',
 ]
 
 MIDDLEWARE = [
@@ -155,12 +156,36 @@ LOGIN_REDIRECT_URL = '/panel/'
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+#
+# Con credenciales de Gmail (CORREO_USUARIO y CORREO_CLAVE_APP en .env) se envía por
+# smtp.gmail.com con STARTTLS. Sin ellas, los correos se muestran en la consola (desarrollo).
+# Ver "Correo electrónico (Gmail)" en README.md.
 
-MAILERS = {
-    'default': {
-        'BACKEND': 'django.core.mail.backends.console.EmailBackend',
-    },
-}
+CORREO_USUARIO = os.environ.get("CORREO_USUARIO", "").strip()
+CORREO_CLAVE_APP = os.environ.get("CORREO_CLAVE_APP", "").strip()
+
+if CORREO_USUARIO and CORREO_CLAVE_APP:
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+            'OPTIONS': {
+                'host': 'smtp.gmail.com',
+                'port': 587,
+                'use_tls': True,  # STARTTLS
+                'username': CORREO_USUARIO,
+                'password': CORREO_CLAVE_APP,
+                'timeout': 20,
+            },
+        },
+    }
+    DEFAULT_FROM_EMAIL = f"SubePe <{CORREO_USUARIO}>"
+else:
+    MAILERS = {
+        'default': {
+            'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+        },
+    }
+    DEFAULT_FROM_EMAIL = f"SubePe <{CORREO_USUARIO or 'no-responder@localhost'}>"
 
 
 # API

@@ -1,0 +1,4 @@
+Tu tarjeta SubePe fue bloqueada
+Hola {{ nombre }}, bloqueamos tu tarjeta N.º {{ tarjeta }} el {{ fecha }}.
+Ya no podrá usarse en los buses. Si no lo pediste, comunícate con nosotros cuanto antes.
+Puedes solicitar una tarjeta de reemplazo; tu saldo se conserva en la cuenta.

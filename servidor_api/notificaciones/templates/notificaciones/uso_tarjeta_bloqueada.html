@@ -1,0 +1,6 @@
+{% extends "notificaciones/_base.html" %}
+{% block contenido %}
+<h1 style="font-size:20px;margin:0 0 12px 0;">Intento de uso de tarjeta bloqueada</h1>
+<p>Hola {{ nombre }}, el {{ fecha }} se intentó usar tu tarjeta N.º <strong>{{ tarjeta }}</strong>, que está bloqueada.</p>
+<p>Si no reconoces ese viaje, comunícate con nosotros cuanto antes.</p>
+{% endblock %}

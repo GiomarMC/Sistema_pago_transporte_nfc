@@ -1,0 +1,3 @@
+Tu contraseña de SubePe fue cambiada
+Hola {{ nombre }}, se cambió la contraseña de tu cuenta SubePe el {{ fecha }}.
+Si no fuiste tú, comunícate con nosotros de inmediato.

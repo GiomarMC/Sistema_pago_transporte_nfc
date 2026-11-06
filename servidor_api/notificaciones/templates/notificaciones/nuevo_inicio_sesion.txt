@@ -1,0 +1,5 @@
+Nuevo inicio de sesión en tu cuenta SubePe
+Hola {{ nombre }}, se inició sesión en tu cuenta desde un dispositivo nuevo.
+Fecha: {{ fecha }}
+Dispositivo: {{ dispositivo }}
+Si fuiste tú, no necesitas hacer nada. Si no fuiste tú, cambia tu contraseña de inmediato.

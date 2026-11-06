@@ -1,0 +1,3 @@
+Tu cuenta SubePe está activada
+Hola {{ nombre }}, tu cuenta SubePe ya está activada. Ya puedes recargar tu tarjeta y revisar tus viajes.
+Si no reconoces esta activación, comunícate con nosotros cuanto antes.

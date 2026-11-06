@@ -36,6 +36,10 @@ class Cuenta(models.Model):
     tarifa = models.ForeignKey(Tarifa, on_delete=models.PROTECT)
     saldo = models.IntegerField(default=0, help_text="Céntimos de sol (saldo real)")
     creada = models.DateTimeField(auto_now_add=True)
+    # Correo para notificaciones. Solo se usa si está verificado (correo_verificado_en informado).
+    correo = models.EmailField(blank=True)
+    correo_verificado_en = models.DateTimeField(
+        null=True, blank=True, help_text="Cuándo confirmó el cliente su correo (vacío = no verificado)")
 
     def __str__(self):
         return f"{self.id} · {self.nombre} ({self.documento})"

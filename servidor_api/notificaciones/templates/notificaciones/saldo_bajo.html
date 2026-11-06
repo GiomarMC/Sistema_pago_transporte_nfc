@@ -1,0 +1,6 @@
+{% extends "notificaciones/_base.html" %}
+{% block contenido %}
+<h1 style="font-size:20px;margin:0 0 12px 0;">Tu saldo es bajo</h1>
+<p>Hola {{ nombre }}, tu saldo actual es de <strong>{{ saldo }}</strong>, menor a dos pasajes ({{ tarifa }} cada uno).</p>
+<p>Recarga para seguir viajando sin interrupciones.</p>
+{% endblock %}

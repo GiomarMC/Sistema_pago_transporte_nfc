@@ -1,0 +1,7 @@
+{% extends "notificaciones/_base.html" %}
+{% block contenido %}
+<h1 style="font-size:20px;margin:0 0 12px 0;">Tarjeta bloqueada</h1>
+<p>Hola {{ nombre }}, bloqueamos tu tarjeta N.º <strong>{{ tarjeta }}</strong> el {{ fecha }}.</p>
+<p>Ya no podrá usarse en los buses. Si no lo pediste, comunícate con nosotros cuanto antes.</p>
+<p>Puedes solicitar una tarjeta de reemplazo; tu saldo se conserva en la cuenta.</p>
+{% endblock %}
