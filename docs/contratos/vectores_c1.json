@@ -1,0 +1,679 @@
+{
+  "contrato": "C1",
+  "version": 1,
+  "nota": "Generado con `python manage.py generar_vectores_c1`. Little-endian. La firma ECDSA es determinista (RFC 6979), así que los bytes se comparan tal cual. Claves solo de prueba.",
+  "claves": {
+    "hmac": {
+      "validador": 101,
+      "clave": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "ecdsa_p256": {
+      "privada": "2222222222222222222222222222222222222222222222222222222222222222",
+      "publica": "04d65a93977caa3d1b081852ff57a79e465f1660577304baead505dd3a48589cf350185e895372df6221ea3a137557e473fddb6755f05bd507c3c533fce9c91285"
+    }
+  },
+  "validos": [
+    {
+      "nombre": "eventos_1",
+      "descripcion": "EVENTOS con un viaje",
+      "tipo": "Eventos",
+      "cabecera": {
+        "tipo": 1,
+        "origen": 101,
+        "destino": 0,
+        "secuencia": 1,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "eventos": [
+          {
+            "id_evento": 1,
+            "tipo": 1,
+            "operacion": 1,
+            "fecha": 1793000060,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 920,
+            "contador": 41,
+            "recarga_hasta": 0,
+            "detalle": ""
+          }
+        ]
+      },
+      "hex": "5350010165000000010000004002df6a440000000100000001000000010701007c02df6a0700000004aabbccddeeff0000000000b0ffffff9803000029000000000000000000000000000000000000000000000000000000019990d536a034e755b5db165237fe3b"
+    },
+    {
+      "nombre": "eventos_30",
+      "descripcion": "EVENTOS con el máximo de 30 (viajes, incidencia sin UID y fraude)",
+      "tipo": "Eventos",
+      "cabecera": {
+        "tipo": 1,
+        "origen": 101,
+        "destino": 0,
+        "secuencia": 2,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "eventos": [
+          {
+            "id_evento": 1,
+            "tipo": 1,
+            "operacion": 1,
+            "fecha": 1793000060,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 920,
+            "contador": 41,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 2,
+            "tipo": 1,
+            "operacion": 2,
+            "fecha": 1793000120,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 840,
+            "contador": 42,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 3,
+            "tipo": 1,
+            "operacion": 3,
+            "fecha": 1793000180,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 760,
+            "contador": 43,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 4,
+            "tipo": 1,
+            "operacion": 4,
+            "fecha": 1793000240,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 680,
+            "contador": 44,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 5,
+            "tipo": 1,
+            "operacion": 5,
+            "fecha": 1793000300,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 600,
+            "contador": 45,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 6,
+            "tipo": 1,
+            "operacion": 6,
+            "fecha": 1793000360,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 520,
+            "contador": 46,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 7,
+            "tipo": 1,
+            "operacion": 7,
+            "fecha": 1793000420,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 440,
+            "contador": 47,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 8,
+            "tipo": 1,
+            "operacion": 8,
+            "fecha": 1793000480,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 360,
+            "contador": 48,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 9,
+            "tipo": 1,
+            "operacion": 9,
+            "fecha": 1793000540,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 280,
+            "contador": 49,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 10,
+            "tipo": 1,
+            "operacion": 10,
+            "fecha": 1793000600,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 200,
+            "contador": 50,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 11,
+            "tipo": 1,
+            "operacion": 11,
+            "fecha": 1793000660,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 120,
+            "contador": 51,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 12,
+            "tipo": 1,
+            "operacion": 12,
+            "fecha": 1793000720,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": 40,
+            "contador": 52,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 13,
+            "tipo": 1,
+            "operacion": 13,
+            "fecha": 1793000780,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -40,
+            "contador": 53,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 14,
+            "tipo": 1,
+            "operacion": 14,
+            "fecha": 1793000840,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -120,
+            "contador": 54,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 15,
+            "tipo": 1,
+            "operacion": 15,
+            "fecha": 1793000900,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -200,
+            "contador": 55,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 16,
+            "tipo": 1,
+            "operacion": 16,
+            "fecha": 1793000960,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -280,
+            "contador": 56,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 17,
+            "tipo": 1,
+            "operacion": 17,
+            "fecha": 1793001020,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -360,
+            "contador": 57,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 18,
+            "tipo": 1,
+            "operacion": 18,
+            "fecha": 1793001080,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -440,
+            "contador": 58,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 19,
+            "tipo": 1,
+            "operacion": 19,
+            "fecha": 1793001140,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -520,
+            "contador": 59,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 20,
+            "tipo": 1,
+            "operacion": 20,
+            "fecha": 1793001200,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -600,
+            "contador": 60,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 21,
+            "tipo": 1,
+            "operacion": 21,
+            "fecha": 1793001260,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -680,
+            "contador": 61,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 22,
+            "tipo": 1,
+            "operacion": 22,
+            "fecha": 1793001320,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -760,
+            "contador": 62,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 23,
+            "tipo": 1,
+            "operacion": 23,
+            "fecha": 1793001380,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -840,
+            "contador": 63,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 24,
+            "tipo": 1,
+            "operacion": 24,
+            "fecha": 1793001440,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -920,
+            "contador": 64,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 25,
+            "tipo": 1,
+            "operacion": 25,
+            "fecha": 1793001500,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -1000,
+            "contador": 65,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 26,
+            "tipo": 1,
+            "operacion": 26,
+            "fecha": 1793001560,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -1080,
+            "contador": 66,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 27,
+            "tipo": 1,
+            "operacion": 27,
+            "fecha": 1793001620,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -1160,
+            "contador": 67,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 28,
+            "tipo": 1,
+            "operacion": 28,
+            "fecha": 1793001680,
+            "id_tarjeta": 7,
+            "uid": "04aabbccddeeff",
+            "monto": -80,
+            "saldo_final": -1240,
+            "contador": 68,
+            "recarga_hasta": 0,
+            "detalle": ""
+          },
+          {
+            "id_evento": 29,
+            "tipo": 2,
+            "operacion": 0,
+            "fecha": 1793001800,
+            "id_tarjeta": 0,
+            "uid": "",
+            "monto": 0,
+            "saldo_final": 0,
+            "contador": 4294967295,
+            "recarga_hasta": 0,
+            "detalle": "lista firma invalida"
+          },
+          {
+            "id_evento": 30,
+            "tipo": 3,
+            "operacion": 29,
+            "fecha": 1793001860,
+            "id_tarjeta": 9,
+            "uid": "a1b2c3d4",
+            "monto": 0,
+            "saldo_final": 500,
+            "contador": 4294967295,
+            "recarga_hasta": 3,
+            "detalle": "contador repetido"
+          }
+        ]
+      },
+      "hex": "5350010165000000020000004002df6a840700001e00000001000000010701007c02df6a0700000004aabbccddeeff0000000000b0ffffff98030000290000000000000000000000000000000000000000000000000000000200000001070200b802df6a0700000004aabbccddeeff0000000000b0ffffff480300002a0000000000000000000000000000000000000000000000000000000300000001070300f402df6a0700000004aabbccddeeff0000000000b0fffffff80200002b00000000000000000000000000000000000000000000000000000004000000010704003003df6a0700000004aabbccddeeff0000000000b0ffffffa80200002c00000000000000000000000000000000000000000000000000000005000000010705006c03df6a0700000004aabbccddeeff0000000000b0ffffff580200002d0000000000000000000000000000000000000000000000000000000600000001070600a803df6a0700000004aabbccddeeff0000000000b0ffffff080200002e0000000000000000000000000000000000000000000000000000000700000001070700e403df6a0700000004aabbccddeeff0000000000b0ffffffb80100002f00000000000000000000000000000000000000000000000000000008000000010708002004df6a0700000004aabbccddeeff0000000000b0ffffff680100003000000000000000000000000000000000000000000000000000000009000000010709005c04df6a0700000004aabbccddeeff0000000000b0ffffff18010000310000000000000000000000000000000000000000000000000000000a00000001070a009804df6a0700000004aabbccddeeff0000000000b0ffffffc8000000320000000000000000000000000000000000000000000000000000000b00000001070b00d404df6a0700000004aabbccddeeff0000000000b0ffffff78000000330000000000000000000000000000000000000000000000000000000c00000001070c001005df6a0700000004aabbccddeeff0000000000b0ffffff28000000340000000000000000000000000000000000000000000000000000000d00000001070d004c05df6a0700000004aabbccddeeff0000000000b0ffffffd8ffffff350000000000000000000000000000000000000000000000000000000e00000001070e008805df6a0700000004aabbccddeeff0000000000b0ffffff88ffffff360000000000000000000000000000000000000000000000000000000f00000001070f00c405df6a0700000004aabbccddeeff0000000000b0ffffff38ffffff3700000000000000000000000000000000000000000000000000000010000000010710000006df6a0700000004aabbccddeeff0000000000b0ffffffe8feffff3800000000000000000000000000000000000000000000000000000011000000010711003c06df6a0700000004aabbccddeeff0000000000b0ffffff98feffff3900000000000000000000000000000000000000000000000000000012000000010712007806df6a0700000004aabbccddeeff0000000000b0ffffff48feffff3a0000000000000000000000000000000000000000000000000000001300000001071300b406df6a0700000004aabbccddeeff0000000000b0fffffff8fdffff3b0000000000000000000000000000000000000000000000000000001400000001071400f006df6a0700000004aabbccddeeff0000000000b0ffffffa8fdffff3c00000000000000000000000000000000000000000000000000000015000000010715002c07df6a0700000004aabbccddeeff0000000000b0ffffff58fdffff3d00000000000000000000000000000000000000000000000000000016000000010716006807df6a0700000004aabbccddeeff0000000000b0ffffff08fdffff3e0000000000000000000000000000000000000000000000000000001700000001071700a407df6a0700000004aabbccddeeff0000000000b0ffffffb8fcffff3f0000000000000000000000000000000000000000000000000000001800000001071800e007df6a0700000004aabbccddeeff0000000000b0ffffff68fcffff4000000000000000000000000000000000000000000000000000000019000000010719001c08df6a0700000004aabbccddeeff0000000000b0ffffff18fcffff410000000000000000000000000000000000000000000000000000001a00000001071a005808df6a0700000004aabbccddeeff0000000000b0ffffffc8fbffff420000000000000000000000000000000000000000000000000000001b00000001071b009408df6a0700000004aabbccddeeff0000000000b0ffffff78fbffff430000000000000000000000000000000000000000000000000000001c00000001071c00d008df6a0700000004aabbccddeeff0000000000b0ffffff28fbffff440000000000000000000000000000000000000000000000000000001d000000020000004809df6a000000000000000000000000000000000000000000000000ffffffff000000006c69737461206669726d6120696e76616c6964611e00000003041d008409df6a09000000a1b2c3d4000000000000000000000000f4010000ffffffff03000000636f6e7461646f7220726570657469646f000000479ae8f20cd97740428e60b03f102bb6"
+    },
+    {
+      "nombre": "hola",
+      "descripcion": "HOLA por 4G con 3 eventos pendientes",
+      "tipo": "Hola",
+      "cabecera": {
+        "tipo": 2,
+        "origen": 101,
+        "destino": 0,
+        "secuencia": 3,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "version_listas": 103,
+        "version_tarifas": 1792913600,
+        "ultimo_evento": 30,
+        "pendientes": 3,
+        "ajenos": 1,
+        "enlace": 2,
+        "senal": -40,
+        "bytes_tx_hoy": 12345,
+        "bytes_rx_hoy": 6789,
+        "version_firmware": 20261106
+      },
+      "hex": "5350010265000000030000004002df6a2000000067000000c0b0dd6a1e0000000300010002d8000039300000851a0000f228350166cf1f65715c77ca3524d215374b948b"
+    },
+    {
+      "nombre": "acuse",
+      "descripcion": "ACUSE hasta el evento 27",
+      "tipo": "Acuse",
+      "cabecera": {
+        "tipo": 129,
+        "origen": 0,
+        "destino": 101,
+        "secuencia": 1,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "hasta_evento": 27,
+        "hora_servidor": 1793000000
+      },
+      "hex": "5350018100006500010000004002df6a080000001b0000004002df6adf186343824a6756016b1aed7a4ed13ab3d482d2713d101416592d5a177c5c19e9ab017396886e10ae744ed3c71ad6a586d8cc5f6c6703d4c1e3958029ad13d6"
+    },
+    {
+      "nombre": "listas_normal",
+      "descripcion": "LISTAS 100→103: bloqueo, desbloqueo y recarga pendiente",
+      "tipo": "Listas",
+      "cabecera": {
+        "tipo": 130,
+        "origen": 0,
+        "destino": 101,
+        "secuencia": 2,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "version_desde": 100,
+        "version_hasta": 103,
+        "entradas": [
+          {
+            "tipo": 1,
+            "op": 1,
+            "a": 9,
+            "b": 0,
+            "c": 0
+          },
+          {
+            "tipo": 1,
+            "op": 2,
+            "a": 4,
+            "b": 0,
+            "c": 0
+          },
+          {
+            "tipo": 2,
+            "op": 1,
+            "a": 12,
+            "b": 3,
+            "c": 2000
+          }
+        ],
+        "urgente": false
+      },
+      "hex": "5350018200006500020000004002df6a3c0000006400000067000000030000000101000009000000000000000000000001020000040000000000000000000000020100000c00000003000000d00700003f5ae00089e62423a19015d25418285ae4ff34df798f7a1cf20d4e134049d3429d876ad7fccd712b359222672cf3ec0cb4569e8741dd50095182613d68ab28d4"
+    },
+    {
+      "nombre": "listas_urgente",
+      "descripcion": "LISTAS urgente a todos los buses con un bloqueo",
+      "tipo": "Listas",
+      "cabecera": {
+        "tipo": 130,
+        "origen": 0,
+        "destino": 65535,
+        "secuencia": 3,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "version_desde": 103,
+        "version_hasta": 104,
+        "entradas": [
+          {
+            "tipo": 1,
+            "op": 1,
+            "a": 15,
+            "b": 0,
+            "c": 0
+          }
+        ],
+        "urgente": true
+      },
+      "hex": "535001820000ffff030000004002df6a1c000000670000006800000001000100010100000f0000000000000000000000cac3925bc0c06e8891c9f9a570d5796623a7f02ba819e99a5ae621eb86d6a9af0b8526187cd42d538a2246a55e7459eab5e6d0ab69eefe4c551f3429ca36b7e3"
+    },
+    {
+      "nombre": "listas_foto_completa",
+      "descripcion": "LISTAS desde 0: el validador borra y reconstruye",
+      "tipo": "Listas",
+      "cabecera": {
+        "tipo": 130,
+        "origen": 0,
+        "destino": 101,
+        "secuencia": 4,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "version_desde": 0,
+        "version_hasta": 104,
+        "entradas": [
+          {
+            "tipo": 1,
+            "op": 1,
+            "a": 9,
+            "b": 0,
+            "c": 0
+          },
+          {
+            "tipo": 1,
+            "op": 1,
+            "a": 15,
+            "b": 0,
+            "c": 0
+          },
+          {
+            "tipo": 2,
+            "op": 1,
+            "a": 12,
+            "b": 3,
+            "c": 2000
+          }
+        ],
+        "urgente": false
+      },
+      "hex": "5350018200006500040000004002df6a3c00000000000000680000000300000001010000090000000000000000000000010100000f0000000000000000000000020100000c00000003000000d00700000c53c79d0df7bf61163725f827e8678a13768214849d148af82a42cb1dbb2250751696751d69d4e0f0e70dddb72eebb28087afdfcb41f926a185be46b7c2124f"
+    },
+    {
+      "nombre": "listas_vacia",
+      "descripcion": "LISTAS sin cambios (solo avanza la versión)",
+      "tipo": "Listas",
+      "cabecera": {
+        "tipo": 130,
+        "origen": 0,
+        "destino": 101,
+        "secuencia": 5,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "version_desde": 104,
+        "version_hasta": 104,
+        "entradas": [],
+        "urgente": false
+      },
+      "hex": "5350018200006500050000004002df6a0c000000680000006800000000000000e2c84498f9d5d368817a810c176b089b1b51cdc1b0832f0cb3fbaa3025148ca164f2445600ecb8238fc457da08de9480884a8603ce6d90724593169eec9b3c64"
+    },
+    {
+      "nombre": "tarifas",
+      "descripcion": "TARIFAS con tres tarifas",
+      "tipo": "Tarifas",
+      "cabecera": {
+        "tipo": 131,
+        "origen": 0,
+        "destino": 101,
+        "secuencia": 6,
+        "creado": 1793000000
+      },
+      "cuerpo": {
+        "version": 1792913600,
+        "tarifas": [
+          {
+            "codigo": 1,
+            "precio": 100,
+            "nombre": "General"
+          },
+          {
+            "codigo": 2,
+            "precio": 50,
+            "nombre": "Estudiante"
+          },
+          {
+            "codigo": 3,
+            "precio": 0,
+            "nombre": "Libre"
+          }
+        ]
+      },
+      "hex": "5350018300006500060000004002df6a50000000c0b0dd6a03000000010000006400000047656e6572616c0000000000000000000200000032000000457374756469616e746500000000000003000000000000004c696272650000000000000000000000fe77259e466465bf2aad83b2ee9a5803dffbfcccdbc6a69b44c53684e8b019a72f6488aa36589456e4d4f6a514b103c4c0b7086ee3915427445f8c72877586d6"
+    }
+  ],
+  "invalidos": [
+    {
+      "motivo": "magia",
+      "descripcion": "magia 'XP' en vez de 'SP'",
+      "hex": "5850010265000000030000004002df6a2000000067000000c0b0dd6a1e0000000300010002d8000039300000851a0000f228350166cf1f65715c77ca3524d215374b948b"
+    },
+    {
+      "motivo": "version",
+      "descripcion": "versión 2",
+      "hex": "5350020265000000030000004002df6a2000000067000000c0b0dd6a1e0000000300010002d8000039300000851a0000f228350166cf1f65715c77ca3524d215374b948b"
+    },
+    {
+      "motivo": "largo",
+      "descripcion": "el campo largo dice 1 byte más que el cuerpo",
+      "hex": "5350010265000000030000004002df6a2100000067000000c0b0dd6a1e0000000300010002d8000039300000851a0000f228350166cf1f65715c77ca3524d215374b948b"
+    },
+    {
+      "motivo": "firma",
+      "descripcion": "último byte de la firma alterado",
+      "hex": "5350010265000000030000004002df6a2000000067000000c0b0dd6a1e0000000300010002d8000039300000851a0000f228350166cf1f65715c77ca3524d215374b948a"
+    }
+  ]
+}
