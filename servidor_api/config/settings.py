@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'transporte',
     'panel',
+    'pagos',
 ]
 
 MIDDLEWARE = [
@@ -174,6 +175,10 @@ REST_FRAMEWORK = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+
+# Pagos en línea (contrato C5): pasarela activa y secreto de sus webhooks
+PAGOS_PASARELA = os.environ.get("PAGOS_PASARELA", "simulada")
+PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
 
 # Clave privada ECDSA P-256 con la que el servidor firma LISTAS, ACUSE y TARIFAS de la
 # sincronización v2. En una línea, con los saltos del PEM como \n: la imprime

@@ -156,16 +156,36 @@ Todos se compilan y cargan desde esta carpeta. El puerto puede indicarse con
 | `prueba` | Prueba de componentes: colores de la pantalla, escritura y lectura de la microSD, eco por USB | `pio run -e prueba -t upload` y después `pio device monitor` |
 | `validador` | Validador autónomo del modo B, con el PN532 | `pio run -e validador -t upload` |
 
-Test del formato de la tarjeta, que se ejecuta en la propia ESP32 y compara el
-C++ con ejemplos generados por el código Python:
+Tests que se ejecutan en la propia ESP32 y comparan el C++ con ejemplos
+generados por el código Python:
 
 ```bash
-pio test -e validador
+pio test -e validador                     # todos
+pio test -e validador -f test_formato     # formato de la tarjeta
+pio test -e validador -f test_protocolo   # paquetes C1 y fragmentos (sincronización v2)
 ```
 
-Debe terminar en `PASSED`. Si alguien cambia el formato en Python
+Deben terminar en `PASSED`. Si alguien cambia el formato en Python
 (`transporte/tarjeta/formato.py`), hay que regenerar
-`test/test_formato/vectores.h` y repetir este test.
+`test/test_formato/vectores.h` y repetir el test. Si cambia el protocolo C1
+(`servidor_api/transporte/sync_v2/`), se regeneran los vectores y su `.h`:
+
+```bash
+cd servidor_api && python manage.py generar_vectores_c1 && cd ..
+python3 herramientas/vectores_a_h.py
+```
+
+La verificación ECDSA de los paquetes del servidor usa una copia de
+[micro-ecc](https://github.com/kmackay/micro-ecc) en `lib/micro-ecc/`, no
+mbedTLS: tarda ~67 ms en la ESP32 frente a ~290 ms. Dos detalles de esa copia:
+
+- Solo ella se compila con `-O3` (lo indica su `library.json`); el resto del
+  firmware sigue con `-Os`.
+- `uECC_prefijo.h` renombra sus funciones con `sp_`. El núcleo ESP32 trae
+  TinyCrypt dentro de `libbt.a`, con funciones de los mismos nombres pero
+  distinto comportamiento, y sin el prefijo la verificación fallaba al azar.
+
+Aun así no baja de 60 ms, así que verificar no debe hacerse dentro de `loop()`.
 
 Notas de carga:
 
@@ -370,8 +390,11 @@ pantalla_esp32/
 |-- lib/
 |   |-- PantallaUI/             Pantallas de espera, PASE, RECHAZADA y ATENCION
 |   |-- TarjetaTransporte/      Formato de la tarjeta y firmas (copia exacta del Python)
+|   |-- ProtocoloSP/            Paquetes C1 de la sincronización v2 y fragmentos BLE/ESP-NOW
+|   |-- micro-ecc/              Copia de micro-ecc 1.0.0 para verificar ECDSA (ver abajo)
 |   `-- LectorNFC/              Interfaz del lector, LectorPN532 (el del validador) y LectorPuente
-`-- test/test_formato/          Test del formato contra ejemplos del Python
+|-- test/test_formato/          Test del formato contra ejemplos del Python
+`-- test/test_protocolo/        Test de los paquetes C1 contra docs/contratos/vectores_c1.json
 ```
 
 En `transporte/`:
