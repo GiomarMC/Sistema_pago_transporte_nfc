@@ -41,14 +41,24 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost").split(",")]
 
+# Portal de clientes (mi.subepe.app; en local, mi.localhost). Sus rutas son portal.urls.
+# SESSION_COOKIE_DOMAIN queda sin definir a propósito: cada cookie de sesión vale solo
+# para su host, así que entrar en el panel no da acceso al portal ni al revés.
+DOMINIO_CLIENTE = os.environ.get("DOMINIO_CLIENTE", "").strip()
+if DOMINIO_CLIENTE and DOMINIO_CLIENTE not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(DOMINIO_CLIENTE)
+URLCONF_PORTAL = "portal.urls"
+
 # Despliegue con HTTPS detrás de Caddy (docker-compose.prod.yml): Caddy recibe
 # HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original.
 if os.environ.get("DJANGO_HTTPS", "0") == "1":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
-    # Formularios del panel (inicio de sesión...) enviados desde el dominio
+    # Formularios del panel y del portal enviados desde sus dominios
     CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in ALLOWED_HOSTS if h and h != "*"]
+    if DOMINIO_CLIENTE and f"https://{DOMINIO_CLIENTE}" not in CSRF_TRUSTED_ORIGINS:
+        CSRF_TRUSTED_ORIGINS.append(f"https://{DOMINIO_CLIENTE}")
 
 
 # Application definition
@@ -63,6 +73,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework.authtoken',
     'transporte',
+    'portal',
     'panel',
 ]
 
@@ -70,6 +81,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'config.middleware.RuteoPorHost',  # antes de CommonMiddleware (APPEND_SLASH usa el urlconf)
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',

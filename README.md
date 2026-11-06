@@ -328,6 +328,11 @@ cd transporte-nfc
    equipo, usa en `--url` la IP del servidor en la red local (ver 7.6). El
    comando se puede repetir: no crea duplicados y muestra los mismos tokens.
 
+El panel de operadores queda en http://localhost:8000/panel/ y el portal de
+clientes en http://mi.localhost:8000/ (`DOMINIO_CLIENTE=mi.localhost` en `.env`).
+Django elige las rutas según el host: en `mi.` solo existe el portal
+(`portal/urls.py`), sin panel, admin ni API de operadores.
+
 Comandos útiles:
 
 ```bash
@@ -510,8 +515,16 @@ a la VM sin acceso a ella: basta con juntarlos en `main`.
 superusuario aprueba la cuenta en la sección Usuarios del panel.
 
 **Configuración de la VM** (`servidor_api/.env`, no está en git): como
-`.env.example`, más `DOMINIO=subepe.app`, `DJANGO_ALLOWED_HOSTS=subepe.app`
-y `DJANGO_HTTPS=1`.
+`.env.example`, más `DOMINIO=subepe.app`, `DOMINIO_CLIENTE=mi.subepe.app`,
+`DJANGO_ALLOWED_HOSTS=subepe.app` y `DJANGO_HTTPS=1`. Django añade solo
+`DOMINIO_CLIENTE` a los hosts permitidos y a los orígenes de confianza de CSRF.
+
+**Portal de clientes.** https://mi.subepe.app la sirve el mismo servidor: Caddy
+saca el certificado de ambos dominios y Django responde con las rutas del portal
+cuando el host empieza con `mi.`. Requiere un registro DNS tipo **A** llamado
+`mi` en Name.com, apuntando a la IP de la VM (lo crea el propietario del
+dominio). Las sesiones no se comparten: la cookie de cada sitio vale solo para su
+host, así que entrar en el panel no inicia sesión en el portal ni al revés.
 
 **Copias de seguridad.** Cada noche (03:00 de Perú), `.github/workflows/respaldo.yml`
 saca una copia de la base de datos, comprueba que se puede leer, la **cifra** y

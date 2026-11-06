@@ -1,6 +1,6 @@
 # Despliegue en internet (p. ej. una VM de Oracle Cloud) con HTTPS:
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
-# Requiere en .env: DOMINIO, DJANGO_ALLOWED_HOSTS=<el dominio> y DJANGO_HTTPS=1.
+# Requiere en .env: DOMINIO, DOMINIO_CLIENTE, DJANGO_ALLOWED_HOSTS=<el dominio> y DJANGO_HTTPS=1.
 # Django deja de publicarse en el puerto 8000: solo se entra por Caddy (80/443).
 
 services:
@@ -11,6 +11,7 @@ services:
     image: caddy:2-alpine
     environment:
       DOMINIO: ${DOMINIO:?Define DOMINIO en el archivo .env}
+      DOMINIO_CLIENTE: ${DOMINIO_CLIENTE:?Define DOMINIO_CLIENTE en el archivo .env}
     ports:
       - "80:80"
       - "443:443"
