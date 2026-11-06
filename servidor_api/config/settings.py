@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'transporte',
     'panel',
+    'pagos',
 ]
 
 MIDDLEWARE = [
@@ -173,3 +174,8 @@ REST_FRAMEWORK = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+# Pagos en línea (contrato C5): pasarela activa y secreto de sus webhooks
+PAGOS_PASARELA = os.environ.get("PAGOS_PASARELA", "simulada")
+PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
