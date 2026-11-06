@@ -533,6 +533,74 @@ Secretos del repositorio (Settings → Secrets and variables → Actions):
 que también hay que guardarla fuera de GitHub). Al cambiar de VM se actualizan
 `VM_HOST` y `VM_KNOWN_HOSTS`, y el registro DNS de los dominios.
 
+### 7.9 Correo electrónico (Gmail)
+
+El servidor envía correos (códigos OTP, avisos de recarga, bloqueo, etc.) por
+**Gmail SMTP** (`smtp.gmail.com`, puerto 587, cifrado **STARTTLS**). La
+configuración está en `servidor_api/config/settings.py` y se activa solo si
+`servidor_api/.env` define las dos variables:
+
+```ini
+CORREO_USUARIO=cuenta@gmail.com
+CORREO_CLAVE_APP=abcdefghijklmnop   # contraseña de aplicación de 16 caracteres
+```
+
+Con ambas, el remitente es `SubePe <cuenta@gmail.com>`. Si faltan (o están
+vacías), los correos **no se envían**: se imprimen en la consola del servidor
+(`docker compose logs web`). Así se puede desarrollar sin cuenta de correo.
+
+**Requisitos de Google**
+
+- La cuenta debe tener la **verificación en dos pasos** activada. Sin ella,
+  Google no ofrece contraseñas de aplicación.
+- Una cuenta Gmail gratuita envía unos **500 correos al día**. Por encima de
+  ese límite, Google rechaza los envíos y el servidor los deja como pendientes.
+
+**Obtener la contraseña de aplicación**
+
+1. Entrar en la cuenta de Google → *Seguridad* → activar la *Verificación en dos pasos*.
+2. En *Seguridad* → *Contraseñas de aplicaciones* (o en myaccount.google.com/apppasswords).
+3. Escribir un nombre (p. ej. «SubePe») → *Crear*. Google muestra 16 caracteres.
+4. Copiarlos en `CORREO_CLAVE_APP`, sin espacios. **No** es la contraseña normal de la cuenta.
+
+Después de cambiar `.env`, reiniciar el servidor: `docker compose up -d`.
+
+**Verificar el envío desde la VM**
+
+```bash
+# Envía un correo de prueba a la dirección indicada (sustituir el destino)
+docker compose exec web python manage.py sendtestemail destino@ejemplo.com
+```
+
+El comando responde sin error y el mensaje «If you're reading this, it was
+successful.» debe llegar a la bandeja (revisar también spam). Si falla con
+`SMTPAuthenticationError`, la contraseña de aplicación o la cuenta están mal.
+
+**Reintentos de envío.** Si Gmail rechaza o no responde, el correo queda
+*pendiente* y no afecta a la operación que lo originó (una recarga, un bloqueo…).
+El comando `enviar_notificaciones` lo reintenta por cron cada 5 minutos, con
+espera creciente entre intentos: 5, 15, 60 y después 240 minutos. Son 5 intentos
+en total; al quinto fallido la notificación pasa a *fallida* y se crea una
+**alerta** «notificación fallida» en el panel. Cada ejecución procesa como máximo
+50 notificaciones. Los OTP se intentan al momento y también siguen este calendario.
+
+Programación en la VM (una sola vez, desde `servidor_api/`):
+
+```bash
+bash programar_notificaciones.sh     # añade la línea de cron (idempotente)
+crontab -l | grep subepe             # comprobar
+tail ~/enviar_notificaciones.log     # ver la salida de cada ejecución
+```
+
+**Plantillas.** Los textos viven en `servidor_api/notificaciones/templates/notificaciones/`,
+en dos versiones (`.txt` y `.html`). Para generar los correos de ejemplo y
+copiarlos al equipo (sin enviar nada):
+
+```bash
+docker compose exec web python manage.py previsualizar_notificaciones /tmp/correos
+docker compose cp web:/tmp/correos ./correos
+```
+
 ## 8. Uso
 
 Todos los comandos se ejecutan desde la carpeta `transporte/` (en Windows,
