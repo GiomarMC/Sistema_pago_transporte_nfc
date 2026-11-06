@@ -1,0 +1,1446 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>SubePe: plan de módulos y tareas</title>
+<style>
+@page { size: A4; margin: 17mm 15mm 18mm 15mm;
+  @bottom-right { content: "Página " counter(page) " de " counter(pages); font: 8pt "Noto Sans", sans-serif; color: #777; }
+  @bottom-left { content: "SubePe · Plan de módulos y tareas · v1 · 23/10/2026"; font: 8pt "Noto Sans", sans-serif; color: #777; }
+}
+@page :first { @bottom-left { content: none; } @bottom-right { content: none; } }
+:root { --tinta:#1d2430; --suave:#5b6574; --linea:#d6dbe2; --fondo:#f4f6f9; --acento:#0b6e4f; --acento2:#1f4e8c; --aviso:#a15c00; }
+* { box-sizing: border-box; }
+body { font: 9.6pt/1.45 "Noto Sans", "Liberation Sans", sans-serif; color: var(--tinta); margin: 0; }
+h1 { font-size: 24pt; margin: 0 0 6px; color: var(--acento); }
+h2 { font-size: 15pt; color: var(--acento); border-bottom: 2px solid var(--acento); padding-bottom: 3px; margin: 22px 0 10px; break-after: avoid; }
+h3 { font-size: 11.5pt; color: var(--acento2); margin: 16px 0 6px; break-after: avoid; }
+h4 { font-size: 10pt; margin: 12px 0 4px; break-after: avoid; }
+p { margin: 5px 0; }
+ul, ol { margin: 4px 0 6px; padding-left: 20px; }
+li { margin: 1.5px 0; }
+code, .mono { font-family: "Noto Sans Mono", "Liberation Mono", monospace; font-size: 8.4pt; background: var(--fondo); padding: 0 3px; border-radius: 3px; }
+pre { font-family: "Noto Sans Mono", "Liberation Mono", monospace; font-size: 7.9pt; line-height: 1.35; background: var(--fondo); border: 1px solid var(--linea); border-radius: 4px; padding: 7px 9px; white-space: pre-wrap; break-inside: avoid; margin: 6px 0; }
+pre code { background: none; padding: 0; }
+table { border-collapse: collapse; width: 100%; margin: 6px 0 8px; font-size: 8.6pt; break-inside: auto; }
+th, td { border: 1px solid var(--linea); padding: 3px 5px; text-align: left; vertical-align: top; }
+th { background: #e8f1ed; }
+tr { break-inside: avoid; }
+.portada { height: 250mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+.portada .sub { font-size: 13pt; color: var(--suave); margin-bottom: 26px; }
+.portada table { width: 70%; font-size: 9.5pt; }
+.nota { border-left: 4px solid var(--acento2); background: #eef3fa; padding: 6px 10px; margin: 8px 0; break-inside: avoid; }
+.aviso { border-left: 4px solid var(--aviso); background: #fdf4e7; padding: 6px 10px; margin: 8px 0; break-inside: avoid; }
+.salto { break-before: page; }
+.indice ol { columns: 2; column-gap: 24px; }
+.issue { border: 1px solid var(--linea); border-radius: 5px; margin: 8px 0; padding: 6px 9px 5px; break-inside: avoid; }
+.issue .ih { font-weight: 700; font-size: 9.8pt; margin-bottom: 3px; }
+.issue .id { color: #fff; background: var(--acento2); border-radius: 3px; padding: 0 5px; margin-right: 5px; font-family: "Noto Sans Mono", monospace; font-size: 8.5pt; }
+.issue .meta { font-size: 8.3pt; color: var(--suave); margin-bottom: 3px; }
+.issue .meta b { color: var(--tinta); }
+.issue .t { font-weight: 700; font-size: 8.6pt; margin-top: 4px; color: var(--acento); }
+.issue ol, .issue ul { margin: 1px 0 3px; }
+.issue ul.ok { list-style: none; padding-left: 4px; }
+.issue ul.ok li::before { content: "☐ "; }
+.epic { background: var(--fondo); border: 1px solid var(--linea); border-left: 5px solid var(--acento); border-radius: 4px; padding: 7px 10px; margin: 6px 0 4px; break-inside: avoid; }
+.epic b.e { color: var(--acento); }
+.tag { display: inline-block; font-size: 7.5pt; font-weight: 600; border-radius: 9px; padding: 0 6px; margin-left: 3px; border: 1px solid var(--linea); color: var(--suave); vertical-align: 1px; }
+.i0 { background: #fff1d6; border-color: #e2c27d; color: #6b4b00; }
+.i1 { background: #dff3e9; border-color: #8cc9ab; color: #0b5137; }
+.i2 { background: #e3ebf8; border-color: #94aed6; color: #1f3f73; }
+svg text { font-family: "Noto Sans", sans-serif; }
+.dos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+</style>
+</head>
+<body>
+
+<!-- ============================ PORTADA ============================ -->
+<section class="portada">
+  <h1>SubePe</h1>
+  <div style="font-size:17pt;font-weight:700;margin-bottom:6px">Plan de módulos, contratos y tareas</div>
+  <div class="sub">Sistema de pago de transporte urbano con tarjetas NFC: validador ESP32 con varios canales de comunicación, servidor central y banca del cliente</div>
+  <table>
+    <tr><th>Proyecto</th><td>Curso IoT. Sistema NFC de pago de buses</td></tr>
+    <tr><th>Versión del documento</th><td>1.0 (23/10/2026)</td></tr>
+    <tr><th>Repositorio</th><td><code>nfc/</code> (rama base <code>main</code>)</td></tr>
+    <tr><th>Servidor</th><td><code>https://subepe.app</code> (Oracle Cloud)</td></tr>
+    <tr><th>Alcance</th><td>Contexto, decisiones, contratos C1–C5 y módulos M0–M21 divididos en épicas e issues</td></tr>
+  </table>
+  <p style="margin-top:22px;color:var(--suave)">Este documento basta para implementar sin interpretar: cada issue indica de qué depende, qué archivos toca, los pasos y los criterios de aceptación. Si algo no está claro o no cuadra con el código, se abre una pregunta en el issue y no se improvisa.</p>
+</section>
+
+<!-- ============================ ÍNDICE ============================ -->
+<section class="indice">
+<h2>Índice</h2>
+<ol>
+  <li>Contexto y panorama</li>
+  <li>Decisiones de arquitectura</li>
+  <li>Arquitectura general (diagrama)</li>
+  <li>Convenciones de trabajo</li>
+  <li>Contrato C1: protocolo de sincronización v2</li>
+  <li>Contrato C2: interfaces de enlace del firmware</li>
+  <li>Contrato C3: registro lógico de tarjeta (215 y 424)</li>
+  <li>Contrato C4: API del portal del cliente</li>
+  <li>Contrato C5: interfaz de pasarela de pago</li>
+  <li>Mapa de módulos, instancias y dependencias</li>
+  <li>Instancia 0: M0 contratos en código</li>
+  <li>Instancia 1: módulos independientes (M1–M14)</li>
+  <li>Instancia 2: módulos dependientes (M15–M21)</li>
+  <li>Hardware a comprar</li>
+  <li>Riesgos y temas abiertos</li>
+  <li>Glosario</li>
+</ol>
+</section>
+
+<!-- ============================ 1. CONTEXTO ============================ -->
+<h2>1. Contexto y panorama</h2>
+<p>SubePe es un sistema de pago de transporte urbano. Cada pasajero tiene una <b>tarjeta NFC personal</b> con datos y saldo. Al subir al bus la acerca al <b>validador</b>, que cobra el pasaje en unos cientos de milisegundos y registra el viaje. Los viajes llegan al <b>servidor central</b>, que es la fuente de verdad del saldo. La idea es reproducir la experiencia de una tarjeta bancaria con NFC (al estilo BCP) aplicada al pago del bus, incluida una banca del cliente.</p>
+
+<h3>1.1 Estado actual (lo que ya funciona)</h3>
+<table>
+<tr><th style="width:24%">Parte</th><th>Estado</th></tr>
+<tr><td>Tarjetas</td><td>NTAG215 (familia Ultralight) para pruebas, con formato firmado v2 (<code>transporte/tarjeta/formato.py</code>): cabecera firmada, <b>doble registro de saldo</b>, contraseña PWD/PACK y contador NFC. 2 MIFARE Classic 1K de prueba. <b>Objetivo de producción: NTAG 424 DNA</b> (AES-128), que aún no tenemos.</td></tr>
+<tr><td>Programas del lector (PC)</td><td><code>transporte/</code>: emisión, validador sin conexión, recargas, bloqueo, con lector USB ACR122U. Sincronizan con <code>POST /api/sync/</code> (JSON).</td></tr>
+<tr><td>Validador autónomo</td><td><code>pantalla_esp32/</code> (entorno <code>validador</code>): ESP32-WROOM-32, PN532 por I2C (SDA P21, SCL P22, IRQ P32), LCD SSD1283A (P23, P18, P5, P17, P16), microSD (P26, P27, P14, P13). Cobra con escritura en ~329 ms. Sincroniza por <b>WiFi</b> (HTTPS) cada cierto tiempo y tiene portal de configuración de redes.</td></tr>
+<tr><td>Servidor</td><td><code>servidor_api/</code>: Django 6.1 + DRF + PostgreSQL 17 en Docker y Caddy (HTTPS). App <code>transporte</code> (API) y app <code>panel</code> (panel de operadores). Sincronización idempotente, detección de fraude (clones, copias restauradas), lista negra, recargas pendientes y tarifas. 25 tests. CI/CD con GitHub Actions y copias de seguridad diarias.</td></tr>
+<tr><td>Despliegue</td><td>Oracle Cloud. La VM de pago con crédito de prueba vence alrededor del 06/11/2026 y la mudanza a la VM <b>Always Free</b> (1 GB de RAM) está planificada para el 1–3/11.</td></tr>
+</table>
+
+<h3>1.2 Restricciones</h3>
+<ul>
+  <li><b>Presupuesto cero en infraestructura.</b> Solo capas gratuitas y nada que exija otro despliegue: todo lo nuevo vive en el mismo Docker Compose de la VM. La única compra prevista es el <b>módulo celular</b> (sección 14).</li>
+  <li><b>Tarjetas:</b> se trabaja con NTAG215 hasta tener NTAG 424 DNA. El sistema debe soportar las dos con <b>un mismo registro lógico</b> (C3); al cambiar de tarjeta solo cambia el controlador.</li>
+  <li><b>Conectividad no garantizada:</b> no se sabe si el conductor compartirá datos y no hay WiFi en toda la ruta. El validador <b>debe cobrar sin red</b> y sincronizar por el canal que haya.</li>
+  <li><b>Dinero real:</b> aunque la pasarela de pago es simulada, todo lo demás (libro contable, idempotencia, conciliación, auditoría) se construye como en producción.</li>
+  <li>Idioma: código, comentarios, commits e interfaz en <b>español</b>.</li>
+</ul>
+
+<h2>2. Decisiones de arquitectura</h2>
+<table>
+<tr><th style="width:4%">#</th><th style="width:26%">Decisión</th><th>Motivo</th></tr>
+<tr><td>D1</td><td><b>Saldo híbrido</b>: el servidor es la verdad y la tarjeta lleva una copia protegida</td><td>Permite cobrar sin conexión. Con la 424 la copia pasa a ser confiable porque solo se escribe con clave AES. Se reutiliza todo lo construido.</td></tr>
+<tr><td>D2</td><td><b>La validación siempre es local</b> (&lt; 300 ms) y la red solo propaga datos</td><td>Ninguna red garantiza latencia ni cobertura. Retrasos aceptados: bloqueos 1–5 min, recargas 5–15 min, viajes horas, tarifas 1 día.</td></tr>
+<tr><td>D3</td><td><b>Varios canales independientes</b>: 4G, WiFi (router o hotspot), celular del conductor por BLE y ESP-NOW entre buses</td><td>Robustez. Un <b>gestor de enlaces</b> usa un solo canal de subida a la vez, por prioridad, sin solaparlos. ESP-NOW es un intercambio entre buses aparte.</td></tr>
+<tr><td>D4</td><td><b>Paquetes firmados de extremo a extremo</b> (C1), sin importar el canal</td><td>El celular del conductor o <b>otro bus</b> pueden transportar datos sin ser de confianza: el validador firma con HMAC y el servidor con ECDSA P-256. Así un bus sin red sube sus viajes a través de otro.</td></tr>
+<tr><td>D5</td><td><b>MQTT</b> (Mosquitto) sobre TLS como transporte principal de 4G y WiFi</td><td>Es un estándar abierto (OASIS, ISO/IEC 20922) y Mosquitto es software libre (Eclipse). La conexión persistente y el envío de bloqueos desde el servidor gastan &lt; 1 MB/día por bus, frente a ~15–20 MB/día del sondeo HTTPS actual.</td></tr>
+<tr><td>D6</td><td>Fiabilidad con <b>acuses de la aplicación</b>, no con QoS de MQTT</td><td>El mismo acuse (paquete 0x81) sirve por MQTT, BLE, HTTP y ESP-NOW. MQTT se usa con QoS 0 y la librería simple PubSubClient alcanza.</td></tr>
+<tr><td>D7</td><td><b>Banca del cliente</b> en el subdominio <code>mi.subepe.app</code>, dentro del mismo Django</td><td>No requiere otro despliegue (solo un registro DNS y dos líneas en el <code>Caddyfile</code>). Las cookies de sesión del cliente quedan separadas de las del panel. API JSON (C4) para una futura app.</td></tr>
+<tr><td>D8</td><td><b>Alta bancaria</b>: la tarjeta se emite en ventanilla con DNI y el portal se activa con un código de un solo uso</td><td>Una tarjeta perdida en el camino no da acceso al portal. Igual que con las tarjetas bancarias.</td></tr>
+<tr><td>D9</td><td><b>Libro mayor de doble partida</b> inmutable; pasarela detrás de una interfaz (C5) con un adaptador simulado</td><td>Se trata dinero real: cada sol se traza y concilia. Cambiar a una pasarela real es escribir un adaptador.</td></tr>
+<tr><td>D10</td><td><b>Correo por Gmail SMTP</b> (contraseña de aplicación) para OTP y avisos</td><td>Es gratis (~500 correos/día). Sirve como segundo canal para recuperar la cuenta y detectar robos. Más adelante se puede pasar a Brevo o Resend con <code>@subepe.app</code>.</td></tr>
+<tr><td>D11</td><td>El relé por celular lo usa <b>solo el conductor</b>, con una <b>página web</b> (Web Bluetooth), sin app</td><td>Sin instalación. Funciona en Chrome para Android. Los paquetes van firmados, así que la página no puede alterarlos.</td></tr>
+</table>
+
+<!-- ============================ 3. DIAGRAMA ============================ -->
+<h2 class="salto">3. Arquitectura general</h2>
+<svg viewBox="0 0 760 470" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5b6574"/></marker>
+  </defs>
+  <style>
+    .c{fill:#fff;stroke:#1f4e8c;stroke-width:1.4;rx:6}
+    .v{fill:#eef6f2;stroke:#0b6e4f;stroke-width:1.6}
+    .s{fill:#eef3fa;stroke:#1f4e8c;stroke-width:1.6}
+    .l{stroke:#5b6574;stroke-width:1.3;fill:none;marker-end:url(#f)}
+    .ld{stroke:#5b6574;stroke-width:1.3;fill:none;stroke-dasharray:5 3;marker-end:url(#f);marker-start:url(#f)}
+    .t{font-size:11px;fill:#1d2430}
+    .tb{font-size:12px;font-weight:700;fill:#1d2430}
+    .tp{font-size:9.5px;fill:#5b6574}
+  </style>
+  <!-- Bus A -->
+  <rect x="10" y="20" width="250" height="250" rx="8" class="v"/>
+  <text x="22" y="40" class="tb">Bus A: validador ESP32</text>
+  <rect x="22" y="52" width="105" height="34" rx="5" class="c"/><text x="30" y="73" class="t">PN532 (NFC)</text>
+  <rect x="140" y="52" width="108" height="34" rx="5" class="c"/><text x="148" y="73" class="t">LCD + microSD</text>
+  <rect x="22" y="96" width="226" height="34" rx="5" class="c"/><text x="30" y="112" class="t">Cobro local (&lt; 300 ms) · C3</text><text x="30" y="125" class="tp">listas y cola de eventos en microSD (M3)</text>
+  <rect x="22" y="140" width="226" height="34" rx="5" class="c"/><text x="30" y="156" class="t">Sincronizador v2 (M4) · paquetes C1</text><text x="30" y="169" class="tp">firmados con HMAC del validador</text>
+  <rect x="22" y="184" width="226" height="30" rx="5" class="c"/><text x="30" y="203" class="t">Gestor de enlaces (M15): 1 canal a la vez</text>
+  <rect x="22" y="222" width="52" height="36" rx="5" class="c"/><text x="31" y="244" class="t">WiFi</text>
+  <rect x="80" y="222" width="52" height="36" rx="5" class="c"/><text x="93" y="244" class="t">4G</text>
+  <rect x="138" y="222" width="52" height="36" rx="5" class="c"/><text x="148" y="244" class="t">BLE</text>
+  <rect x="196" y="222" width="52" height="36" rx="5" class="c"/><text x="199" y="238" class="t">ESP-</text><text x="199" y="251" class="t">NOW</text>
+  <!-- Tarjeta -->
+  <rect x="10" y="300" width="120" height="50" rx="8" class="c"/><text x="20" y="320" class="tb">Tarjeta</text><text x="20" y="337" class="tp">NTAG215 → NTAG 424</text>
+  <path d="M16,300 L16,69 L22,69" class="ld"/>
+  <!-- Bus B -->
+  <rect x="150" y="300" width="110" height="50" rx="8" class="v"/><text x="160" y="320" class="tb">Bus B</text><text x="160" y="337" class="tp">sin red</text>
+  <path d="M222,300 L222,260" class="ld"/>
+  <text x="228" y="290" class="tp">paquetes ajenos</text>
+  <!-- Conductor -->
+  <rect x="10" y="380" width="250" height="70" rx="8" class="c"/>
+  <text x="20" y="400" class="tb">Celular del conductor</text>
+  <text x="20" y="416" class="tp">subepe.app/conductor (Web Bluetooth, M16)</text>
+  <text x="20" y="430" class="tp">toma la cola por BLE y la sube con sus datos</text>
+  <path d="M145,380 L145,260" class="ld"/>
+  <!-- Internet -->
+  <path d="M260,240 C330,240 340,72 422,72" class="l"/>
+  <text x="344" y="196" class="tp">MQTT/TLS :8883</text>
+  <text x="344" y="208" class="tp">(WiFi o 4G)</text>
+  <path d="M260,420 C330,420 360,300 410,300" class="l"/>
+  <text x="290" y="395" class="tp">HTTPS /api/v2/paquetes/</text>
+  <!-- Servidor -->
+  <rect x="410" y="20" width="340" height="360" rx="8" class="s"/>
+  <text x="422" y="40" class="tb">VM Oracle · Docker Compose</text>
+  <rect x="584" y="52" width="154" height="40" rx="5" class="c"/><text x="592" y="70" class="t">Caddy (HTTPS)</text><text x="592" y="84" class="tp">subepe.app · mi.subepe.app</text>
+  <rect x="422" y="52" width="150" height="40" rx="5" class="c"/><text x="430" y="70" class="t">Mosquitto (M9)</text><text x="430" y="84" class="tp">:8883 TLS, ACL por validador</text>
+  <rect x="584" y="104" width="154" height="36" rx="5" class="c"/><text x="592" y="121" class="t">puente_mqtt (M9)</text><text x="592" y="134" class="tp">mismo código Django</text>
+  <rect x="422" y="104" width="150" height="250" rx="5" class="c"/>
+  <text x="430" y="122" class="tb">Django</text>
+  <text x="430" y="140" class="t">transporte (API v1)</text>
+  <text x="430" y="157" class="t">sync_v2 (M9)</text>
+  <text x="430" y="174" class="t">libro (M10)</text>
+  <text x="430" y="191" class="t">pagos (M11)</text>
+  <text x="430" y="208" class="t">clientes (M12)</text>
+  <text x="430" y="225" class="t">notificaciones (M13)</text>
+  <text x="430" y="242" class="t">portal (M14)</text>
+  <text x="430" y="259" class="t">conductor (M16)</text>
+  <text x="430" y="276" class="t">panel (operadores)</text>
+  <rect x="584" y="152" width="154" height="36" rx="5" class="c"/><text x="592" y="174" class="t">PostgreSQL 17</text>
+  <path d="M584,170 L572,170" class="l"/>
+  <path d="M572,86 L578,86 L578,116 L584,116" class="l"/>
+  <path d="M600,92 L600,98 L540,98 L540,104" class="l"/>
+  <path d="M584,122 L572,122" class="l"/>
+  <rect x="584" y="200" width="154" height="40" rx="5" class="c"/><text x="592" y="218" class="t">Pasarela (C5)</text><text x="592" y="232" class="tp">simulada → real</text>
+  <path d="M584,220 L572,220" class="ld"/>
+  <rect x="584" y="252" width="154" height="36" rx="5" class="c"/><text x="592" y="274" class="t">Gmail SMTP</text>
+  <path d="M572,268 L584,268" class="l"/>
+  <!-- Cliente -->
+  <rect x="470" y="405" width="230" height="50" rx="8" class="c"/>
+  <text x="480" y="425" class="tb">Cliente (navegador)</text>
+  <text x="480" y="441" class="tp">mi.subepe.app: saldo, recargas, bloqueo</text>
+  <path d="M585,405 L585,382" class="l"/>
+</svg>
+<p class="nota"><b>Lectura del diagrama:</b> el bus cobra solo. El sincronizador produce paquetes C1 firmados y el gestor los envía por el canal disponible. Si el bus A no tiene red, entrega sus paquetes al conductor por BLE o a otro bus por ESP-NOW, y quien tenga red los sube. El servidor verifica la firma del bus de origen sin importar por dónde llegaron.</p>
+
+<!-- ============================ 4. CONVENCIONES ============================ -->
+<h2>4. Convenciones de trabajo</h2>
+<h3>4.1 Estructura de los issues</h3>
+<ul>
+  <li><b>Épica</b> = módulo (<code>M9</code>). <b>Issue</b> = tarea entregable (<code>M9-03</code>), pensada para 0,5–3 días de trabajo.</li>
+  <li>Etiquetas de GitHub: <code>epica:M9</code>, <code>area:firmware|servidor|portal|tarjeta|hardware|docs</code>, <code>instancia:0|1|2</code>.</li>
+  <li>Título del issue: <code>[M9-03] Servicio procesar_paquete</code>. El cuerpo copia la ficha de este documento (depende de, archivos, pasos, criterios).</li>
+  <li>Si el issue necesita algo que no está en un contrato, <b>no se inventa</b>: se comenta en el issue, se actualiza el contrato y se sube su versión.</li>
+</ul>
+<h3>4.2 Ramas, commits y PR</h3>
+<ul>
+  <li>Rama: <code>tarea/&lt;ID&gt;-&lt;descripcion-corta&gt;</code>, por ejemplo <code>tarea/M9-03-procesar-paquete</code>. Se sale de <code>main</code> y se vuelve a <code>main</code> por PR.</li>
+  <li>Commits en español, en imperativo o descriptivos (como los actuales: "Validador ESP32 autónomo con lector PN532 por I2C"). Un PR por issue.</li>
+  <li>El PR enlaza el issue (<code>Cierra #N</code>) y describe cómo se probó.</li>
+</ul>
+<h3>4.3 Definición de terminado (todas las tareas)</h3>
+<ul>
+  <li>Se cumplen todos los criterios de aceptación del issue.</li>
+  <li>Servidor: <code>docker compose exec web python manage.py test</code> pasa, y los tests nuevos cubren los casos del issue.</li>
+  <li>Firmware: <code>pio run -e validador</code> compila sin advertencias nuevas; <code>pio test</code> pasa cuando hay tests; se probó en la placa si el issue toca hardware.</li>
+  <li>La documentación afectada está al día (<code>README.md</code>, <code>pantalla_esp32/README.md</code>, contrato).</li>
+  <li>Ningún secreto en el repositorio: las claves van en <code>.env</code>, NVS o <code>transporte/claves/</code>, que están en <code>.gitignore</code>.</li>
+  <li>Montos <b>siempre en céntimos enteros</b>; nunca <code>float</code>.</li>
+</ul>
+
+<!-- ============================ 5. C1 ============================ -->
+<h2 class="salto">5. Contrato C1: protocolo de sincronización v2</h2>
+<p>Define los bytes que viajan entre el validador y el servidor por <b>cualquier</b> canal (MQTT, HTTP, BLE, ESP-NOW). Formato binario de tamaño fijo, <b>little-endian</b> (en Python: <code>struct</code> con <code>"&lt;"</code>). Convive con la API v1 (<code>/api/sync/</code>), que no se toca mientras los validadores PC la usen.</p>
+
+<h3>5.1 Cabecera común (20 bytes)</h3>
+<table>
+<tr><th>Offset</th><th>Bytes</th><th>Campo</th><th>Descripción</th></tr>
+<tr><td>0</td><td>2</td><td>magia</td><td><code>0x53 0x50</code> ("SP")</td></tr>
+<tr><td>2</td><td>1</td><td>versión</td><td><code>1</code></td></tr>
+<tr><td>3</td><td>1</td><td>tipo</td><td>Ver 5.2</td></tr>
+<tr><td>4</td><td>2</td><td>origen</td><td>N.º de validador que creó el paquete; <code>0</code> = servidor</td></tr>
+<tr><td>6</td><td>2</td><td>destino</td><td>N.º de validador; <code>0</code> = servidor; <code>0xFFFF</code> = todos</td></tr>
+<tr><td>8</td><td>4</td><td>secuencia</td><td>uint32 creciente por emisor; nunca se repite (persistida)</td></tr>
+<tr><td>12</td><td>4</td><td>creado</td><td>Hora unix (s) de creación en el emisor</td></tr>
+<tr><td>16</td><td>2</td><td>largo</td><td>Bytes del cuerpo (sin cabecera ni firma)</td></tr>
+<tr><td>18</td><td>2</td><td>reservado</td><td><code>0</code></td></tr>
+</table>
+<p>Después del cuerpo va la <b>firma</b>, calculada sobre <code>cabecera || cuerpo</code>:</p>
+<ul>
+  <li>Si <code>origen ≠ 0</code> (validador): <code>HMAC-SHA256(K_val, cabecera||cuerpo)</code> truncado a los <b>16 primeros bytes</b>. <code>K_val</code> son 32 bytes aleatorios propios de cada validador, generados por el servidor (M0-06) y guardados en el campo <code>Validador.clave_hmac</code> y en la NVS de la ESP32.</li>
+  <li>Si <code>origen = 0</code> (servidor): <b>ECDSA P-256 con SHA-256</b>; firma de 64 bytes (<code>r || s</code>, 32 bytes cada uno, big-endian). La clave privada está en <code>.env</code> (<code>LISTAS_CLAVE_PRIVADA</code>, PEM) y la pública va compilada en el firmware (<code>clave_servidor.h</code>).</li>
+</ul>
+<p>Tamaño total = 20 + largo + (16 o 64). Un paquete mide como máximo <b>2048 bytes</b>. Si la magia, la versión, el largo o la firma no son válidos, el paquete <b>se descarta</b> y se registra; nunca se procesa a medias.</p>
+
+<h3>5.2 Tipos de paquete</h3>
+<table>
+<tr><th>Tipo</th><th>Nombre</th><th>Sentido</th><th>Cuerpo</th></tr>
+<tr><td><code>0x01</code></td><td>EVENTOS</td><td>validador → servidor</td><td><code>n</code> (uint8, 1–30) + 3 bytes reservados + <code>n</code> × evento de 64 B (5.3)</td></tr>
+<tr><td><code>0x02</code></td><td>HOLA</td><td>validador → servidor</td><td>32 B (5.4). Se envía al conectar y cada 5 min</td></tr>
+<tr><td><code>0x81</code></td><td>ACUSE</td><td>servidor → validador</td><td><code>hasta_evento</code> uint32 + <code>hora_servidor</code> uint32 (8 B)</td></tr>
+<tr><td><code>0x82</code></td><td>LISTAS</td><td>servidor → validador / todos</td><td>Cambios de lista negra y recargas (5.5)</td></tr>
+<tr><td><code>0x83</code></td><td>TARIFAS</td><td>servidor → validador</td><td>Tabla completa de tarifas (5.6)</td></tr>
+</table>
+
+<h3>5.3 Evento (64 bytes)</h3>
+<table>
+<tr><th>Offset</th><th>Bytes</th><th>Campo</th><th>Equivale en la API v1 a</th></tr>
+<tr><td>0</td><td>4</td><td>id_evento (uint32, correlativo del validador)</td><td><code>id</code></td></tr>
+<tr><td>4</td><td>1</td><td>tipo: 1 viaje, 2 incidencia, 3 fraude</td><td><code>tipo</code></td></tr>
+<tr><td>5</td><td>1</td><td>largo del UID (4 o 7)</td><td>—</td></tr>
+<tr><td>6</td><td>2</td><td>operación (uint16)</td><td><code>operacion</code></td></tr>
+<tr><td>8</td><td>4</td><td>fecha (unix, s)</td><td><code>fecha</code></td></tr>
+<tr><td>12</td><td>4</td><td>id_tarjeta (uint32)</td><td><code>tarjeta_id</code></td></tr>
+<tr><td>16</td><td>10</td><td>UID (bytes, con ceros de relleno)</td><td><code>uid</code> (en hex en v1)</td></tr>
+<tr><td>26</td><td>2</td><td>reservado = 0</td><td>—</td></tr>
+<tr><td>28</td><td>4</td><td>monto (int32, céntimos; 0 si no aplica)</td><td><code>monto</code></td></tr>
+<tr><td>32</td><td>4</td><td>saldo_final (int32)</td><td><code>saldo_final</code></td></tr>
+<tr><td>36</td><td>4</td><td>contador NFC (uint32; <code>0xFFFFFFFF</code> = no hay)</td><td><code>contador</code></td></tr>
+<tr><td>40</td><td>4</td><td>recarga_hasta (uint32; 0 = ninguna)</td><td><code>recarga_hasta</code></td></tr>
+<tr><td>44</td><td>20</td><td>detalle ASCII, relleno con 0 (texto de la incidencia truncado)</td><td><code>detalle</code></td></tr>
+</table>
+<p>El servidor convierte cada evento al <code>dict</code> que ya acepta <code>servicios.procesar_evento()</code>, así que la lógica de fraude, bloqueo y recargas <b>no se duplica</b>.</p>
+
+<h3>5.4 HOLA (32 bytes)</h3>
+<table>
+<tr><th>Offset</th><th>Bytes</th><th>Campo</th></tr>
+<tr><td>0</td><td>4</td><td>version_listas: última versión de LISTAS aplicada</td></tr>
+<tr><td>4</td><td>4</td><td>version_tarifas: versión de TARIFAS guardada</td></tr>
+<tr><td>8</td><td>4</td><td>ultimo_evento: último id_evento creado</td></tr>
+<tr><td>12</td><td>2</td><td>pendientes: eventos propios sin acuse</td></tr>
+<tr><td>14</td><td>2</td><td>ajenos: paquetes de otros buses guardados</td></tr>
+<tr><td>16</td><td>1</td><td>enlace: 1 WiFi, 2 4G, 3 BLE, 4 reenviado por otro bus</td></tr>
+<tr><td>17</td><td>1</td><td>señal (int8, dBm/2; 0 = no disponible)</td></tr>
+<tr><td>18</td><td>2</td><td>reservado</td></tr>
+<tr><td>20</td><td>4</td><td>bytes_tx_hoy (todos los canales)</td></tr>
+<tr><td>24</td><td>4</td><td>bytes_rx_hoy</td></tr>
+<tr><td>28</td><td>4</td><td>version_firmware (uint32, AAAAMMDD de compilación)</td></tr>
+</table>
+
+<h3>5.5 LISTAS (cambios versionados)</h3>
+<p>Cuerpo: <code>version_desde</code> uint32 · <code>version_hasta</code> uint32 · <code>n</code> uint16 (0–120) · <code>urgente</code> uint8 · reservado uint8 · <code>n</code> × entrada de 16 B:</p>
+<table>
+<tr><th>Offset</th><th>Bytes</th><th>Campo</th><th>Tipo 1: BLOQUEO</th><th>Tipo 2: RECARGA</th></tr>
+<tr><td>0</td><td>1</td><td>tipo</td><td>1</td><td>2</td></tr>
+<tr><td>1</td><td>1</td><td>op</td><td>1 = agregar a la lista negra, 2 = quitar</td><td>1 = pendiente, 2 = ya aplicada (borrar)</td></tr>
+<tr><td>2</td><td>2</td><td>reservado</td><td>0</td><td>0</td></tr>
+<tr><td>4</td><td>4</td><td>a</td><td>id_tarjeta</td><td>id_cuenta</td></tr>
+<tr><td>8</td><td>4</td><td>b</td><td>0</td><td>seq de la recarga</td></tr>
+<tr><td>12</td><td>4</td><td>c</td><td>0</td><td>monto (céntimos)</td></tr>
+</table>
+<p><b>Reglas</b> (las cumplen el servidor y el validador):</p>
+<ol>
+  <li>Cada cambio de lista en el servidor recibe una <b>versión global</b> creciente (tabla <code>CambioLista</code>, M9-01).</li>
+  <li>El validador aplica un paquete solo si <code>version_desde == su version_listas</code>, o si <code>version_desde == 0</code>: en ese caso borra sus listas y las reconstruye. Después guarda <code>version_listas = version_hasta</code>.</li>
+  <li>Si el servidor ve que un validador está atrasado más de 2000 versiones, le manda una <b>foto completa</b>: primer paquete con <code>version_desde = 0</code> y los siguientes encadenados, solo con <code>op = 1</code> del estado actual.</li>
+  <li>Un bloqueo nuevo se publica además como paquete <b>urgente</b> (<code>urgente = 1</code>, <code>destino = 0xFFFF</code>, 1 entrada). El validador aplica las entradas urgentes de BLOQUEO <b>aunque no sean contiguas</b>, sin cambiar su version_listas; cuando le llegue el cambio en orden, aplicarlo de nuevo no tiene efecto.</li>
+  <li>Un paquete con firma inválida se descarta y se registra como incidencia "lista con firma inválida".</li>
+</ol>
+
+<h3>5.6 TARIFAS</h3>
+<p>Cuerpo: <code>version</code> uint32 (= marca unix de la última modificación de cualquier tarifa) · <code>n</code> uint8 · 3 reservados · <code>n</code> × 24 B: <code>codigo</code> uint8 · 3 reservados · <code>precio</code> uint32 (céntimos) · <code>nombre</code> 16 B ASCII con relleno de ceros. El servidor lo envía cuando la <code>version_tarifas</code> del HOLA es distinta de la actual.</p>
+
+<h3>5.7 Acuses</h3>
+<ul>
+  <li>El servidor guarda, por validador, <code>ultimo_evento_contiguo</code>: el mayor id N tal que recibió todos los ids de 1 a N.</li>
+  <li>ACUSE.<code>hasta_evento</code> = ese valor. El validador borra de su cola los eventos con id ≤ hasta_evento. Como los acuses van <b>firmados por el servidor</b>, un intermediario no puede hacer que el validador borre eventos sin subir.</li>
+  <li>Reenviar un evento ya recibido no hace nada (idempotencia por <code>(validador, id_evento)</code>).</li>
+  <li>Al recibir un HOLA, el servidor responde siempre ACUSE + LISTAS pendientes + TARIFAS (si cambiaron).</li>
+</ul>
+
+<h3>5.8 Transporte por MQTT</h3>
+<table>
+<tr><th>Tópico</th><th>Publica</th><th>Contenido</th></tr>
+<tr><td><code>sp/v/{n}/sube</code></td><td>validador n</td><td>Paquetes 0x01 y 0x02 propios <b>y ajenos</b> (de otros buses), uno por mensaje</td></tr>
+<tr><td><code>sp/v/{n}/baja</code></td><td>puente del servidor</td><td>Respuestas para el validador n y acuses de los paquetes ajenos que subió n</td></tr>
+<tr><td><code>sp/todos/urgente</code></td><td>puente del servidor</td><td>LISTAS urgentes (bloqueos)</td></tr>
+<tr><td><code>sp/v/{n}/conexion</code></td><td>validador n (y su <i>last will</i>)</td><td><code>"1"</code> al conectar y <code>"0"</code> como <i>last will</i>, con <i>retain</i></td></tr>
+</table>
+<p>Broker: Mosquitto 2.x, puerto <b>8883</b> (TLS con el certificado de Let's Encrypt de Caddy). Usuario MQTT = número de validador; contraseña = token MQTT propio. Se usa <b>QoS 0</b>, sin sesión persistente y con <i>keepalive</i> de 60 s. ACL:</p>
+<pre>user puente
+topic readwrite sp/#
+
+pattern write sp/v/%u/sube
+pattern write sp/v/%u/conexion
+pattern read  sp/v/%u/baja
+topic read    sp/todos/#</pre>
+
+<h3>5.9 Transporte por HTTP (celular del conductor y respaldo)</h3>
+<p><code>POST https://subepe.app/api/v2/paquetes/</code> · <code>Content-Type: application/octet-stream</code> · cuerpo = paquetes C1 concatenados (cada uno se delimita con su campo <code>largo</code>). Se autentica con una sesión de usuario del grupo <code>conductores</code> o con el token DRF de un validador. La respuesta (<code>200</code>, octet-stream) son los paquetes de respuesta concatenados. Error <code>400</code> si el cuerpo supera 64 KB.</p>
+
+<h3>5.10 Fragmentación (BLE y ESP-NOW)</h3>
+<p>Los dos canales usan la <b>misma trama</b>, de máximo 240 bytes:</p>
+<table>
+<tr><th>Offset</th><th>Bytes</th><th>Campo</th></tr>
+<tr><td>0</td><td>2</td><td>magia <code>"EN"</code></td></tr>
+<tr><td>2</td><td>1</td><td>clase: 1 BALIZA, 2 FRAGMENTO, 3 PEDIDO</td></tr>
+<tr><td>3</td><td>1</td><td>reservado</td></tr>
+<tr><td>4</td><td>2</td><td>validador emisor (0 = celular o servidor)</td></tr>
+<tr><td>6</td><td>…</td><td>según la clase (abajo)</td></tr>
+</table>
+<ul>
+  <li><b>FRAGMENTO</b>: <code>id_mensaje</code> uint32 · <code>indice</code> uint8 · <code>total</code> uint8 (≤ 10) · <code>largo</code> uint8 · datos (≤ 220 B). Un mensaje es un paquete C1 completo. Se reensambla con un tiempo límite de 3 s; si falta un fragmento, se descarta el mensaje entero.</li>
+  <li><b>BALIZA</b> (solo ESP-NOW, a difusión cada 2 s ± 500 ms al azar): <code>version_listas</code> u32 · <code>version_tarifas</code> u32 · <code>pendientes</code> u16 · <code>ajenos</code> u16 · <code>flags</code> u8 (bit0 = tiene canal con el servidor ahora; bit1 = acepta ajenos).</li>
+  <li><b>PEDIDO</b>: <code>que</code> u8 (1 = LISTAS desde versión X, 2 = TARIFAS, 3 = acuses para mí) · <code>x</code> u32.</li>
+</ul>
+<p>UUIDs BLE (GATT): servicio <code>a3f1c000-5ab0-4e50-9e2b-53554245504e</code>. Características: <code>…c001…</code> <b>info</b> (read: cuerpo HOLA + n.º de validador, 34 B), <code>…c002…</code> <b>salida</b> (notify: tramas FRAGMENTO del validador al celular), <code>…c003…</code> <b>entrada</b> (write with response: tramas FRAGMENTO del celular al validador), <code>…c004…</code> <b>control</b> (write: 1 = empezar a enviar la cola, 2 = parar, 3 = fin de sesión). En todas solo cambian los dígitos <code>c00X</code> del primer grupo.</p>
+
+<h3>5.11 Vectores de prueba</h3>
+<p><code>docs/contratos/vectores_c1.json</code> (M0-01) contiene paquetes de ejemplo con claves de prueba fijas y su salida en hex. Las dos bibliotecas (Python y C++) <b>deben</b> producir y aceptar exactamente esos bytes. Es la garantía de que firmware y servidor se entienden.</p>
+
+<!-- ============================ 6. C2 ============================ -->
+<h2 class="salto">6. Contrato C2: interfaces de enlace del firmware</h2>
+<p>Carpeta <code>pantalla_esp32/lib/Enlaces/</code>. Hay dos tipos de canal:</p>
+<ul>
+  <li><b>Enlace IP</b> (WiFi, 4G): da un flujo TLS hacia el servidor, por el que corre MQTT.</li>
+  <li><b>Canal de paquetes</b> (MQTT sobre un enlace IP, o BLE): mueve paquetes C1 completos. El sincronizador (M4) solo conoce <code>CanalPaquetes</code>.</li>
+</ul>
+<pre><code>// Enlace.h — enlace IP hacia internet (WiFi o 4G)
+enum class EstadoEnlace : uint8_t { Apagado, Conectando, Listo, Error };
+
+class Enlace {
+ public:
+  virtual ~Enlace() = default;
+  virtual const char *nombre() const = 0;      // "wifi" | "4g"
+  virtual uint8_t codigo() const = 0;          // 1 wifi, 2 4g (campo enlace de HOLA)
+  virtual void encender() = 0;                 // empieza a conectar sin bloquear
+  virtual void apagar() = 0;                   // libera radio/módem
+  virtual void atender() = 0;                  // en cada loop(); nunca bloquea más de 50 ms
+  virtual EstadoEnlace estado() const = 0;
+  virtual int8_t senal() const = 0;            // dBm/2, 0 si no se sabe
+  // Cliente TLS ya conectado a host:puerto (verifica con raices_tls.h).
+  // nullptr si el enlace no está Listo o falla la conexión.
+  virtual Client *abrir(const char *host, uint16_t puerto) = 0;
+  virtual void cerrar() = 0;
+  virtual uint32_t bytesTx() const = 0;        // desde el arranque
+  virtual uint32_t bytesRx() const = 0;
+};
+
+// CanalPaquetes.h — mueve paquetes C1 completos
+class CanalPaquetes {
+ public:
+  virtual ~CanalPaquetes() = default;
+  virtual const char *nombre() const = 0;      // "mqtt-wifi" | "mqtt-4g" | "ble"
+  virtual uint8_t codigoEnlace() const = 0;    // 1, 2 o 3
+  virtual bool listo() const = 0;              // puede enviar ahora
+  virtual void atender() = 0;                  // en cada loop()
+  virtual bool enviar(const uint8_t *paquete, size_t largo) = 0;
+  // Paquete recibido del servidor (copiado en buf); devuelve su largo o 0 si no hay
+  virtual size_t recibir(uint8_t *buf, size_t max) = 0;
+};
+
+// Vecinos.h — ESP-NOW entre buses (no es canal de subida)
+class Vecinos {
+ public:
+  virtual void iniciar(uint8_t canalWifi) = 0; // 1 por defecto
+  virtual void atender() = 0;
+  virtual void pausar(bool si) = 0;            // cuando el WiFi STA usa otro canal
+  virtual size_t cantidad() const = 0;         // vecinos vistos en los últimos 10 s
+};</code></pre>
+<p>Implementaciones previstas: <code>EnlaceWifi</code> (M6), <code>Enlace4G</code> (M5), <code>CanalMqtt(Enlace&amp;)</code> (M15), <code>CanalBle</code> (M7), <code>VecinosEspNow</code> (M8). Para pruebas: <code>EnlaceFalso</code> y <code>CanalFalso</code> (M0-03).</p>
+<p><b>Reglas del gestor</b> (las implementa M15, pero los módulos las asumen desde ya):</p>
+<ol>
+  <li>Hay <b>un solo canal de subida activo</b> a la vez. Prioridad: <b>WiFi (0) &gt; 4G (1) &gt; BLE (2)</b>. WiFi va primero porque no consume el plan de datos.</li>
+  <li>Un canal de mayor prioridad que pasa a Listo toma el control <b>después</b> del intercambio en curso y tras 10 s estable (histéresis). Nunca se corta un paquete a medias.</li>
+  <li>Con WiFi Listo durante más de 5 min, el 4G cierra MQTT y queda registrado en la red sin tráfico. Si el WiFi se cae, el 4G retoma.</li>
+  <li>BLE solo se activa cuando hay un celular conectado que pide la cola; mientras dure esa sesión es el canal activo si no hay WiFi ni 4G.</li>
+  <li>ESP-NOW funciona en paralelo, en el canal de radio 1. Si el WiFi STA está conectado a un AP en otro canal, ESP-NOW se pausa.</li>
+</ol>
+
+<!-- ============================ 7. C3 ============================ -->
+<h2>7. Contrato C3: registro lógico de tarjeta (NTAG215 y NTAG 424)</h2>
+<p><b>Decisión:</b> los <b>72 bytes</b> del área del sistema (cabecera firmada de 24 B en los offsets 0–23, reservado 24–31, registro A en 32–51 y registro B en 52–71; formato v2 de <code>transporte/tarjeta/formato.py</code>) son <b>idénticos en las dos tarjetas</b>. Solo cambia dónde se guardan y cómo se protegen. <code>formato.py</code> y <code>Formato.cpp</code> no cambian.</p>
+<table>
+<tr><th style="width:22%"></th><th>NTAG215 (ahora)</th><th>NTAG 424 DNA (producción)</th></tr>
+<tr><td>Ubicación del área</td><td>Páginas 8–25</td><td>Archivo estándar <b>03</b> (128 B), offsets 0–71</td></tr>
+<tr><td>Protección de escritura</td><td>PWD/PACK desde la página 8</td><td>Escritura solo con <b>K2</b>, CommMode <b>Full</b> (cifrado + MAC)</td></tr>
+<tr><td>Protección de lectura</td><td>Libre (los datos van firmados)</td><td>Lectura con <b>K1</b>, CommMode Full</td></tr>
+<tr><td>Firma HMAC de los registros</td><td>Obligatoria</td><td>Se mantiene (defensa en profundidad; el formato es el mismo)</td></tr>
+<tr><td>Campo "contador"</td><td>Contador NFC (READ_CNT)</td><td><code>SDMReadCtr</code> del archivo 02 (GetFileCounters)</td></tr>
+<tr><td>Anti-clonación</td><td>En el servidor (operación o contador repetidos)</td><td>Autenticación AES mutua (AuthenticateEV2First); el servidor sigue vigilando</td></tr>
+<tr><td>Consulta con el celular</td><td>No</td><td>Archivo 02 NDEF con <b>SUN</b>: <code>https://mi.subepe.app/t?p=&lt;PICCData&gt;&amp;m=&lt;CMAC&gt;</code></td></tr>
+</table>
+<h4>Claves de la NTAG 424 (5 ranuras)</h4>
+<table>
+<tr><th>Ranura</th><th>Uso</th><th>Diversificada por UID</th></tr>
+<tr><td>K0</td><td>Clave maestra de la aplicación: cambiar claves y configuración de archivos</td><td>Sí</td></tr>
+<tr><td>K1</td><td>Leer el archivo 03</td><td>Sí</td></tr>
+<tr><td>K2</td><td>Escribir el archivo 03</td><td>Sí</td></tr>
+<tr><td>K3</td><td>SUN: cifrar PICCData (UID + contador). <b>Común a todas las tarjetas</b>, porque el servidor no conoce el UID antes de descifrar</td><td>No</td></tr>
+<tr><td>K4</td><td>SUN: CMAC del mensaje</td><td>Sí</td></tr>
+</table>
+<p>Diversificación: <b>NXP AN10922, AES-128</b>: <code>K_i(UID) = AES-CMAC(Kmaestra_i, 0x01 || UID(7) || "SubePe")</code> con el relleno que define AN10922. Las claves maestras viven en el servidor (<code>.env</code>) y en el validador (NVS, M2). <b>Interfaz del controlador</b> (Python y C++, mismos nombres):</p>
+<pre><code>class TarjetaFisica(Protocol):          # transporte/tarjeta/base.py
+    uid: bytes                           # 7 bytes
+    def autenticar(self) -> None: ...    # 215: PWD_AUTH + PACK | 424: AuthenticateEV2First(K1/K2)
+    def leer_area(self) -> bytes: ...    # exactamente 72 bytes
+    def escribir_cabecera(self, datos: bytes) -> None: ...          # 24 bytes, offset 0
+    def escribir_registro(self, indice: int, datos: bytes) -> None: # indice 0 = A (offset 32), 1 = B (offset 52); 20 bytes
+    def contador(self) -> int | None: ...</code></pre>
+
+<!-- ============================ 8. C4 ============================ -->
+<h2 class="salto">8. Contrato C4: API del portal del cliente</h2>
+<p>Base: <code>https://mi.subepe.app/api/v1/</code>. JSON en UTF-8. Autenticación por <b>cookie de sesión</b> del host <code>mi.subepe.app</code> más cabecera <code>X-CSRFToken</code> en los métodos que modifican datos. Montos en <b>céntimos</b> (int). Fechas en ISO 8601 con zona horaria (<code>2026-10-23T08:15:00-05:00</code>). El archivo fuente es <code>docs/contratos/api-cliente-v1.yaml</code> (OpenAPI 3.1, M0-04), y esta tabla es su resumen.</p>
+<h4>Errores</h4>
+<p>Siempre <code>{"error": {"codigo": "...", "mensaje": "texto para mostrar", "campos": {"campo": ["..."]}}}</code>. Códigos: <code>no_autenticado</code> (401), <code>prohibido</code> (403), <code>no_encontrado</code> (404), <code>validacion</code> (400), <code>credenciales_invalidas</code> (401), <code>bloqueo_temporal</code> (429, con <code>reintentar_en</code> en segundos), <code>otp_invalido</code> (400), <code>otp_expirado</code> (400), <code>activacion_invalida</code> (400), <code>monto_fuera_de_limite</code> (400), <code>limite_diario</code> (400), <code>idempotencia_conflicto</code> (409), <code>tarjeta_no_activa</code> (409).</p>
+<table>
+<tr><th style="width:30%">Método y ruta</th><th style="width:30%">Entrada</th><th>Salida (200/201) y notas</th></tr>
+<tr><td colspan="3"><b>Activación (sin sesión)</b></td></tr>
+<tr><td><code>POST activacion/</code></td><td><code>documento</code>, <code>numero_tarjeta</code> (9 dígitos impresos), <code>codigo</code> (8 caracteres)</td><td><code>{token_activacion, nombre_enmascarado}</code>. El token es válido 15 min. 5 intentos fallidos por documento → <code>bloqueo_temporal</code> por 30 min</td></tr>
+<tr><td><code>POST activacion/correo/</code></td><td><code>token_activacion</code>, <code>correo</code></td><td><code>{enviado: true}</code>. Envía un OTP de 6 dígitos válido 10 min</td></tr>
+<tr><td><code>POST activacion/confirmar/</code></td><td><code>token_activacion</code>, <code>otp</code>, <code>contrasena</code></td><td><code>201 {ok: true}</code>. Crea el usuario, deja el código de activación como usado e inicia sesión</td></tr>
+<tr><td colspan="3"><b>Sesión</b></td></tr>
+<tr><td><code>POST sesion/</code></td><td><code>documento</code>, <code>contrasena</code></td><td><code>{requiere_otp: bool}</code>. Si el dispositivo es nuevo, envía un OTP por correo y la sesión queda a medias</td></tr>
+<tr><td><code>POST sesion/otp/</code></td><td><code>otp</code>, <code>recordar_dispositivo</code> (bool)</td><td><code>{ok: true}</code>. "Recordar" deja el dispositivo como confiable 90 días</td></tr>
+<tr><td><code>DELETE sesion/</code></td><td>—</td><td><code>204</code></td></tr>
+<tr><td><code>POST contrasena/recuperar/</code></td><td><code>documento</code></td><td>Siempre <code>202</code>, exista o no el documento; manda un enlace por correo (válido 30 min)</td></tr>
+<tr><td><code>POST contrasena/restablecer/</code></td><td><code>uid</code>, <code>token</code>, <code>contrasena</code></td><td><code>{ok: true}</code>. Cierra todas las sesiones</td></tr>
+<tr><td><code>POST contrasena/cambiar/</code></td><td><code>actual</code>, <code>nueva</code></td><td><code>{ok: true}</code>. Cierra las demás sesiones</td></tr>
+<tr><td colspan="3"><b>Consulta (con sesión)</b></td></tr>
+<tr><td><code>GET resumen/</code></td><td>—</td><td><code>{cliente:{nombre, documento_enmascarado, correo}, cuenta:{id, saldo, por_cargar_en_tarjeta, tarifa:{codigo, nombre, precio}}, tarjetas:[{id, numero_impreso, estado, emitida, ultimo_uso}]}</code>. <code>por_cargar_en_tarjeta</code> = suma de las recargas que aún no llegan a la tarjeta</td></tr>
+<tr><td><code>GET movimientos/?desde=&amp;hasta=&amp;tipo=&amp;pagina=</code></td><td><code>tipo</code> ∈ viaje, recarga, emision, ajuste</td><td><code>{resultados:[{fecha, tipo, monto, saldo_final, descripcion, validador}], pagina, paginas}</code>. 20 por página</td></tr>
+<tr><td><code>GET perfil/</code></td><td>—</td><td><code>{nombre, documento_enmascarado, correo, creado}</code></td></tr>
+<tr><td><code>POST perfil/correo/</code> · <code>POST perfil/correo/confirmar/</code></td><td><code>correo</code> · <code>otp</code></td><td>Cambia el correo solo después de verificar el OTP enviado al correo nuevo; avisa al anterior</td></tr>
+<tr><td><code>GET seguridad/accesos/</code></td><td>—</td><td>Últimos 20: <code>[{fecha, ip, dispositivo, exito}]</code></td></tr>
+<tr><td><code>GET seguridad/dispositivos/</code> · <code>DELETE seguridad/dispositivos/{id}/</code></td><td>—</td><td><code>[{id, nombre, ultimo_uso, confiable_hasta}]</code> · <code>204</code></td></tr>
+<tr><td colspan="3"><b>Tarjeta</b></td></tr>
+<tr><td><code>POST tarjetas/{id}/bloquear/</code></td><td><code>motivo</code> ∈ robo, perdida; <code>contrasena</code></td><td><code>{estado:"bloqueada", bloqueada_en}</code>. Irreversible: una tarjeta bloqueada no se reactiva y se emite otra</td></tr>
+<tr><td><code>POST reposiciones/</code> · <code>GET reposiciones/</code></td><td><code>tarjeta_id</code></td><td><code>{id, estado: solicitada|lista|entregada, creada}</code>. Solo si la tarjeta está bloqueada</td></tr>
+<tr><td colspan="3"><b>Recargas</b></td></tr>
+<tr><td><code>POST recargas/ordenes/</code></td><td>Cabecera <code>Idempotency-Key</code> (UUID v4); <code>monto</code> (100–20000)</td><td><code>201 {id, estado, monto, url_pago, expira}</code>. Repetir la misma clave devuelve la misma orden; la misma clave con otro monto da <code>409</code></td></tr>
+<tr><td><code>GET recargas/ordenes/</code> · <code>GET recargas/ordenes/{id}/</code></td><td>—</td><td><code>{id, estado, monto, creada, pagada_en, acreditada_en}</code>. Estados: creada, pendiente, pagada, acreditada, fallida, expirada, reembolsada</td></tr>
+</table>
+
+<!-- ============================ 9. C5 ============================ -->
+<h2>9. Contrato C5: interfaz de pasarela de pago</h2>
+<p>Archivo <code>servidor_api/pagos/pasarelas/base.py</code>. El adaptador activo se elige con el ajuste <code>PAGOS_PASARELA</code> (por ahora <code>"simulada"</code>).</p>
+<pre><code>@dataclass(frozen=True)
+class CobroCreado:      id_externo: str; url_pago: str; expira: datetime
+@dataclass(frozen=True)
+class EstadoCobro:      id_externo: str; estado: str  # "pendiente"|"pagado"|"fallido"|"expirado"
+                        monto: int; pagado_en: datetime | None
+@dataclass(frozen=True)
+class EventoPasarela:   id_evento: str; tipo: str     # "cobro.pagado"|"cobro.fallido"|"reembolso.hecho"
+                        id_externo: str
+@dataclass(frozen=True)
+class Transaccion:      id_externo: str; monto: int; estado: str; fecha: datetime
+
+class FirmaInvalida(Exception): ...
+class ErrorPasarela(Exception): ...       # red, timeout o respuesta inesperada: se reintenta
+
+class Pasarela(Protocol):
+    nombre: str
+    def crear_cobro(self, *, orden_id: UUID, monto: int, descripcion: str,
+                    correo: str, url_retorno: str) -> CobroCreado: ...
+    def consultar(self, id_externo: str) -> EstadoCobro: ...
+    def verificar_webhook(self, cabeceras: Mapping[str, str], cuerpo: bytes) -> EventoPasarela: ...
+    def reembolsar(self, id_externo: str, monto: int) -> str: ...      # id del reembolso
+    def listar_transacciones(self, dia: date) -> list[Transaccion]: ...</code></pre>
+<p><b>Reglas</b> para cualquier adaptador:</p>
+<ol>
+  <li><b>Nunca</b> se acredita por la redirección del navegador. Solo se acredita tras un webhook verificado <b>y</b> un <code>consultar()</code> que confirme <code>pagado</code> con el <b>mismo monto</b>.</li>
+  <li>El webhook simulado se firma así: <code>X-Firma: t=&lt;unix&gt;,v1=&lt;hex HMAC-SHA256(PAGOS_SECRETO_WEBHOOK, "&lt;t&gt;." + cuerpo)&gt;</code>. Se rechaza si <code>t</code> difiere más de 300 s de la hora del servidor.</li>
+  <li>Nunca se guardan datos de tarjetas bancarias: el pago ocurre en la <code>url_pago</code> de la pasarela.</li>
+</ol>
+
+<!-- ============================ 10. MAPA ============================ -->
+<h2 class="salto">10. Mapa de módulos, instancias y dependencias</h2>
+<p><span class="tag i0">Instancia 0</span>: contratos en código; es corta y desbloquea al resto. <span class="tag i1">Instancia 1</span>: módulos independientes que se trabajan en paralelo contra los contratos, con simuladores. <span class="tag i2">Instancia 2</span>: integran módulos de la instancia 1; se pueden empezar antes con simuladores, pero se cierran después.</p>
+<table>
+<tr><th>Módulo</th><th>Área</th><th>Inst.</th><th>Depende de</th><th>Issues</th></tr>
+<tr><td>M0 Contratos en código</td><td>todas</td><td>0</td><td>—</td><td>6</td></tr>
+<tr><td>M1 Tarjeta 215 → 424</td><td>tarjeta</td><td>1</td><td>C3</td><td>8</td></tr>
+<tr><td>M2 Claves en el validador</td><td>firmware</td><td>1</td><td>C3</td><td>4</td></tr>
+<tr><td>M3 Almacenamiento local v2</td><td>firmware</td><td>1</td><td>C1</td><td>6</td></tr>
+<tr><td>M4 Sincronizador v2</td><td>firmware</td><td>1</td><td>C1, C2, M0-02</td><td>4</td></tr>
+<tr><td>M5 Enlace 4G</td><td>firmware / hardware</td><td>1</td><td>C2</td><td>4</td></tr>
+<tr><td>M6 Enlace WiFi</td><td>firmware</td><td>1</td><td>C2</td><td>2</td></tr>
+<tr><td>M7 BLE para el conductor (ESP32)</td><td>firmware</td><td>1</td><td>C1, C2</td><td>4</td></tr>
+<tr><td>M8 ESP-NOW entre buses</td><td>firmware</td><td>1</td><td>C1, C2</td><td>4</td></tr>
+<tr><td>M9 Sincronización v2 en el servidor + MQTT</td><td>servidor</td><td>1</td><td>C1, M0-01</td><td>8</td></tr>
+<tr><td>M10 Libro mayor</td><td>servidor</td><td>1</td><td>—</td><td>6</td></tr>
+<tr><td>M11 Pagos y recargas</td><td>servidor</td><td>1</td><td>C4, C5</td><td>8</td></tr>
+<tr><td>M12 Identidad del cliente</td><td>servidor</td><td>1</td><td>C4</td><td>8</td></tr>
+<tr><td>M13 Notificaciones</td><td>servidor</td><td>1</td><td>—</td><td>4</td></tr>
+<tr><td>M14 Portal del cliente (interfaz)</td><td>portal</td><td>1</td><td>C4, M0-04</td><td>9</td></tr>
+<tr><td>M15 Gestor de enlaces</td><td>firmware</td><td>2</td><td>M4, M5, M6, M7</td><td>4</td></tr>
+<tr><td>M16 Relé web del conductor</td><td>portal / servidor</td><td>2</td><td>M7, M9</td><td>4</td></tr>
+<tr><td>M17 Robo y reposición de punta a punta</td><td>todas</td><td>2</td><td>M9, M12, M13, M14</td><td>3</td></tr>
+<tr><td>M18 Emisión estilo bancario</td><td>servidor / PC</td><td>2</td><td>M12</td><td>3</td></tr>
+<tr><td>M19 Panel de operadores, ampliación</td><td>servidor</td><td>2</td><td>M9, M10, M11, M12</td><td>4</td></tr>
+<tr><td>M20 Integración del portal</td><td>portal</td><td>2</td><td>M10–M14, M1-08</td><td>3</td></tr>
+<tr><td>M21 Pruebas de robustez</td><td>todas</td><td>2</td><td>todo</td><td>2</td></tr>
+</table>
+<pre>C1 ──► M0-01 (Python) ─► M9 ───────────────┐
+   └─► M0-02 (C++) ──► M3, M4, M7, M8 ────┼─► M15 ─► M16, M21
+C2 ──► M0-03 ─────────► M5, M6 ───────────┘
+C3 ──► M1, M2
+C4 ──► M0-04 ─► M14 (datos simulados) ───────────────► M20
+C5 ──► M0-05 ─► M11 ─┐
+         M10 ────────┼─► M19, M20
+         M12 ────────┴─► M17, M18
+         M13 ────────────► M17</pre>
+<p class="nota"><b>Camino crítico:</b> M0-01/M0-02 (bibliotecas C1 con vectores) desbloquean todo el firmware y el servidor de sincronización. Conviene cerrarlas primero. M10, M12 y M13 no dependen de nada y pueden empezar el primer día.</p>
+
+<!-- ============================ 11. M0 ============================ -->
+<h2 class="salto">11. Instancia 0: M0 contratos en código</h2>
+<div class="epic"><b class="e">Épica M0. Contratos en código.</b> Pasar C1–C5 a código que los demás importan. Sin estas piezas cada módulo inventaría su versión de los bytes.</div>
+
+<div class="issue"><div class="ih"><span class="id">M0-01</span>Biblioteca C1 en Python y vectores de prueba<span class="tag i0">instancia 0</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> C1 · <b>Archivos:</b> <code>servidor_api/transporte/sync_v2/__init__.py</code>, <code>paquetes.py</code>, <code>transporte/management/commands/generar_vectores_c1.py</code>, <code>docs/contratos/vectores_c1.json</code>, <code>requirements.txt</code> (+ <code>cryptography</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Crear las <code>dataclass</code> <code>Cabecera</code>, <code>Evento</code>, <code>Hola</code>, <code>Acuse</code>, <code>Listas</code> (con <code>EntradaLista</code>) y <code>Tarifas</code>, con los campos y tamaños exactos de C1 (5.1–5.6).</li>
+<li>Funciones <code>empaquetar(cabecera, cuerpo, clave_hmac=None, clave_ecdsa=None) -&gt; bytes</code>, <code>desempaquetar(datos, clave_hmac_de: Callable[[int], bytes], clave_publica) -&gt; Paquete</code> (lanza <code>PaqueteInvalido</code> con el motivo) y <code>separar(flujo: bytes) -&gt; list[bytes]</code> para el cuerpo HTTP concatenado.</li>
+<li>Firmas: HMAC con <code>hmac</code>/<code>hashlib</code> (truncado a 16 B) y ECDSA P-256 con <code>cryptography</code>, convirtiendo DER ⇄ <code>r||s</code> de 64 B.</li>
+<li>Comando <code>generar_vectores_c1</code>: con claves de prueba fijas (HMAC = 32 × <code>0x11</code>, ECDSA = un escalar fijo documentado en el JSON), genera ≥ 8 casos (EVENTOS con 1 y 30 eventos, HOLA, ACUSE, LISTAS normal, urgente y foto completa, TARIFAS) más 4 inválidos (magia, versión, largo, firma), con entradas en claro y salida en hex.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Ida y vuelta (<code>desempaquetar(empaquetar(x)) == x</code>) en todos los tipos.</li><li>Los tamaños coinciden byte a byte con C1 (test por cada tipo).</li><li>Los 4 vectores inválidos lanzan <code>PaqueteInvalido</code> con el motivo correcto.</li><li><code>vectores_c1.json</code> está en el repositorio.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M0-02</span>Biblioteca C1 en C++ para la ESP32<span class="tag i0">instancia 0</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-01 (vectores) · <b>Archivos:</b> <code>pantalla_esp32/lib/ProtocoloSP/ProtocoloSP.h/.cpp</code>, <code>Fragmentos.h/.cpp</code>, <code>pantalla_esp32/test/test_protocolo/</code>, <code>herramientas/vectores_a_h.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Structs con los mismos campos de C1 y funciones <code>size_t empaquetar(...)</code> / <code>bool desempaquetar(...)</code> sobre búferes estáticos (sin <code>String</code> ni memoria dinámica en el camino del cobro).</li>
+<li>HMAC con <code>mbedtls_md_hmac</code> (SHA-256). Verificación ECDSA con micro-ecc (<code>lib/micro-ecc/</code>, ~67 ms frente a ~290 ms de <code>mbedtls_ecdsa_verify</code>) y la clave pública de <code>clave_servidor.h</code> (punto sin comprimir de 65 B).</li>
+<li><code>Fragmentos</code>: dividir un paquete en tramas "EN" FRAGMENTO de 220 B y reensamblarlas con un límite de 3 s (C1 5.10). Lo comparten M7 y M8.</li>
+<li>Script <code>vectores_a_h.py</code>: convierte <code>vectores_c1.json</code> en <code>test/test_protocolo/vectores.h</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li><code>pio test -e validador -f test_protocolo</code> pasa en la placa: produce exactamente los bytes de los vectores válidos y rechaza los inválidos.</li><li>Verificar una firma ECDSA tarda &lt; 100 ms en la ESP32 con micro-ecc (medido e impreso en el test). Solo ocurre al sincronizar, nunca al cobrar, y debe ir en una tarea aparte de <code>loop()</code>.</li><li>Fragmentar y reensamblar paquetes de 1, 220, 221 y 2048 B funciona; un fragmento perdido descarta el mensaje.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M0-03</span>Interfaces de enlace (C2) e implementaciones falsas<span class="tag i0">instancia 0</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> C2 · <b>Archivos:</b> <code>pantalla_esp32/lib/Enlaces/Enlace.h</code>, <code>CanalPaquetes.h</code>, <code>Vecinos.h</code>, <code>EnlaceFalso.h</code>, <code>CanalFalso.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Copiar las interfaces de C2 tal cual, con comentarios en español.</li><li><code>CanalFalso</code>: guarda en una cola lo enviado y entrega lo que el test le inyecta; tiene <code>ponerListo(bool)</code>. <code>EnlaceFalso</code>: estado controlable por el test.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Compila en el entorno <code>validador</code> y un test de ejemplo usa <code>CanalFalso</code>.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M0-04</span>OpenAPI de C4 y cliente JS con modo simulado<span class="tag i0">instancia 0</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> C4 · <b>Archivos:</b> <code>docs/contratos/api-cliente-v1.yaml</code>, <code>servidor_api/portal/static/portal/js/api.js</code>, <code>api-simulada.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Escribir el OpenAPI 3.1 con todas las rutas, esquemas, errores y ejemplos de la sección 8.</li><li><code>api.js</code>: una función por ruta (<code>ingresar(documento, contrasena)</code>, <code>resumen()</code>, <code>movimientos(filtros)</code>, <code>bloquearTarjeta(id, motivo, contrasena)</code>, <code>crearOrden(monto)</code>…) que hace <code>fetch</code> con la cookie y la CSRF y convierte los errores en <code>ErrorApi{codigo, mensaje, campos}</code>.</li><li><code>api-simulada.js</code>: las mismas funciones con datos falsos coherentes (cliente "Ana Quispe", saldo S/ 12.40, 45 movimientos, una tarjeta activa) y retardos de 300 ms. Se activa con <code>?simulado=1</code> o <code>localStorage.simulado = "1"</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El YAML pasa un validador de OpenAPI (por ejemplo <code>npx @redocly/cli lint</code>).</li><li>Las firmas de <code>api.js</code> y <code>api-simulada.js</code> son idénticas.</li><li>El modo simulado puede producir cada código de error (con <code>?error=&lt;codigo&gt;</code>).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M0-05</span>Interfaz de pasarela (C5) y pasarela falsa para tests<span class="tag i0">instancia 0</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> C5 · <b>Archivos:</b> <code>servidor_api/pagos/__init__.py</code>, <code>apps.py</code>, <code>pasarelas/base.py</code>, <code>pasarelas/falsa.py</code>, <code>pasarelas/__init__.py</code> (<code>obtener_pasarela()</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Crear la app <code>pagos</code> (registrada en <code>INSTALLED_APPS</code>, todavía sin modelos) con <code>base.py</code> exactamente como C5.</li><li><code>PasarelaFalsa</code>, en memoria, para tests: permite fijar el resultado de <code>consultar()</code> y generar webhooks firmados.</li><li><code>obtener_pasarela()</code> lee <code>settings.PAGOS_PASARELA</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test que usa <code>PasarelaFalsa</code> en cada método de la interfaz.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M0-06</span>Claves del protocolo: ECDSA del servidor y HMAC por validador<span class="tag i0">instancia 0</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M0-01 · <b>Archivos:</b> <code>transporte/management/commands/generar_clave_listas.py</code>, <code>clave_validador.py</code>, <code>transporte/models.py</code> (campo <code>Validador.clave_hmac</code>), <code>.env.example</code>, <code>pantalla_esp32/src/validador/clave_servidor.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>generar_clave_listas</code>: crea un par P-256, imprime la privada en PEM para <code>LISTAS_CLAVE_PRIVADA</code> en <code>.env</code> y escribe <code>clave_servidor.h</code> con la pública. Si ya existe una clave, se niega a sobrescribirla salvo con <code>--forzar</code>.</li><li>Campo <code>Validador.clave_hmac</code> (64 hex, generado con <code>secrets.token_bytes(32)</code> al crear el validador) y una migración que lo rellene en los existentes.</li><li><code>clave_validador &lt;numero&gt; [--rotar]</code>: muestra o rota la clave para cargarla en la ESP32 (M2-02).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: los paquetes firmados con la clave del validador 101 no verifican con la del 102.</li><li><code>.env.example</code> documenta <code>LISTAS_CLAVE_PRIVADA</code> sin ningún valor real.</li></ul></div>
+
+<!-- ============================ 12. INSTANCIA 1 ============================ -->
+<h2 class="salto">12. Instancia 1: módulos independientes</h2>
+
+<!-- M1 -->
+<h3>M1. Tarjeta NTAG215 → NTAG 424</h3>
+<div class="epic"><b class="e">Épica M1.</b> Que el sistema funcione hoy con la NTAG215 y mañana con la NTAG 424 sin tocar nada fuera de <code>transporte/tarjeta/</code> y <code>lib/TarjetaTransporte/</code>. Mientras no lleguen las 424, todo se prueba con un <b>simulador</b>.</div>
+
+<div class="issue"><div class="ih"><span class="id">M1-01</span>Interfaz <code>TarjetaFisica</code> y adaptar NTAG215<span class="tag i1">instancia 1</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> C3 · <b>Archivos:</b> <code>transporte/tarjeta/base.py</code> (nuevo), <code>ntag215.py</code>, programas de <code>transporte/</code> que usan <code>ntag215</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Crear <code>base.py</code> con el <code>Protocol</code> de C3 y la función <code>abrir_tarjeta(conexion) -&gt; TarjetaFisica</code>, que detecta el tipo (con GET_VERSION en Ultralight o con la respuesta ISO-DEP en la 424).</li><li>Hacer que <code>ntag215.py</code> implemente el protocolo sin cambiar su comportamiento.</li><li>Cambiar <code>emitir_tarjeta.py</code>, <code>validador.py</code>, <code>recargar.py</code>, <code>leer_tarjeta.py</code>, <code>bloquear_tarjeta.py</code> y <code>restablecer_tarjeta.py</code> para que usen <code>abrir_tarjeta()</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Emitir, cobrar, recargar en punto y bloquear con una NTAG215 real funciona igual que antes (prueba manual documentada en el PR).</li><li>Ningún programa importa <code>ntag215</code> directamente.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-02</span>Especificación de personalización de la NTAG 424<span class="tag i1">instancia 1</span><span class="tag">tarjeta</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> C3 · <b>Archivos:</b> <code>docs/ntag424-personalizacion.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Con la hoja de datos NT4H2421Gx y las notas AN12196 y AN10922 de NXP, documentar <b>byte a byte</b>: los comandos <code>ChangeKey</code> (K0–K4), el <code>ChangeFileSettings</code> del archivo 02 (SDM activado, offsets de PICCData, SDMMAC y SDMMACInput para la URL de C3) y el del archivo 03 (lectura K1, escritura K2, cambio K0, CommMode Full), el contenido NDEF del archivo 02 y el orden de los pasos.</li><li>Incluir la plantilla de la URL con los offsets calculados y un ejemplo completo de las APDU en hex.</li><li>Confirmar en la hoja de datos el comportamiento ante <b>escrituras interrumpidas</b> (tearing) de <code>WriteData</code> y anotar la conclusión. El doble registro se mantiene en cualquier caso.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Otra persona puede escribir <code>personalizar_424.py</code> (M1-06) solo con este documento.</li><li>Las referencias citan la sección de la hoja de datos de cada valor.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-03</span>Simulador de NTAG 424 DNA en Python<span class="tag i1">instancia 1</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> C3 · <b>Archivos:</b> <code>transporte/tarjeta/simulador424.py</code>, <code>transporte/tests/test_simulador424.py</code>, <code>transporte/requirements.txt</code> (+ <code>pycryptodome</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Clase <code>Simulador424</code> con <code>transmitir(apdu: bytes) -&gt; bytes</code> que implementa: ISOSelectFile, <code>GetVersion</code>, <code>AuthenticateEV2First</code> (y su segunda parte), <code>ReadData</code> y <code>WriteData</code> (CommMode Plain/MAC/Full), <code>GetFileSettings</code>, <code>ChangeFileSettings</code>, <code>ChangeKey</code>, <code>GetFileCounters</code> e ISOReadBinary del archivo 02 con SUN.</li><li>Estado: 5 claves (de fábrica en ceros), 3 archivos, contador SDM y contadores de comando de la sesión segura. Opción <code>cortar_en_byte=N</code> para simular el retiro de la tarjeta a mitad de una escritura.</li><li>Validar la mensajería segura con los <b>vectores de AN12196</b>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Los vectores de autenticación, derivación de claves de sesión, MAC y cifrado de AN12196 pasan.</li><li>Leer el archivo 03 sin autenticar, o con K1 si se pide K2, devuelve el error que indica la hoja de datos.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-04</span>Controlador NTAG 424 en Python (ACR122U)<span class="tag i1">instancia 1</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> M1-01, M1-02, M1-03, M1-05 · <b>Archivos:</b> <code>transporte/tarjeta/ntag424.py</code>, <code>transporte/tests/test_ntag424.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Implementar <code>TarjetaFisica</code> para la 424 enviando APDU por un <code>transmitir()</code> inyectable (pyscard con el ACR122U en producción y <code>Simulador424</code> en los tests).</li><li><code>autenticar()</code> con K1 para leer y K2 para escribir (claves diversificadas con M1-05). <code>contador()</code> = <code>SDMReadCtr</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Contra el simulador: se emite, se cobra 10 veces, se corta una escritura y la lectura sigue devolviendo el registro anterior válido.</li><li>Con una 424 real (cuando llegue): la misma prueba manual.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-05</span>Diversificación de claves AN10922<span class="tag i1">instancia 1</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> C3 · <b>Archivos:</b> <code>transporte/tarjeta/claves.py</code>, test, <code>docs/contratos/vectores_an10922.json</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>diversificar_aes128(maestra: bytes, uid: bytes, sistema=b"SubePe") -&gt; bytes</code> según AN10922 (entrada <code>0x01 || UID || sistema</code>, relleno y CMAC).</li><li>Comprobar con el ejemplo de AN10922 y generar vectores propios para el firmware (M2-04).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El vector de AN10922 pasa y los vectores propios están en el repositorio.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-06</span>Script <code>personalizar_424.py</code><span class="tag i1">instancia 1</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> M1-02, M1-04 · <b>Archivos:</b> <code>transporte/personalizar_424.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Pasa una 424 de fábrica (claves en cero) a la configuración de M1-02, en el orden documentado y verificando cada paso.</li><li><code>--restablecer</code>: vuelve a la configuración de fábrica usando K0 (para reutilizar tarjetas de prueba).</li><li><code>--simulador</code>: ejecuta todo contra <code>Simulador424</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Personalizar y restablecer en el simulador deja exactamente los ajustes de archivo esperados (comparados con <code>GetFileSettings</code>).</li><li>Si se interrumpe a la mitad, volver a ejecutarlo termina el trabajo (es idempotente).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-07</span>Controlador NTAG 424 en el firmware<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M1-02, M1-05 · <b>Archivos:</b> <code>pantalla_esp32/lib/TarjetaTransporte/Tarjeta424.h/.cpp</code>, <code>lib/LectorNFC/LectorPN532.cpp</code> (intercambio ISO-DEP si hace falta), <code>test/test_tarjeta424/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Mismo protocolo de C3 en C++ sobre <code>LectorNFC</code> (PN532 InDataExchange), con AES y CMAC de mbedTLS.</li><li>Tests con <b>trazas de APDU grabadas</b> del simulador (M1-03): para cada operación, las APDU esperadas y las respuestas.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Los tests de trazas pasan en la placa.</li><li>Con una 424 real: el cobro completo (autenticar, leer, escribir y verificar) tarda &lt; 400 ms, medido.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M1-08</span>Verificación SUN en el servidor (vista pública)<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M1-02, M1-05 · <b>Archivos:</b> <code>servidor_api/transporte/sun.py</code>, ruta <code>/t</code> en el host <code>mi.subepe.app</code>, plantilla, campo <code>Tarjeta.contador_sdm</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Descifrar PICCData con K3, obtener el UID y el contador, derivar K4(UID) y verificar el CMAC. Rechazar si el contador ≤ <code>contador_sdm</code> guardado (repetición); si es mayor, guardarlo.</li><li>Página pública: "Tarjeta SubePe auténtica · estado: activa/bloqueada" y un botón "Ver mi saldo" que lleva al inicio de sesión. <b>No muestra saldo ni nombre</b> sin sesión. La vista del dueño es M20-02.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests con URL generadas por el simulador: válida, CMAC alterado, contador repetido y tarjeta inexistente.</li></ul></div>
+
+<!-- M2 -->
+<h3>M2. Claves en el validador</h3>
+<div class="epic"><b class="e">Épica M2.</b> Hoy la clave maestra está <b>en texto plano en la microSD</b> (<code>/config.txt</code>): cualquiera que saque la tarjeta SD la obtiene. Con la 424 el riesgo pasa a ser el validador, así que hay que endurecerlo.</div>
+
+<div class="issue"><div class="ih"><span class="id">M2-01</span>Mover la clave maestra de la microSD a la NVS<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>src/validador/almacen.cpp/.h</code>, <code>transporte/puente_nfc.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Al arrancar, si <code>/config.txt</code> tiene <code>clave_maestra</code>: copiarla a la NVS (<code>Preferences</code>, espacio <code>"claves"</code>), comprobar la copia y <b>borrar la línea</b> del archivo.</li><li><code>claveMaestra()</code> lee de la NVS. <code>puente_nfc.py --configurar</code> la envía por serie directo a la NVS.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Después del primer arranque, <code>config.txt</code> ya no contiene la clave y el validador sigue cobrando.</li><li>Sacar la microSD y leerla en un ordenador no revela ninguna clave.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M2-02</span>Clave HMAC del validador (K_val) en la NVS<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-06 · <b>Archivos:</b> <code>almacen.cpp/.h</code>, <code>puente_nfc.py</code> (opción <code>--clave-validador HEX</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Guardar y leer K_val (32 B) en la NVS, con <code>Almacen::claveValidador()</code>.</li><li>El portal de configuración y la pantalla muestran "Clave de validador: falta / OK", nunca la clave.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un paquete firmado en la placa verifica en el servidor con <code>clave_validador &lt;n&gt;</code>.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M2-03</span>Investigar el cifrado de flash y Secure Boot v2 (placa de pruebas)<span class="tag i1">instancia 1</span><span class="tag">firmware</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>docs/informe-cifrado-flash.md</code></div>
+<div class="aviso"><b>Irreversible:</b> quemar eFuses no tiene vuelta atrás y puede dejar la placa inutilizable. Solo se hace en una placa <b>dedicada a pruebas</b>, nunca en el validador principal.</div>
+<div class="t">Qué hacer</div>
+<ol><li>Comprobar si con <code>framework = arduino</code> se puede activar el cifrado de flash y de NVS, o si hace falta <code>framework = arduino, espidf</code> para personalizar <code>sdkconfig</code>.</li><li>Activarlo en modo <i>development</i> en la placa de pruebas y documentar los comandos, el efecto en el tiempo de arranque y cómo se cargan las actualizaciones.</li><li>Recomendar si se adopta, con sus pasos.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Informe con el procedimiento reproducible y la recomendación.</li><li>Evidencia: el volcado de la flash con <code>esptool read_flash</code> no muestra la clave.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M2-04</span>Diversificación AN10922 en el firmware<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M1-05 (vectores) · <b>Archivos:</b> <code>lib/TarjetaTransporte/Claves424.h/.cpp</code>, <code>test/test_claves424/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>La misma función que M1-05, con mbedTLS (<code>mbedtls_cipher_cmac</code>).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Los vectores de <code>vectores_an10922.json</code> pasan en la placa.</li></ul></div>
+
+<!-- M3 -->
+<h3>M3. Almacenamiento local v2 (microSD)</h3>
+<div class="epic"><b class="e">Épica M3.</b> Pasar de archivos de texto JSON a archivos binarios con el formato C1, que resisten cortes de energía y escalan a listas grandes. La interfaz pública de <code>Almacen</code> que usa el cobro se mantiene.</div>
+
+<div class="issue"><div class="ih"><span class="id">M3-01</span>Cola binaria de eventos<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-02 · <b>Archivos:</b> <code>src/validador/almacen.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>/eventos.bin</code>: registros de 64 B (evento C1 5.3), solo se agregan al final y se hace <code>flush()</code> antes de mostrar el resultado del cobro.</li><li>Al arrancar: si el tamaño no es múltiplo de 64, se trunca el último registro incompleto y se registra la incidencia.</li><li>Migración: si existe <code>/eventos.txt</code>, se convierten sus eventos pendientes y se renombra a <code>/eventos.txt.migrado</code>.</li><li>Compactación: cuando más de la mitad de los registros ya tienen acuse, se reescribe el archivo (temporal + <code>rename</code>).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Prueba de corte: cortar la energía 20 veces durante cobros seguidos no pierde ningún evento confirmado en pantalla.</li><li>La migración desde un <code>eventos.txt</code> real conserva todos los pendientes.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M3-02</span>Estado persistente con escritura atómica<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>almacen.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>/estado.bin</code>: <code>siguiente_id</code>, <code>hasta_acusado</code>, <code>version_listas</code>, <code>version_tarifas</code>, <code>secuencia_paquetes</code> y un CRC32. Se escribe en <code>/estado.tmp</code> y luego se renombra.</li><li>Si el CRC falla, se usa <code>/estado.bak</code> (la versión anterior).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li><code>secuencia_paquetes</code> y <code>siguiente_id</code> nunca se repiten tras un corte de energía (50 cortes de prueba).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M3-03</span>Lista negra ordenada con búsqueda binaria y cambios<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-02 · <b>Archivos:</b> <code>almacen.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>/lista_negra.bin</code>: uint32 ordenados. <code>bloqueada(id)</code> hace una búsqueda binaria en el archivo, sin cargarlo en RAM.</li><li><code>aplicarCambios(entradas)</code>: mezcla las altas y bajas en un <code>.tmp</code> y lo renombra. Aplicar un mismo cambio dos veces no cambia el resultado.</li><li><code>reiniciarListas()</code> para <code>version_desde = 0</code>.</li><li><code>bloqueoUrgente(id)</code>: lista pequeña en RAM más <code>/urgentes.bin</code>, que se consultan junto con la principal.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con 50 000 ids, una consulta tarda &lt; 20 ms (medido en la placa).</li><li>Aplicar 120 cambios tarda &lt; 2 s y no bloquea el cobro más de 50 ms seguidos (se hace por partes en <code>loop()</code>).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M3-04</span>Recargas pendientes y tarifas en binario<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-02 · <b>Archivos:</b> <code>almacen.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>/recargas.bin</code>: registros (cuenta, seq, monto) ordenados por cuenta y seq; se aplican los cambios de tipo 2 de LISTAS.</li><li><code>/tarifas.bin</code>: el cuerpo TARIFAS tal cual. <code>recargasPendientes()</code> y <code>tarifa()</code> mantienen su firma actual.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El cobro con recarga pendiente funciona igual que hoy (prueba con una tarjeta real).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M3-05</span>Paquetes ajenos y paquetes firmados reenviables<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-02 · <b>Archivos:</b> <code>almacen.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>/ajenos/&lt;origen&gt;-&lt;secuencia&gt;.bin</code>: paquetes de otros buses por subir, hasta 500 (si se llena, se borra el más antiguo). Se borran cuando llega el ACUSE del origen que los cubre.</li><li><code>/firmados/&lt;desde&gt;-&lt;hasta&gt;.bin</code>: los últimos 50 paquetes LISTAS recibidos del servidor, para dárselos a otros buses (M8).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test con <code>CanalFalso</code>: guardar, listar, borrar por acuse y respetar el límite de 500.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M3-06</span>Contador de consumo de datos por canal<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>almacen.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>/consumo.bin</code>: por día (AAAAMMDD) y canal (wifi, 4g, ble, espnow), bytes de subida y de bajada. Se guarda cada 5 min y se conservan 31 días.</li><li>Expone <code>bytesHoy(tx, rx)</code> para el HOLA.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Los valores coinciden con los contadores de los enlaces en una prueba de 1 hora.</li></ul></div>
+
+<!-- M4 -->
+<h3>M4. Sincronizador v2 (firmware)</h3>
+<div class="epic"><b class="e">Épica M4.</b> Reemplaza la lógica de <code>sincronizador.cpp</code> (JSON por HTTP) por el intercambio de paquetes C1 sobre un <code>CanalPaquetes</code>. No sabe qué canal usa.</div>
+
+<div class="issue"><div class="ih"><span class="id">M4-01</span>Intercambio HOLA / EVENTOS / respuestas<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-02, M0-03 · <b>Archivos:</b> <code>src/validador/sincronizador_v2.cpp/.h</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>SincronizadorV2::atender(CanalPaquetes&amp;)</code>. Al pasar el canal a <code>listo()</code> envía HOLA; después envía los eventos pendientes en paquetes de hasta 30, como máximo 3 paquetes sin acuse a la vez; un viaje nuevo se envía en ≤ 1 s si el canal está listo; HOLA cada 5 min.</li><li>También sube los paquetes de <code>/ajenos/</code> tal cual, sin volver a firmarlos.</li><li>Procesa ACUSE (marcar subidos y borrar ajenos), LISTAS y TARIFAS (M4-02).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Test con <code>CanalFalso</code>: 100 eventos salen en 4 paquetes; un acuse hasta 60 deja 40 pendientes; se reenvía tras 30 s sin acuse.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M4-02</span>Aplicación de LISTAS y TARIFAS según C1<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M4-01, M3-03, M3-04 · <b>Archivos:</b> <code>sincronizador_v2.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Implementar las 5 reglas de C1 5.5 (contigüidad, <code>desde = 0</code>, foto completa encadenada, urgentes y firma inválida → incidencia).</li><li>Guardar cada LISTAS válido en <code>/firmados/</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test por regla con los paquetes de <code>vectores_c1.json</code> y paquetes alterados.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M4-03</span>Hora del servidor desde el ACUSE<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M4-01 · <b>Archivos:</b> <code>sincronizador_v2.cpp</code>, <code>main.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Tomar <code>hora_servidor</code> de cada ACUSE con firma válida y exponer <code>horaServidor()</code> y <code>millisHora()</code> como hoy. Si se recibe por un canal reenviado (BLE o ESP-NOW), descontar el retraso estimado (+2 s).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>La hora del validador queda a ±3 s de la del servidor tras sincronizar por cualquier canal.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M4-04</span>Pruebas de punta a punta del sincronizador con un servidor local<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M4-01, M9-04 (o un servidor falso) · <b>Archivos:</b> <code>herramientas/servidor_c1_falso.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Script Python que habla C1 por HTTP (<code>/api/v2/paquetes/</code>) con M0-01, para probar el firmware sin el servidor real. Imprime cada paquete decodificado.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Se documenta en <code>pantalla_esp32/README.md</code> cómo usarlo.</li></ul></div>
+
+<!-- M5 -->
+<h3>M5. Enlace 4G</h3>
+<div class="epic"><b class="e">Épica M5.</b> Conexión a internet propia del validador con un módulo celular Cat-1 y una SIM del sistema, para no depender del conductor.</div>
+
+<div class="issue"><div class="ih"><span class="id">M5-01</span>Compra, montaje y cableado del módulo<span class="tag i1">instancia 1</span><span class="tag">hardware</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>pantalla_esp32/README.md</code> (sección "Módulo 4G")</div>
+<div class="t">Qué hacer</div>
+<ol><li>Comprar el módulo de la sección 14 (variante <b>SA</b>, para las bandas de Sudamérica) y una SIM prepago de datos.</li><li>Alimentación aparte: <b>5 V y 2 A</b> como mínimo (picos de ~2 A al transmitir). <b>No</b> se alimenta desde el pin 3V3 de la ESP32. Unir las tierras.</li><li>UART2 de la ESP32: <b>TX = GPIO25 → RXD del módulo</b>; <b>RX = GPIO34 ← TXD del módulo</b> (GPIO34 es solo entrada, sirve para RX); <b>PWRKEY = GPIO4</b> a través de un transistor NPN si la placa no lo trae. Son pines libres en el validador actual.</li><li>Comprobar el <b>nivel lógico</b> de la placa del módulo: el chip trabaja a 1,8 V; usar una placa con adaptador de niveles a 3,3 V o poner uno.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>README con un diagrama de conexiones y una foto del montaje.</li><li><code>AT</code> → <code>OK</code> desde un programa de eco por serie.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M5-02</span>Programa de prueba <code>prueba4g</code><span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M5-01 · <b>Archivos:</b> <code>src/prueba_4g.cpp</code>, <code>platformio.ini</code> (entorno <code>prueba4g</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Con TinyGSM 0.12.x (perfil del módem SIM7600 o A7672X, según el módulo comprado; verificar que funcione): encender, leer el estado de la SIM, registrarse, mostrar la señal, configurar el APN (<code>config.txt</code>: <code>apn=</code>), abrir TCP a <code>subepe.app:443</code> y negociar <b>TLS en la ESP32</b> con ESP_SSLClient y las raíces de <code>raices_tls.h</code>.</li><li>Imprimir el tiempo de cada paso.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un <code>GET /</code> por TLS sobre 4G devuelve la redirección del servidor.</li><li>Tiempos reportados en el PR (registro en la red, TCP, TLS).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M5-03</span><code>Enlace4G</code> (C2)<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M5-02, M0-03 · <b>Archivos:</b> <code>lib/Enlaces/Enlace4G.h/.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Máquina de estados que no bloquea: Apagado → encendiendo (PWRKEY) → esperando SIM → registrando → datos → Listo. Cualquier fallo pasa a Error, con reintento en 30 s, 60 s y luego cada 120 s. Ninguna llamada bloquea más de 50 ms (comandos AT asíncronos).</li><li><code>abrir()</code> devuelve el cliente TLS; <code>bytesTx()</code>/<code>bytesRx()</code> cuentan los bytes del flujo TLS.</li><li><code>apagar()</code> desconecta y apaga el módem (AT+CPOF o PWRKEY).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Prueba de 2 h con la antena desconectada y reconectada 5 veces: se recupera solo y el cobro nunca se bloquea (medir el tiempo máximo de <code>loop()</code>).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M5-04</span>Medición de consumo real de datos (24 h)<span class="tag i1">instancia 1</span><span class="tag">firmware</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M5-03, M15-02 (o MQTT de prueba) · <b>Archivos:</b> <code>docs/informe-consumo-datos.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>24 h conectado por MQTT con 1000 viajes simulados (un evento cada ~86 s). Registrar los bytes por hora y los que informa el operador.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Informe con el consumo por día y la proyección mensual. El objetivo es &lt; 1 MB/día; si se supera, se explica por qué.</li></ul></div>
+
+<!-- M6 -->
+<h3>M6. Enlace WiFi</h3>
+<div class="epic"><b class="e">Épica M6.</b> Separar el WiFi que ya funciona (router o hotspot del celular) de <code>sincronizador.cpp</code> y ponerlo detrás de la interfaz <code>Enlace</code>.</div>
+
+<div class="issue"><div class="ih"><span class="id">M6-01</span><code>EnlaceWifi</code> (C2)<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-03 · <b>Archivos:</b> <code>lib/Enlaces/EnlaceWifi.h/.cpp</code>, <code>src/validador/sincronizador.cpp</code>, <code>portal.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Mover la conexión a las redes guardadas (en orden, sin bloquear), el <i>keep-alive</i> TLS y mDNS a <code>EnlaceWifi</code>. El portal de configuración no cambia.</li><li><code>abrir()</code> admite <code>https://</code> (con <code>raices_tls.h</code>) y, en pruebas locales, <code>http://IP:puerto</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El validador sincroniza por WiFi igual que antes (v1) mientras M15 no esté terminado.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M6-02</span>Canal de radio y convivencia con ESP-NOW<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M6-01 · <b>Archivos:</b> <code>EnlaceWifi.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Exponer <code>canal()</code>, el canal del AP conectado. Avisar por una función de retorno cuando cambie, para que <code>Vecinos::pausar()</code> se active si es distinto de 1.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con un AP en el canal 1, ESP-NOW y WiFi funcionan a la vez (prueba con M8-01).</li></ul></div>
+
+<!-- M7 -->
+<h3>M7. BLE para el celular del conductor (lado ESP32)</h3>
+<div class="epic"><b class="e">Épica M7.</b> Servicio Bluetooth LE por el que una página web del conductor (M16) se lleva la cola del validador y le trae las listas.</div>
+
+<div class="issue"><div class="ih"><span class="id">M7-01</span>NimBLE, partición y memoria<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>platformio.ini</code>, <code>docs/informe-memoria-validador.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Agregar <code>h2zero/NimBLE-Arduino@^1.4</code> (compatible con el núcleo Arduino 2.x) y la partición <code>huge_app.csv</code> si el binario no cabe.</li><li>Medir la RAM libre y el bloque mayor con WiFi + TLS + BLE activos a la vez.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con todo activo quedan ≥ 40 KB de memoria dinámica libre (reportado en el informe).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M7-02</span>Servicio GATT del validador<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M7-01, M0-02 · <b>Archivos:</b> <code>lib/Enlaces/CanalBle.h/.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Anunciar el nombre <code>SubePe-V&lt;numero&gt;</code> con el UUID de servicio de C1 5.10 y las 4 características.</li><li>Control 1 (empezar): enviar por notify las tramas FRAGMENTO de HOLA, los pendientes y los ajenos. Entrada: reensamblar con <code>Fragmentos</code> y entregar con <code>recibir()</code>.</li><li>Pedir MTU 247. Un solo celular conectado a la vez.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con la app nRF Connect: se lee <b>info</b> y se reciben notificaciones de <b>salida</b> tras escribir 1 en <b>control</b>.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M7-03</span><code>CanalBle</code> como <code>CanalPaquetes</code> e indicación en el LCD<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M7-02 · <b>Archivos:</b> <code>CanalBle.cpp</code>, <code>lib/PantallaUI/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>listo()</code> es verdadero cuando hay un celular conectado que escribió control = 1. Mostrar "Conductor conectado" en la barra de estado del LCD sin tapar el resultado del cobro.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un cobro durante una sesión BLE sigue tardando &lt; 400 ms.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M7-04</span>Herramienta de PC <code>rele_ble.py</code><span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M7-02, M0-01 · <b>Archivos:</b> <code>transporte/rele_ble.py</code> (librería <code>bleak</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Hace de "conductor" desde el ordenador: se conecta, se lleva la cola, la sube a <code>/api/v2/paquetes/</code> (o a <code>servidor_c1_falso.py</code>) y devuelve las respuestas. Sirve para probar M7 y M9 sin la página web.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Ciclo completo: 50 eventos suben y el validador recibe el acuse y las listas.</li></ul></div>
+
+<!-- M8 -->
+<h3>M8. ESP-NOW entre buses</h3>
+<div class="epic"><b class="e">Épica M8.</b> Los buses que se cruzan o coinciden en el terminal se pasan listas (bloqueos) y se llevan los paquetes del otro hacia el servidor. Es gratis y no necesita infraestructura.</div>
+
+<div class="issue"><div class="ih"><span class="id">M8-01</span>Balizas y tabla de vecinos<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-02, M0-03 · <b>Archivos:</b> <code>lib/Enlaces/VecinosEspNow.h/.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Inicializar ESP-NOW en el canal 1 y difundir una BALIZA (C1 5.10) cada 2 s ± 500 ms.</li><li>Tabla de hasta 10 vecinos (MAC, validador, versiones, pendientes, flags, último visto); se olvidan tras 10 s sin balizas.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con 2 placas, cada una ve a la otra en &lt; 3 s (registro por serie).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M8-02</span>Transferencia fiable de mensajes<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M8-01 · <b>Archivos:</b> <code>VecinosEspNow.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Enviar paquetes C1 en tramas FRAGMENTO por unicast. Usar el estado de entrega de la función de retorno de ESP-NOW: 3 reintentos por fragmento y, si fallan, se aborta el mensaje.</li><li>Como máximo 20 mensajes por encuentro y por sentido, para no acaparar la radio.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Transferir 20 paquetes de 2 KB entre 2 placas a 10 m funciona sin pérdidas en 10 repeticiones.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M8-03</span>Reglas de intercambio entre buses<span class="tag i1">instancia 1</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M8-02, M3-05 · <b>Archivos:</b> <code>VecinosEspNow.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Si un vecino tiene <code>version_listas</code> mayor: mandarle un PEDIDO(1, mi versión). El vecino responde con sus <code>/firmados/</code> encadenados desde esa versión; se aplican como si vinieran del servidor (la firma se verifica igual).</li><li>Si el vecino tiene canal con el servidor (bit0), o si llevo más de 10 min sin canal y el vecino acepta ajenos (bit1): entregarle hasta 10 paquetes EVENTOS propios. El vecino los guarda en <code>/ajenos/</code>.</li><li>Al recibir un PEDIDO(3): entregar los ACUSE firmados que tenga para ese validador.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un paquete LISTAS con la firma alterada que llega por ESP-NOW se rechaza.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M8-04</span>Escenario de 2–3 buses en banco de pruebas<span class="tag i1">instancia 1</span><span class="tag">firmware</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M8-03, M4-01 · <b>Archivos:</b> <code>docs/informe-espnow.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Placa A con WiFi y placa B sin red. B cobra 30 viajes, A y B se "cruzan" (se encienden cerca 60 s) y los viajes de B llegan al servidor por A. Bloquear una tarjeta en el servidor: llega a A por MQTT y a B por ESP-NOW.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Informe con tiempos: encuentro → viajes en el servidor; bloqueo → aplicado en B.</li></ul></div>
+
+<!-- M9 -->
+<h3>M9. Sincronización v2 en el servidor y MQTT</h3>
+<div class="epic"><b class="e">Épica M9.</b> El servidor acepta paquetes C1 por HTTP y MQTT, de cualquier validador y por cualquier intermediario, y produce las respuestas firmadas. Mosquitto y el puente van en el mismo Docker Compose.</div>
+
+<div class="issue"><div class="ih"><span class="id">M9-01</span>Modelos y migraciones<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> C1 · <b>Archivos:</b> <code>transporte/models.py</code>, <code>transporte/migrations/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>CambioLista</code>: <code>version</code> (BigAutoField, PK), <code>tipo</code> (1 bloqueo, 2 recarga), <code>op</code>, <code>a</code>, <code>b</code>, <code>c</code>, <code>urgente</code> (bool), <code>creado</code>, <code>difundido_en</code> (null).</li><li><code>EventoRecibido</code>: (<code>validador</code>, <code>id_evento</code>) único, <code>recibido</code>, <code>via</code> (mqtt, http, ble, espnow).</li><li><code>Validador</code>: <code>ultimo_evento_contiguo</code>, <code>version_listas</code>, <code>ultimo_hola</code> (JSON), <code>ultimo_enlace</code>, <code>mqtt_clave</code> (hash). <code>Tarifa.modificada</code> (<code>auto_now</code>).</li><li>Migración de datos: un <code>CambioLista</code> por cada tarjeta bloqueada o anulada y por cada recarga pendiente actual, para que la versión 1..N refleje el estado de hoy.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Las migraciones se aplican sobre una copia de la base de producción (<code>restaurar.sh</code>) sin errores.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-02</span>Registrar los cambios de lista en los servicios<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-01 · <b>Archivos:</b> <code>transporte/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>En la <b>misma transacción</b> de cada operación: <code>bloquear()</code> y <code>anular_por_uid()</code> → CambioLista(1, agregar, urgente = True); <code>crear_recarga()</code> → (2, pendiente); <code>entregar_recargas()</code> y <code>registrar_entrega_en_punto()</code> → (2, aplicada) por cada recarga; <code>confirmar_emision()</code> con tarjetas reemplazadas → (1, agregar).</li><li>Función <code>cambios_desde(version, limite=120)</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test por cada servicio que comprueba el CambioLista creado.</li><li>Si la operación falla, no queda ningún cambio registrado (rollback).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-03</span>Servicio <code>procesar_paquete</code><span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M0-01, M9-02 · <b>Archivos:</b> <code>transporte/sync_v2/servicio.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>procesar(datos: bytes, via: str, portador: int | None) -&gt; list[bytes]</code>: verifica la firma con la clave del <b>origen</b> (no del portador) y luego:<br>EVENTOS → por cada evento, si no está en <code>EventoRecibido</code>, lo convierte al dict v1 y llama a <code>servicios.procesar_evento()</code>; actualiza <code>ultimo_evento_contiguo</code>; responde con un ACUSE para el origen.<br>HOLA → guarda <code>ultimo_hola</code> y <code>ultima_sync</code>, y responde ACUSE + LISTAS (según <code>version_listas</code>, con foto completa si hay más de 2000 versiones de atraso) + TARIFAS si cambiaron.</li><li>Un paquete inválido no lanza excepción: se registra un <code>Alerta</code> "paquete inválido" con el motivo y se devuelve una lista vacía.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: idempotencia (el mismo paquete 3 veces = 1 viaje), paquete ajeno subido por otro validador, firma de otro validador, eventos desordenados (contigüidad), foto completa y tarifas.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-04</span>Endpoint HTTP <code>/api/v2/paquetes/</code><span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-03 · <b>Archivos:</b> <code>transporte/sync_v2/vistas.py</code>, <code>transporte/urls.py</code>, <code>transporte/permisos.py</code> (<code>EsConductorOValidador</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Recibir octet-stream (máximo 64 KB), <code>separar()</code>, procesar cada paquete y devolver las respuestas concatenadas. <code>via</code> = "ble" si el usuario es conductor y "http" si es validador.</li><li>Limitar a 60 peticiones por minuto por usuario.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un usuario anónimo recibe 401, uno sin el grupo adecuado 403 y un cuerpo de más de 64 KB 400.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-05</span>Mosquitto en Docker Compose<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> C1 5.8 · <b>Archivos:</b> <code>servidor_api/mosquitto/mosquitto.conf</code>, <code>acl</code>, <code>docker-compose.yml</code>, <code>docker-compose.prod.yml</code>, <code>mosquitto/credenciales.sh</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Servicio <code>mosquitto</code> (<code>eclipse-mosquitto:2</code>), <code>restart: unless-stopped</code>. Listener 1883 solo dentro de la red de Docker (para el puente). En producción, listener <b>8883 TLS</b> con el certificado de Let's Encrypt que ya obtiene Caddy (montar <code>caddy_data</code> en solo lectura y apuntar <code>certfile</code>/<code>keyfile</code> a <code>/data/caddy/certificates/acme-v02.api.letsencrypt.org-directory/&lt;dominio&gt;/</code>).</li><li><code>allow_anonymous false</code>, <code>password_file</code> y el <code>acl_file</code> de C1. <code>persistence false</code>.</li><li><code>credenciales.sh</code>: crea y actualiza el usuario <code>puente</code> y uno por validador activo (contraseña = <code>mqtt_clave</code>, generada por <code>manage.py clave_validador --mqtt</code>) con <code>mosquitto_passwd</code>, y recarga con <code>docker compose kill -s HUP mosquitto</code>.</li><li>Cron en la VM (junto al de <code>respaldar.sh</code>): <code>kill -s HUP</code> diario para que Mosquitto tome el certificado renovado.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li><code>mosquitto_sub</code> con el usuario 101 no puede leer <code>sp/v/102/baja</code> ni escribir en <code>sp/todos/urgente</code>.</li><li>Conexión TLS desde fuera con <code>mosquitto_pub --capath /etc/ssl/certs</code>.</li><li>La RAM de Mosquitto en reposo es &lt; 15 MB (<code>docker stats</code>).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-06</span>Puente MQTT ↔ Django (<code>puente_mqtt</code>)<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-03, M9-05 · <b>Archivos:</b> <code>transporte/management/commands/puente_mqtt.py</code>, <code>requirements.txt</code> (+ <code>paho-mqtt==2.1.*</code>), <code>docker-compose.yml</code> (servicio <code>puente</code>, misma imagen que <code>web</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Suscribirse a <code>sp/v/+/sube</code>. Por cada mensaje: <code>procesar(payload, "mqtt", portador=n)</code> y publicar cada respuesta en <code>sp/v/{n}/baja</code>, el portador, que reenvía a los demás buses por ESP-NOW lo que no es suyo.</li><li>Cada 2 s: los <code>CambioLista</code> urgentes con <code>difundido_en</code> nulo → paquete LISTAS urgente firmado → <code>sp/todos/urgente</code> → marcar <code>difundido_en</code>.</li><li>Reconexión con espera exponencial, cierre limpio con SIGTERM y conexión a la base de datos renovada en cada mensaje (<code>close_old_connections()</code>).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un bloqueo hecho en el panel llega como LISTAS urgente a un suscriptor de prueba en &lt; 5 s.</li><li>El puente se recupera solo tras reiniciar Mosquitto o PostgreSQL.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-07</span>Puerto 8883 en Oracle y guía de mudanza<span class="tag i1">instancia 1</span><span class="tag">servidor</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M9-05 · <b>Archivos:</b> <code>README.md</code> (sección de despliegue)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Abrir TCP 8883 en la Security List de la VCN y en iptables de la VM (además de 80 y 443). Agregar el paso a la guía de mudanza a la VM gratuita.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li><code>openssl s_client -connect subepe.app:8883</code> muestra el certificado de Let's Encrypt.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M9-08</span>Batería de tests de sincronización v2<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-03, M9-04 · <b>Archivos:</b> <code>transporte/tests/test_sync_v2.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Reproducir en v2 los casos de fraude de <code>test_api.py</code> (clon, copia restaurada, tarjeta bloqueada usada sin conexión, saldo negativo) y añadir los de C1 (ajenos, urgentes, foto completa).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay ≥ 15 tests nuevos y todos los tests v1 siguen pasando.</li></ul></div>
+
+<!-- M10 -->
+<h3>M10. Libro mayor (dinero real)</h3>
+<div class="epic"><b class="e">Épica M10.</b> Cada céntimo queda en asientos de doble partida inmutables. <code>Cuenta.saldo</code> se mantiene como caché, actualizada en la misma transacción, y se verifica todos los días contra el libro.</div>
+
+<div class="issue"><div class="ih"><span class="id">M10-01</span>Modelos contables inmutables<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> nueva app <code>servidor_api/libro/</code> (<code>models.py</code>, <code>admin.py</code>, migraciones)</div>
+<div class="t">Qué hacer</div>
+<ol><li><code>CuentaContable</code>: <code>codigo</code> único, <code>nombre</code>, <code>naturaleza</code> (activo, pasivo, ingreso), <code>cuenta_cliente</code> (FK a <code>transporte.Cuenta</code>, nula, única). Cuentas fijas creadas por migración: <code>CAJA_PASARELA</code>, <code>CAJA_VENTANILLA</code>, <code>INGRESOS_PASAJES</code>, <code>AJUSTES</code>. Una <code>SALDO_CLIENTE_&lt;id&gt;</code> (pasivo) por cuenta de cliente.</li><li><code>Asiento</code>: <code>fecha</code>, <code>tipo</code> (recarga, viaje, emision, reverso, ajuste, apertura), <code>ref</code> única, <code>descripcion</code>, <code>creado_por</code> (nulo). <code>Partida</code>: <code>asiento</code>, <code>cuenta_contable</code>, <code>monto</code> (int; positivo = debe, negativo = haber).</li><li>Inmutables: <code>save()</code> sobre un objeto existente y <code>delete()</code> lanzan una excepción; en el admin son de solo lectura.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay tests que intentan modificar y borrar y fallan.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M10-02</span>API del libro<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M10-01 · <b>Archivos:</b> <code>libro/libro.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>registrar(tipo, ref, partidas: list[tuple[str, int]], fecha=None, descripcion="") -&gt; Asiento</code>: exige que la suma sea 0 y al menos 2 partidas; si la <code>ref</code> ya existe devuelve el asiento existente (idempotente) solo si las partidas son iguales, y si no lanza <code>ConflictoAsiento</code>.</li><li><code>saldo_cliente(cuenta) -&gt; int</code> (= −suma de las partidas de su SALDO_CLIENTE). <code>revertir(asiento, motivo)</code>: asiento espejo con <code>ref = "rev-" + ref</code>.</li><li>Convención documentada: recarga web de S/ 10 → CAJA_PASARELA +1000 / SALDO_CLIENTE −1000; viaje de S/ 1.30 → SALDO_CLIENTE +130 / INGRESOS_PASAJES −130.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests de suma distinta de 0, idempotencia, conflicto y reverso.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M10-03</span>Integración con <code>registrar_movimiento</code><span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M10-02 · <b>Archivos:</b> <code>transporte/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Cada llamada a <code>registrar_movimiento()</code> registra su asiento en la misma transacción, con <code>ref</code> = <code>Movimiento.ref</code> o <code>"mov-&lt;id&gt;"</code>, y la contrapartida según el tipo: viaje → INGRESOS_PASAJES; recarga → según el origen (web → CAJA_PASARELA; punto o ventanilla → CAJA_VENTANILLA); emisión con saldo inicial → CAJA_VENTANILLA.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Después de toda la suite de tests, <code>verificar_libro</code> (M10-05) da 0 diferencias.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M10-04</span>Migración de apertura<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M10-01 · <b>Archivos:</b> migración de datos en <code>libro/migrations/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Por cada <code>Cuenta</code> con saldo distinto de 0: un asiento "apertura" (<code>ref = "apertura-&lt;id&gt;"</code>) contra AJUSTES por el saldo actual.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Sobre una copia de producción: tras migrar, el libro cuadra con <code>Cuenta.saldo</code> en todas las cuentas.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M10-05</span>Comando <code>verificar_libro</code> y cron<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M10-02 · <b>Archivos:</b> <code>libro/management/commands/verificar_libro.py</code>, <code>README.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Comprueba que la suma global de las partidas sea 0 y que <code>Cuenta.saldo == saldo_cliente()</code> en cada cuenta. Cada diferencia crea un <code>Alerta</code> "descuadre contable" y el comando sale con código 1.</li><li>Cron diario a las 03:30 en la VM, después del respaldo.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test que descuadra a propósito con un update SQL directo y se detecta.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M10-06</span>Documentación contable<span class="tag i1">instancia 1</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M10-02 · <b>Archivos:</b> <code>docs/libro-contable.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Tabla de los asientos de cada operación (recarga web, recarga en punto, viaje, emisión, reembolso, ajuste) con un ejemplo numérico.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Lo revisa otro miembro del equipo.</li></ul></div>
+
+<!-- M11 -->
+<h3>M11. Pagos y recargas</h3>
+<div class="epic"><b class="e">Épica M11.</b> Las recargas desde el portal tienen el flujo completo de un pago real. Solo la pasarela es simulada, detrás de C5.</div>
+
+<div class="issue"><div class="ih"><span class="id">M11-01</span>Modelos de órdenes y eventos de pasarela<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M0-05 · <b>Archivos:</b> <code>pagos/models.py</code>, migraciones, <code>admin.py</code> (solo lectura)</div>
+<div class="t">Qué hacer</div>
+<ol><li><code>OrdenRecarga</code>: <code>id</code> UUID, <code>cuenta</code> (FK), <code>usuario</code> (FK, nulo), <code>monto</code>, <code>estado</code> (creada, pendiente, pagada, acreditada, fallida, expirada, reembolsada), <code>pasarela</code>, <code>id_externo</code> (único con la pasarela), <code>clave_idempotencia</code> (única con el usuario), <code>url_pago</code>, <code>creada</code>, <code>expira</code> (+30 min), <code>pagada_en</code>, <code>acreditada_en</code>, <code>recarga</code> (FK a <code>transporte.Recarga</code>, nula), <code>datos_pasarela</code> (JSON).</li><li><code>EventoPasarela</code>: <code>pasarela</code>, <code>id_evento</code> (único con la pasarela), <code>tipo</code>, <code>cuerpo</code> (bytes en crudo), <code>firma_valida</code>, <code>recibido</code>, <code>procesado_en</code>.</li><li><code>HistorialOrden</code>: <code>orden</code>, <code>de</code>, <code>a</code>, <code>fecha</code>, <code>motivo</code> (auditoría de cada transición).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Las restricciones de unicidad se prueban con tests de integridad.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-02</span>Máquina de estados, creación de órdenes y límites<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-01 · <b>Archivos:</b> <code>pagos/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>transicion(orden, a, motivo)</code> con la tabla permitida: creada→pendiente; pendiente→pagada|fallida|expirada; pagada→acreditada; acreditada→reembolsada. Cualquier otra lanza <code>TransicionInvalida</code>. Bloquea la fila con <code>select_for_update()</code> y escribe <code>HistorialOrden</code>.</li><li><code>crear_orden(usuario, cuenta, monto, clave)</code>: 100 ≤ monto ≤ 20000; máximo S/ 500 al día por cuenta (suma de órdenes pagadas y acreditadas); máximo 3 pendientes; idempotencia según C4. Llama a <code>pasarela.crear_cobro()</code> y pasa a pendiente. Si la pasarela falla (<code>ErrorPasarela</code>), la orden queda creada y se puede reintentar con la misma clave.</li><li><code>acreditar(orden)</code>: en una transacción, pagada→acreditada y <code>servicios.crear_recarga(cuenta, monto, origen="web")</code>, que registra la recarga pendiente de llegar a la tarjeta y su asiento.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests de cada transición válida e inválida, límites e idempotencia.</li><li>Prueba de concurrencia: 2 hilos que acreditan la misma orden → solo 1 recarga.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-03</span>Pasarela simulada<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M0-05 · <b>Archivos:</b> <code>pagos/pasarelas/simulada.py</code>, <code>pagos/simulador/</code> (vistas, plantillas, modelo <code>CobroSimulado</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Implementar C5. <code>crear_cobro</code> crea un <code>CobroSimulado</code> y devuelve <code>url_pago = https://subepe.app/pagos/simulador/&lt;id_externo&gt;/</code>.</li><li>Página del simulador, claramente rotulada "PASARELA DE PRUEBA, NO ES UN PAGO REAL": muestra el monto y los botones "Aprobar" y "Rechazar". Al pulsar: actualiza el cobro, envía el webhook firmado (C5 regla 2) al endpoint de M11-04 con 1 s de retraso y redirige a <code>url_retorno</code>.</li><li>Opción del simulador para probar casos difíciles: "enviar webhook dos veces" y "no enviar webhook".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Flujo completo en el navegador: orden → simulador → aprobar → acreditada.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-04</span>Endpoint de webhook con doble verificación<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-02 · <b>Archivos:</b> <code>pagos/vistas.py</code>, <code>pagos/urls.py</code> (<code>/api/pagos/webhook/&lt;pasarela&gt;/</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Sin CSRF y sin autenticación de usuario. Lee el cuerpo en crudo y llama a <code>verificar_webhook()</code>; si la firma no es válida responde 400 y guarda el evento con <code>firma_valida = False</code>.</li><li>Evento ya recibido → 200 sin hacer nada. <code>cobro.pagado</code> → <code>consultar(id_externo)</code>: si dice pagado y el monto coincide, pendiente→pagada→acreditada; si no coincide, se crea un <code>Alerta</code> "pago inconsistente" y la orden no se acredita.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: firma falsa, marca de tiempo vieja (&gt; 300 s), webhook duplicado, monto distinto y webhook de una orden inexistente.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-05</span>Expiración y reconsulta de órdenes pendientes<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-02 · <b>Archivos:</b> <code>pagos/management/commands/revisar_ordenes.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Cada 5 min (cron de la VM): las órdenes pendientes con más de 2 min se consultan a la pasarela (por si se perdió el webhook) y se acreditan o se marcan fallidas; las vencidas pasan a expirada.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con "no enviar webhook" en el simulador, la orden igual se acredita en ≤ 5 min.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-06</span>Conciliación diaria<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-02 · <b>Archivos:</b> <code>pagos/management/commands/conciliar_pagos.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>conciliar_pagos --dia AAAA-MM-DD</code> (ayer por defecto): compara <code>listar_transacciones(dia)</code> con las órdenes. Cada diferencia (pagada en la pasarela pero no acreditada, acreditada sin transacción, montos distintos) crea un <code>Alerta</code>. Resumen en la salida.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test con cada tipo de diferencia.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-07</span>Rutas de recargas de C4<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-02 · <b>Archivos:</b> <code>pagos/api_cliente.py</code> (las monta M12-02 bajo <code>mi.subepe.app/api/v1/</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li><code>POST/GET recargas/ordenes/</code> y <code>GET recargas/ordenes/{id}/</code> exactamente como C4, incluidos los códigos de error. Requieren un usuario cliente (M12); mientras M12 no esté listo, los tests usan un usuario con un <code>Cliente</code> de prueba.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Las respuestas validan contra el OpenAPI de M0-04 (test automático con el esquema).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M11-08</span>Reembolsos (solo operadores)<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-02, M10-02 · <b>Archivos:</b> <code>pagos/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>reembolsar(orden, operador, motivo)</code>: solo si la recarga <b>aún no se aplicó en la tarjeta</b> (<code>Recarga.aplicada_en</code> nulo). Hace el reembolso en la pasarela, revierte el asiento y registra un CambioLista(2, aplicada) para quitarla de los buses. Si ya se aplicó, se rechaza con el mensaje "requiere ajuste manual".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests de los dos casos. El libro cuadra después del reembolso.</li></ul></div>
+
+<!-- M12 -->
+<h3>M12. Identidad del cliente</h3>
+<div class="epic"><b class="e">Épica M12.</b> Usuarios cliente separados de los operadores, con activación bancaria, OTP por correo y protección contra fuerza bruta. Incluye el ruteo de <code>mi.subepe.app</code>.</div>
+
+<div class="issue"><div class="ih"><span class="id">M12-01</span>App <code>clientes</code> y modelos<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> nueva app <code>servidor_api/clientes/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>Cliente</code>: <code>usuario</code> (OneToOne a User; <code>username = "cli-&lt;documento&gt;"</code>, para no chocar con los operadores), <code>cuenta</code> (OneToOne a <code>transporte.Cuenta</code>), <code>correo</code>, <code>correo_verificado</code>, <code>creado</code>.</li><li><code>CodigoActivacion</code>: <code>tarjeta</code> (FK), <code>hash</code> (nunca el código en claro), <code>expira</code> (+72 h), <code>usado_en</code>, <code>intentos</code>. <code>CodigoOTP</code>: <code>cliente</code> o <code>token_activacion</code>, <code>proposito</code> (activacion, inicio, correo), <code>hash</code>, <code>expira</code> (+10 min), <code>intentos</code> (máximo 5), <code>usado</code>.</li><li><code>Dispositivo</code>: <code>cliente</code>, <code>huella</code> (hash del identificador de la cookie), <code>nombre</code> (resumen del user-agent), <code>ultimo_uso</code>, <code>confiable_hasta</code>. <code>IntentoAcceso</code>: <code>documento</code>, <code>ip</code>, <code>exito</code>, <code>fecha</code>, <code>motivo</code>.</li><li>Función <code>numero_impreso(tarjeta)</code>: <code>f"{tarjeta.id:08d}"</code> + dígito de control Luhn (9 dígitos, mostrados como <code>0000 0123 4</code>).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Ningún código ni OTP se guarda en claro (test que revisa la base de datos).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-02</span>Subdominio <code>mi.subepe.app</code> y ruteo por host<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> <code>config/settings.py</code>, <code>config/middleware.py</code> (nuevo), <code>portal/urls.py</code>, <code>Caddyfile</code>, <code>.env.example</code>, <code>README.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Middleware: si <code>request.get_host()</code> empieza con <code>mi.</code>, usar <code>request.urlconf = "portal.urls"</code>, que incluye las páginas del portal, <code>api/v1/</code> (clientes y pagos) y <code>t</code> (SUN).</li><li>Ajustes: <code>ALLOWED_HOSTS</code> y <code>CSRF_TRUSTED_ORIGINS</code> con los dos hosts, tomados de <code>.env</code> (<code>DOMINIO_CLIENTE</code>). Las cookies <b>sin</b> <code>SESSION_COOKIE_DOMAIN</code>, para que cada host tenga la suya.</li><li><code>Caddyfile</code>: <code>{$DOMINIO}, {$DOMINIO_CLIENTE} { ... }</code>. Registro A <code>mi</code> en Name.com hacia la IP de la VM (lo hace el dueño del dominio). Para desarrollo local: <code>mi.localhost:8000</code>.</li><li>Un operador con sesión en <code>subepe.app</code> <b>no</b> tiene sesión en <code>mi.subepe.app</code>, y al revés.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests con <code>HTTP_HOST</code> de los dos dominios: las rutas del panel no existen en <code>mi.</code> y las del portal no existen en el dominio principal.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-03</span>Activación en 3 pasos<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-01, M13-01 · <b>Archivos:</b> <code>clientes/api.py</code>, <code>clientes/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Las 3 rutas de activación de C4. Paso 1: documento + número impreso (con Luhn válido) + código, contra el <code>CodigoActivacion</code> vigente de esa tarjeta; el error es el mismo mensaje genérico para cualquier dato incorrecto. Tras 5 fallos por documento, bloqueo por 30 min.</li><li>El <code>token_activacion</code> se firma con <code>django.core.signing</code> y dura 15 min.</li><li>Paso 3: contraseña con los validadores de Django y una longitud mínima de 10; crea el <code>User</code> y el <code>Cliente</code>, marca el código como usado, inicia sesión y registra el dispositivo como confiable.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: código vencido, ya usado, Luhn inválido, 5 fallos → 429, y cuenta que ya tiene cliente → error.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-04</span>Inicio de sesión con OTP en dispositivo nuevo y límite de intentos<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-01, M13-01 · <b>Archivos:</b> <code>clientes/api.py</code>, <code>clientes/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Rutas de sesión de C4. Cookie <code>sp_disp</code> (aleatoria, firmada, HttpOnly, Secure, SameSite=Lax, 1 año). Si no corresponde a un <code>Dispositivo</code> confiable, se envía un OTP y la sesión queda a medias.</li><li>Límites: 5 fallos por documento en 15 min → <code>bloqueo_temporal</code> de 15 min; 20 fallos por IP en 15 min → 429. Todo intento se registra en <code>IntentoAcceso</code>.</li><li>Sesión: expira tras 15 min de inactividad (<code>set_expiry(900)</code> en cada petición del portal), y se rota la clave de sesión al iniciar.</li><li>Un inicio desde un dispositivo nuevo dispara la notificación "nuevo inicio de sesión" (M13).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests de cada límite, OTP incorrecto 5 veces → OTP anulado, y "recordar dispositivo".</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-05</span>Recuperación y cambio de contraseña<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-01, M13-01 · <b>Archivos:</b> <code>clientes/api.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Rutas de contraseña de C4 con <code>PasswordResetTokenGenerator</code>; el enlace lleva a <code>https://mi.subepe.app/restablecer?uid=..&amp;token=..</code>. "Recuperar" responde siempre 202, exista o no el documento.</li><li>Al restablecer o cambiar: cerrar las demás sesiones del usuario y avisar por correo.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: el token sirve una sola vez, un token vencido falla y la respuesta no revela si el documento existe.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-06</span>Rutas de consulta (resumen, movimientos, perfil, seguridad)<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-01 · <b>Archivos:</b> <code>clientes/api.py</code>, <code>clientes/serializers.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Las rutas de consulta de C4. <code>documento_enmascarado</code> = <code>"****" + últimos 4</code>. Un cliente <b>solo</b> ve su propia cuenta; cualquier <code>id</code> ajeno responde 404.</li><li>Los movimientos salen de <code>transporte.Movimiento</code>; el campo <code>descripcion</code> se construye con el tipo y el validador ("Viaje · bus V103").</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay tests de aislamiento entre dos clientes y las respuestas validan contra el OpenAPI.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-07</span>Bloqueo de tarjeta y solicitud de reposición<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-01 · <b>Archivos:</b> <code>clientes/api.py</code>, modelo <code>clientes.SolicitudReposicion</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>POST tarjetas/{id}/bloquear/</code>: vuelve a pedir la contraseña y llama a <code>servicios.bloquear(tarjeta, "reportada por el cliente: &lt;motivo&gt;", tipo="bloqueo por cliente")</code>, que ya registra el CambioLista urgente si M9-02 está hecho.</li><li><code>SolicitudReposicion</code>: <code>tarjeta</code>, <code>estado</code> (solicitada, lista, entregada), <code>creada</code>, <code>atendida_por</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: contraseña incorrecta, tarjeta ajena (404), tarjeta ya bloqueada (409) y bloqueo correcto (estado y alerta).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M12-08</span>Endurecimiento del portal<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-02 · <b>Archivos:</b> <code>config/middleware.py</code>, <code>settings.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Cabeceras en <code>mi.</code>: <code>Content-Security-Policy: default-src 'self'; frame-ancestors 'none'</code>, <code>Referrer-Policy: same-origin</code>, <code>X-Content-Type-Options: nosniff</code>, HSTS (con <code>DJANGO_HTTPS=1</code>).</li><li>Las rutas de la API responden siempre JSON, también en 404 y 500.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test que comprueba las cabeceras y la nota de <a href="https://securityheaders.com">securityheaders.com</a> es A o mejor (captura en el PR).</li></ul></div>
+
+<!-- M13 -->
+<h3>M13. Notificaciones por correo</h3>
+<div class="epic"><b class="e">Épica M13.</b> Servicio de envío con bandeja de salida y reintentos, usando Gmail SMTP. Ninguna operación de dinero falla porque falle el correo.</div>
+
+<div class="issue"><div class="ih"><span class="id">M13-01</span>App <code>notificaciones</code>, bandeja de salida y <code>notificar()</code><span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> — · <b>Archivos:</b> nueva app <code>servidor_api/notificaciones/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Modelo <code>Notificacion</code>: <code>destinatario</code> (correo), <code>tipo</code>, <code>asunto</code>, <code>texto</code>, <code>html</code>, <code>estado</code> (pendiente, enviada, fallida), <code>intentos</code>, <code>creada</code>, <code>enviada_en</code>, <code>error</code>.</li><li><code>notificar(destinatario, tipo, **contexto)</code>: renderiza <code>notificaciones/&lt;tipo&gt;.txt</code> y <code>.html</code>, la guarda e intenta enviarla en <code>transaction.on_commit</code>. Los OTP se envían al instante; el resto, en orden.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests con el backend <code>locmem</code>: si la transacción se revierte no se envía nada; si el SMTP falla, la notificación queda pendiente con el error.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M13-02</span>Configuración de Gmail SMTP<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M13-01 · <b>Archivos:</b> <code>config/settings.py</code> (<code>MAILERS</code>), <code>.env.example</code>, <code>README.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Si <code>.env</code> tiene <code>CORREO_USUARIO</code> y <code>CORREO_CLAVE_APP</code>: backend SMTP <code>smtp.gmail.com:587</code> con STARTTLS, configurado según el ajuste <code>MAILERS</code> de Django 6.1 (comprobar los nombres de las opciones en su documentación). Si no, sigue el backend de consola. <code>DEFAULT_FROM_EMAIL = "SubePe &lt;cuenta@gmail.com&gt;"</code>.</li><li>Documentar cómo crear la contraseña de aplicación (requiere la verificación en 2 pasos de Google) y el límite de unos 500 correos al día.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li><code>manage.py sendtestemail</code> llega a una bandeja real, desde la VM.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M13-03</span>Plantillas y disparadores<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M13-01 · <b>Archivos:</b> <code>notificaciones/templates/notificaciones/</code>, <code>notificaciones/disparadores.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Tipos y plantillas: <code>otp</code>, <code>activacion_completa</code>, <code>nuevo_inicio_sesion</code>, <code>contrasena_cambiada</code>, <code>recarga_acreditada</code>, <code>tarjeta_bloqueada</code>, <code>uso_tarjeta_bloqueada</code>, <code>saldo_bajo</code>, <code>reposicion_lista</code>, <code>correo_cambiado</code> (al correo anterior).</li><li>Funciones <code>al_acreditar(orden)</code>, <code>al_bloquear(tarjeta)</code>, <code>al_registrar_viaje(movimiento)</code> (saldo bajo = saldo &lt; 2 × tarifa, como máximo 1 al día; uso de tarjeta bloqueada si el movimiento dispara ese <code>Alerta</code>). Las conectan los dueños de cada módulo (M11, M12, M17), y si el cliente no tiene correo verificado no hacen nada.</li><li>HTML simple sin imágenes externas y con versión en texto plano.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay un test de renderizado por plantilla y se adjuntan capturas en Gmail web y móvil.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M13-04</span>Reintentos (<code>enviar_notificaciones</code>)<span class="tag i1">instancia 1</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M13-01 · <b>Archivos:</b> <code>notificaciones/management/commands/enviar_notificaciones.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Cron cada 5 min: envía las pendientes con espera creciente (5, 15, 60 y 240 min). Tras 5 intentos queda fallida y se crea un <code>Alerta</code>. Máximo 50 por ejecución.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests de la espera y del límite.</li></ul></div>
+
+<!-- M14 -->
+<h3>M14. Portal del cliente (interfaz)</h3>
+<div class="epic"><b class="e">Épica M14.</b> La "banca del cliente" en <code>mi.subepe.app</code>. Web pensada primero para celular, sin frameworks ni compilación (HTML + CSS + JS modular), servida por la app Django <code>portal</code>. Se construye <b>contra <code>api-simulada.js</code></b> y no espera al servidor.</div>
+<div class="nota"><b>Reglas comunes de M14:</b> diseñada para 360 px de ancho y luego para escritorio; sin CDN (la CSP solo permite <code>'self'</code>); textos en español claro; montos como <code>S/ 12.40</code> (formatear desde céntimos con una sola función, <code>soles()</code>); estados de carga, vacío y error en cada pantalla; accesible por teclado y con etiquetas en los formularios; contraste AA.</div>
+
+<div class="issue"><div class="ih"><span class="id">M14-01</span>Base: estructura, estilos, navegación y sesión<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M0-04 · <b>Archivos:</b> <code>servidor_api/portal/</code> (<code>apps.py</code>, <code>urls.py</code>, <code>views.py</code>, <code>templates/portal/base.html</code>, <code>static/portal/css/portal.css</code>, <code>static/portal/js/app.js</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Una plantilla base por página (sin SPA): cabecera con "SubePe", barra inferior con Inicio, Movimientos, Recargar, Mi tarjeta y Más. Variables CSS de color y espacio, con modo oscuro según el sistema.</li><li><code>app.js</code>: guardia de sesión (un 401 lleva a <code>/ingresar</code>), formateo de montos y fechas, avisos (toasts) y un componente de confirmación sin <code>alert()</code>.</li><li>Rutas Django de las páginas: <code>/</code>, <code>/ingresar</code>, <code>/activar</code>, <code>/recuperar</code>, <code>/restablecer</code>, <code>/movimientos</code>, <code>/recargar</code>, <code>/recargar/resultado</code>, <code>/tarjeta</code>, <code>/seguridad</code>, <code>/perfil</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con <code>?simulado=1</code> se navega por todas las páginas (aunque estén vacías) sin errores en la consola.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-02</span>Ingresar (con OTP)<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>templates/portal/ingresar.html</code>, <code>static/portal/js/ingresar.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Formulario: DNI (8 dígitos, teclado numérico) y contraseña (con botón para mostrarla). Si responde <code>requiere_otp</code>, se pasa a la pantalla del OTP: 6 dígitos, casilla "Recordar este dispositivo", "Reenviar código" habilitado a los 60 s.</li><li>Errores: <code>credenciales_invalidas</code> → "DNI o contraseña incorrectos"; <code>bloqueo_temporal</code> → cuenta regresiva con <code>reintentar_en</code>.</li><li>Enlaces a "Activar mi tarjeta" y "Olvidé mi contraseña".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Cada código de error de C4 de estas rutas se ve bien (probado con <code>?error=</code>).</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-03</span>Activar mi tarjeta (3 pasos)<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>activar.html</code>, <code>activar.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Paso 1: DNI, número de tarjeta (9 dígitos con máscara <code>0000 0000 0</code> y validación Luhn en el navegador) y código del comprobante (8 caracteres en mayúsculas, con máscara <code>XXXX-XXXX</code>). Paso 2: correo y luego el OTP. Paso 3: contraseña, con indicador de fortaleza y las reglas visibles.</li><li>Indicador de progreso "Paso 1 de 3". Si se recarga la página se vuelve al paso 1 (el token no se guarda en <code>localStorage</code>).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El flujo completo en modo simulado termina en Inicio.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-04</span>Inicio (saldo)<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>inicio.html</code>, <code>inicio.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Tarjeta visual con el saldo grande, el nombre de la tarifa y el precio del pasaje, y "≈ N viajes" (saldo ÷ precio). Si <code>por_cargar_en_tarjeta</code> &gt; 0: aviso "S/ X se cargarán en tu tarjeta en tu próximo viaje".</li><li>Estado de la tarjeta (activa o bloqueada) con su número enmascarado, los últimos 5 movimientos y los botones "Recargar" y "Bloquear tarjeta".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Se prueban los estados con saldo 0, saldo negativo, tarjeta bloqueada y recarga por cargar.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-05</span>Movimientos<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>movimientos.html</code>, <code>movimientos.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Lista agrupada por día, con icono por tipo, monto en verde (+) o rojo (−) y saldo final. Filtros por tipo y rango de fechas; botón "Cargar más" (paginación de C4).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Con los 45 movimientos simulados, la paginación y los filtros funcionan, y la lista vacía muestra un mensaje.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-06</span>Recargar y resultado<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>recargar.html</code>, <code>recargar.js</code>, <code>resultado.html</code>, <code>resultado.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Montos rápidos (S/ 5, 10, 20, 50) y un campo libre (S/ 1.00–200.00), con un resumen antes de confirmar. Se genera un UUID v4 para <code>Idempotency-Key</code> <b>una vez</b> por intento de compra y se reutiliza en los reintentos (doble clic, red caída).</li><li>Se redirige a <code>url_pago</code>. Al volver (<code>/recargar/resultado?orden=</code>) se consulta la orden cada 2 s durante 60 s como máximo: acreditada → éxito; fallida o expirada → error con "Intentar de nuevo"; pendiente pasado el tiempo → "Estamos confirmando tu pago, te avisaremos por correo".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El doble clic en "Pagar" crea una sola orden (se ve en el modo simulado), y los 3 resultados se muestran bien.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-07</span>Mi tarjeta: bloqueo y reposición<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>tarjeta.html</code>, <code>tarjeta.js</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Datos de la tarjeta (número enmascarado, emisión, último uso, estado). Botón rojo "Bloquear tarjeta": elegir el motivo (robo o pérdida), advertencia "Esta acción es definitiva. Tu saldo se conserva y pasará a tu nueva tarjeta", y la contraseña para confirmar.</li><li>Con la tarjeta bloqueada: botón "Solicitar reposición", estado de la solicitud y las instrucciones para recogerla en ventanilla con el DNI.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El bloqueo se hace en ≤ 3 toques desde Inicio y se ven los estados solicitada, lista y entregada.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-08</span>Seguridad y perfil<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-01 · <b>Archivos:</b> <code>seguridad.html</code>, <code>perfil.html</code> y sus JS, <code>recuperar.html</code>, <code>restablecer.html</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Seguridad: cambiar la contraseña, los últimos accesos (los fallidos resaltados), los dispositivos confiables con un botón "Quitar" y "Cerrar sesión".</li><li>Perfil: nombre, DNI enmascarado y correo, con el cambio de correo (y su OTP).</li><li>Recuperar y restablecer contraseña.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Todos los flujos funcionan en modo simulado, con sus errores.</li></ul></div>
+
+<div class="issue"><div class="ih"><span class="id">M14-09</span>Revisión de calidad<span class="tag i1">instancia 1</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14-02 … M14-08 · <b>Archivos:</b> —</div>
+<div class="t">Qué hacer</div>
+<ol><li>Pasar Lighthouse (móvil) en Inicio, Movimientos y Recargar. Probar en Chrome para Android y Safari para iOS reales y en 360, 390 y 1280 px de ancho.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Lighthouse: Accesibilidad ≥ 95, Buenas prácticas ≥ 95 y Rendimiento ≥ 90 (capturas en el PR).</li></ul></div>
+
+<!-- ============================ 13. INSTANCIA 2 ============================ -->
+<h2 class="salto">13. Instancia 2: módulos dependientes</h2>
+<p>Se reparten igual que los de la instancia 1 y se pueden empezar con simuladores, pero <b>se cierran después</b> de sus dependencias.</p>
+
+<h3>M15. Gestor de enlaces</h3>
+<div class="epic"><b class="e">Épica M15.</b> Conecta M4 con M5, M6, M7 y M8 aplicando las reglas de C2. Es lo que hace que los canales no se solapen.</div>
+<div class="issue"><div class="ih"><span class="id">M15-01</span><code>CanalMqtt</code> sobre cualquier <code>Enlace</code><span class="tag i2">instancia 2</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M0-03, M5-03 o M6-01 · <b>Archivos:</b> <code>lib/Enlaces/CanalMqtt.h/.cpp</code>, <code>platformio.ini</code> (+ <code>knolleary/PubSubClient@^2.8</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Sobre <code>Enlace::abrir(servidor, 8883)</code>: conectar con usuario = n.º de validador y la clave MQTT de la NVS, <i>last will</i> en <code>sp/v/{n}/conexion</code>, suscripción a <code>sp/v/{n}/baja</code> y <code>sp/todos/urgente</code>, y <code>setBufferSize(2200)</code>. <code>enviar()</code> publica en <code>sp/v/{n}/sube</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Funciona igual sobre <code>EnlaceWifi</code> y sobre <code>Enlace4G</code> (la misma clase, sin <code>#ifdef</code>).</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M15-02</span><code>GestorEnlaces</code> e integración en <code>main.cpp</code><span class="tag i2">instancia 2</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M15-01, M4-01, M7-03 · <b>Archivos:</b> <code>src/validador/gestor_enlaces.cpp/.h</code>, <code>main.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Implementar las 5 reglas de C2: prioridad WiFi &gt; 4G &gt; BLE, histéresis de 10 s, cambio solo entre intercambios, 4G en reposo tras 5 min de WiFi, y ESP-NOW en paralelo.</li><li>Reemplazar <code>Sincronizador</code> (v1) por <code>SincronizadorV2</code> + <code>GestorEnlaces</code>. Opción <code>sync=v1</code> en <code>config.txt</code> como vuelta atrás durante un mes.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El tiempo máximo de <code>loop()</code> se mantiene &lt; 60 ms con todos los canales activos (medido y reportado).</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M15-03</span>Estado de los canales en el LCD y en el HOLA<span class="tag i2">instancia 2</span><span class="tag">firmware</span></div>
+<div class="meta"><b>Depende de:</b> M15-02 · <b>Archivos:</b> <code>lib/PantallaUI/</code>, <code>gestor_enlaces.cpp</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Icono del canal activo (W, 4G, BT o "—"), la señal y los pendientes en la barra de estado. HOLA con el enlace, la señal y el consumo.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Hay fotos de cada estado en el PR.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M15-04</span>Pruebas de conmutación<span class="tag i2">instancia 2</span><span class="tag">firmware</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M15-02 · <b>Archivos:</b> <code>docs/informe-conmutacion.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Escenarios: apagar el router con 4G disponible, sacar la SIM con WiFi disponible, sin ninguno con un conductor por BLE, y volver al WiFi. Medir el tiempo de recuperación y comprobar que no hay eventos perdidos ni duplicados en el servidor.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Informe con la tabla escenario / tiempo / resultado y 0 pérdidas.</li></ul></div>
+
+<h3>M16. Relé web del conductor</h3>
+<div class="epic"><b class="e">Épica M16.</b> El conductor abre <code>https://subepe.app/conductor/</code> en Chrome para Android, toca "Sincronizar bus" y su celular hace de puente por BLE. No hay app.</div>
+<div class="issue"><div class="ih"><span class="id">M16-01</span>App <code>conductor</code>, grupo y acceso<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-04 · <b>Archivos:</b> nueva app <code>servidor_api/conductor/</code>, migración del grupo <code>conductores</code>, panel de usuarios</div>
+<div class="t">Qué hacer</div>
+<ol><li>Grupo <code>conductores</code>. El superusuario lo asigna desde la gestión de usuarios del panel. Página <code>/conductor/</code> con el inicio de sesión del panel, que solo exige ese grupo (sin permisos de operador).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un conductor no puede entrar a las demás páginas del panel (test).</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M16-02</span>Página Web Bluetooth<span class="tag i2">instancia 2</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M16-01, M7-02 · <b>Archivos:</b> <code>conductor/static/conductor/rele.js</code>, plantilla</div>
+<div class="t">Qué hacer</div>
+<ol><li>"Conectar validador" → <code>navigator.bluetooth.requestDevice({filters: [{services: [UUID]}]})</code> → leer <b>info</b> y mostrar "Bus V103 · 45 pendientes" → control = 1 → reensamblar los fragmentos de <b>salida</b> → <code>POST /api/v2/paquetes/</code> → escribir las respuestas fragmentadas en <b>entrada</b> → control = 3.</li><li>Barra de progreso y resumen final ("45 viajes subidos · listas actualizadas a v1234"). Si el navegador no tiene <code>navigator.bluetooth</code>: "Usa Chrome en Android".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Ciclo completo con un validador real y un celular Android real en &lt; 20 s con 100 eventos (medido).</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M16-03</span>Celular sin datos: guardar y subir después<span class="tag i2">instancia 2</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M16-02 · <b>Archivos:</b> <code>rele.js</code>, <code>conductor/static/conductor/sw.js</code> (service worker)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Si el POST falla por falta de red: guardar los paquetes en IndexedDB, mostrar "Guardados N paquetes, se subirán al tener datos" y subirlos al volver la conexión (evento <code>online</code> o al abrir la página). La página funciona sin conexión gracias al service worker.</li><li>Los acuses de esa subida llegan al validador en su próxima sincronización por cualquier canal; reenviar eventos no causa daño.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Prueba en modo avión: se toma la cola, se activan los datos y los viajes aparecen en el servidor.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M16-04</span>Guía de uso para el conductor<span class="tag i2">instancia 2</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M16-02 · <b>Archivos:</b> <code>docs/guia-conductor.md</code> (y una versión imprimible de una página)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Pasos con capturas: abrir la página, iniciar sesión, conectar y qué hacer ante cada error.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Una persona que no conoce el sistema completa la sincronización solo con la guía.</li></ul></div>
+
+<h3>M17. Robo y reposición de punta a punta</h3>
+<div class="epic"><b class="e">Épica M17.</b> Desde que el cliente pulsa "Bloquear" hasta que tiene una tarjeta nueva con su saldo.</div>
+<div class="issue"><div class="ih"><span class="id">M17-01</span>Conectar el flujo y las notificaciones<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-07, M9-06, M13-03 · <b>Archivos:</b> <code>clientes/servicios.py</code>, <code>transporte/servicios.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Bloqueo desde el portal → CambioLista urgente → difusión MQTT → <code>al_bloquear()</code> (correo). Un viaje con tarjeta bloqueada que llega después → <code>uso_tarjeta_bloqueada</code> (correo).</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Test de integración que recorre el flujo hasta la notificación en la bandeja de salida.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M17-02</span>Medir el tiempo de propagación de un bloqueo por canal<span class="tag i2">instancia 2</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M17-01, M15-02, M8-03 · <b>Archivos:</b> <code>docs/informe-propagacion-bloqueo.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Medir desde el clic en el portal hasta el rechazo de la tarjeta en el validador, por WiFi, 4G, BLE (conductor) y ESP-NOW (bus vecino). 5 repeticiones cada uno.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Informe con la mediana y el máximo; el objetivo es &lt; 1 min por WiFi y 4G.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M17-03</span>Reposición en ventanilla<span class="tag i2">instancia 2</span><span class="tag">servidor</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> M12-07, M18-01 · <b>Archivos:</b> <code>transporte/servicios.py</code> (<code>confirmar_emision</code>), <code>transporte/emitir_tarjeta.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li><code>emitir_tarjeta.py --cuenta N</code> (que ya conserva el saldo): si hay una <code>SolicitudReposicion</code> abierta, la marca como entregada, genera el código de activación de la tarjeta nueva <b>solo si el cliente aún no tiene usuario</b> (si ya lo tiene, la tarjeta nueva aparece directamente en su portal) y notifica <code>reposicion_lista</code>.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Prueba manual con una NTAG215: bloquear → reponer → la tarjeta nueva tiene el saldo y el portal la muestra.</li></ul></div>
+
+<h3>M18. Emisión estilo bancario</h3>
+<div class="epic"><b class="e">Épica M18.</b> La ventanilla entrega la tarjeta y un comprobante con el código de activación.</div>
+<div class="issue"><div class="ih"><span class="id">M18-01</span>Código de activación al confirmar la emisión<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-01 · <b>Archivos:</b> <code>transporte/servicios.py</code>, <code>transporte/views.py</code> (<code>emision_confirmar</code>)</div>
+<div class="t">Qué hacer</div>
+<ol><li>Al confirmar una emisión de una cuenta sin <code>Cliente</code>: generar el código (8 caracteres del alfabeto <code>ABCDEFGHJKMNPQRSTUVWXYZ23456789</code>, con <code>secrets</code>), guardar solo su hash y devolverlo <b>una única vez</b> en la respuesta, con <code>numero_impreso</code>.</li><li>Ruta de operador <code>POST /api/tarjetas/{id}/codigo-activacion/</code> para regenerarlo (anula el anterior), con registro de quién lo hizo.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests: el código no se puede volver a obtener y regenerarlo anula el anterior.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M18-02</span>Comprobante imprimible<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M18-01 · <b>Archivos:</b> <code>panel/templates/panel/comprobante.html</code>, vista del panel</div>
+<div class="t">Qué hacer</div>
+<ol><li>Página A6/A5 lista para imprimir: nombre, DNI enmascarado, número impreso de la tarjeta, código de activación, fecha de vencimiento (72 h), la URL <code>mi.subepe.app/activar</code> con su código QR (generado en el servidor, sin CDN) y avisos de seguridad ("Nadie de SubePe te pedirá este código").</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>La vista previa de impresión del navegador cabe en una hoja A6.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M18-03</span><code>emitir_tarjeta.py</code> muestra el comprobante<span class="tag i2">instancia 2</span><span class="tag">tarjeta</span></div>
+<div class="meta"><b>Depende de:</b> M18-01, M18-02 · <b>Archivos:</b> <code>transporte/emitir_tarjeta.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Al terminar la emisión, imprimir en la terminal el número y el código y abrir la URL del comprobante en el navegador. Opción <code>--sin-comprobante</code> para pruebas.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Emitir con una NTAG215 real produce el comprobante y la activación en el portal funciona con él.</li></ul></div>
+
+<h3>M19. Panel de operadores, ampliación</h3>
+<div class="epic"><b class="e">Épica M19.</b> Que los operadores vean y atiendan lo nuevo: pagos, canales, libro y reposiciones.</div>
+<div class="issue"><div class="ih"><span class="id">M19-01</span>Órdenes de pago y conciliación<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M11-02, M11-06, M11-08 · <b>Archivos:</b> <code>panel/views.py</code>, <code>panel/urls.py</code>, plantillas</div>
+<div class="t">Qué hacer</div>
+<ol><li>Lista de órdenes con filtros (estado, fecha, cuenta), detalle con el historial y los eventos de pasarela, botón "Reembolsar" (M11-08) con motivo obligatorio y la última conciliación con sus diferencias.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Solo los operadores pueden reembolsar (test).</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M19-02</span>Validadores: canal, conexión y consumo<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-03 · <b>Archivos:</b> <code>panel/templates/panel/validadores.html</code>, <code>panel/views.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Columnas nuevas: último canal, en línea (por <code>sp/v/{n}/conexion</code> o por un HOLA de menos de 6 min), versión de listas frente a la actual, pendientes, consumo del día y versión de firmware. Se resaltan los validadores con más de 1 h sin sincronizar.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Los datos coinciden con el último HOLA recibido.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M19-03</span>Estado del libro contable<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M10-05 · <b>Archivos:</b> panel</div>
+<div class="t">Qué hacer</div>
+<ol><li>Tarjeta en el inicio del panel: última verificación, resultado y diferencias, y el saldo de las cuentas contables fijas.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Un descuadre provocado aparece en rojo.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M19-04</span>Solicitudes de reposición<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M12-07 · <b>Archivos:</b> panel</div>
+<div class="t">Qué hacer</div>
+<ol><li>Lista de solicitudes con su estado y acciones "Marcar lista" (que notifica al cliente) y "Entregada".</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>El cambio de estado se refleja en el portal del cliente.</li></ul></div>
+
+<h3>M20. Integración del portal</h3>
+<div class="epic"><b class="e">Épica M20.</b> El portal pasa de los datos simulados a la API real.</div>
+<div class="issue"><div class="ih"><span class="id">M20-01</span>Conectar el portal a la API real<span class="tag i2">instancia 2</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M14, M12, M11-07 · <b>Archivos:</b> <code>portal/static/portal/js/</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Sin <code>?simulado=1</code> se usa <code>api.js</code>. Corregir cualquier diferencia encontrada <b>en el contrato primero</b> y después en el código.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Se completa la lista de flujos de M20-03 en el servidor de pruebas.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M20-02</span>Vista SUN para el dueño de la tarjeta<span class="tag i2">instancia 2</span><span class="tag">portal</span></div>
+<div class="meta"><b>Depende de:</b> M1-08, M12-04 · <b>Archivos:</b> vista <code>/t</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Si quien abre la URL SUN tiene sesión y es el dueño de la tarjeta: mostrar el saldo y el último movimiento. Si no, solo la vista pública de M1-08.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Tests con el dueño, con otro cliente y sin sesión.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M20-03</span>Lista de flujos de punta a punta<span class="tag i2">instancia 2</span><span class="tag">portal</span><span class="tag">docs</span></div>
+<div class="meta"><b>Depende de:</b> M20-01 · <b>Archivos:</b> <code>docs/flujos-portal.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Recorrer y documentar con capturas: emisión → activación → ingreso → recarga simulada → viaje en un validador real → movimiento visible → bloqueo → reposición.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Todos los pasos funcionan en <code>subepe.app</code> con una NTAG215 real.</li></ul></div>
+
+<h3>M21. Pruebas de robustez</h3>
+<div class="epic"><b class="e">Épica M21.</b> Demostrar que el sistema aguanta los fallos para los que se diseñó.</div>
+<div class="issue"><div class="ih"><span class="id">M21-01</span>Batería de escenarios de fallo<span class="tag i2">instancia 2</span><span class="tag">firmware</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M15, M16, M11 · <b>Archivos:</b> <code>docs/informe-robustez.md</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Ejecutar y documentar: (1) retirar la tarjeta a mitad de la escritura, 20 veces; (2) cortar la energía del validador durante la sincronización; (3) 24 h sin ningún canal y luego recuperar; (4) un bus sin red que sincroniza solo a través de otro bus; (5) un webhook duplicado y uno perdido; (6) reinicio del servidor con validadores conectados; (7) paquetes alterados inyectados por BLE.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Ningún escenario pierde ni duplica dinero, y <code>verificar_libro</code> da 0 diferencias al final.</li></ul></div>
+<div class="issue"><div class="ih"><span class="id">M21-02</span>Prueba de carga del servidor<span class="tag i2">instancia 2</span><span class="tag">servidor</span></div>
+<div class="meta"><b>Depende de:</b> M9-06 · <b>Archivos:</b> <code>herramientas/carga_mqtt.py</code></div>
+<div class="t">Qué hacer</div>
+<ol><li>Simular 50 validadores con 1 evento cada 10 s durante 30 min contra la VM de 1 GB. Medir la CPU, la RAM y la latencia del acuse.</li></ol>
+<div class="t">Criterios de aceptación</div>
+<ul class="ok"><li>Informe: el acuse sale en &lt; 2 s en el percentil 95 y la VM no usa swap de forma sostenida.</li></ul></div>
+
+<!-- ============================ 14. HARDWARE ============================ -->
+<h2 class="salto">14. Hardware a comprar</h2>
+<table>
+<tr><th>Elemento</th><th>Recomendación</th><th>Notas</th></tr>
+<tr><td>Módulo celular</td><td><b>SIMCom A7670SA</b> (LTE Cat-1, bandas de Sudamérica) en una placa con regulador y adaptador de niveles. Alternativa: <b>SIM7600SA</b></td><td>La variante <b>SA</b> cubre las bandas de los operadores peruanos (B2/B4/B5/B7/B28, entre otras; confirmar en la ficha). Comprobar que la placa trae antena LTE y ranura nano/micro SIM.</td></tr>
+<tr><td>Fuente para el módulo</td><td>Convertidor reductor de 12/24 V a 5 V y ≥ 2 A (para el bus) o fuente USB de 5 V y 2 A en el banco de pruebas</td><td>Los picos al transmitir llegan a unos 2 A: nunca desde el 3V3 de la ESP32.</td></tr>
+<tr><td>SIM</td><td>Prepago con un paquete de datos pequeño</td><td>Con el consumo esperado (&lt; 30 MB/mes) alcanza el paquete más barato.</td></tr>
+<tr><td>Transistor NPN + resistencias</td><td>2N2222 o BC547, 1 kΩ y 10 kΩ</td><td>Solo si la placa del módulo no expone PWRKEY de forma controlable.</td></tr>
+<tr><td>2.ª y 3.ª ESP32 (opcional)</td><td>ESP32-WROOM-32 DevKit, igual a la actual</td><td>Para M8 (ESP-NOW entre buses) y M2-03 (placa de pruebas para eFuses).</td></tr>
+<tr><td>Tarjetas NTAG 424 DNA</td><td>Paquete pequeño (10–20) de proveedor confiable</td><td>Comprobar la firma de originalidad de NXP al recibirlas (las NTAG215 de prueba no son originales).</td></tr>
+</table>
+
+<!-- ============================ 15. RIESGOS ============================ -->
+<h2>15. Riesgos y temas abiertos</h2>
+<table>
+<tr><th>Riesgo o tema</th><th>Impacto</th><th>Mitigación o decisión pendiente</th></tr>
+<tr><td>RAM de la ESP32-WROOM-32 con WiFi + TLS + BLE + ESP-NOW</td><td>Reinicios o fallos de TLS</td><td>M7-01 lo mide primero. Si no alcanza: BLE solo cuando no hay WiFi ni 4G, o pasar a ESP32-S3 (más RAM y HMAC en eFuse).</td></tr>
+<tr><td>Compatibilidad del A7670 con TinyGSM</td><td>Retraso en M5</td><td>M5-02 lo valida antes de escribir <code>Enlace4G</code>; la alternativa es el SIM7600, con mejor soporte.</td></tr>
+<tr><td>La VM gratuita tiene 1 GB de RAM</td><td>Lentitud</td><td>Mosquitto (~10 MB) y el puente (~60 MB) caben; M21-02 lo confirma. Mudanza planificada para el 1–3/11.</td></tr>
+<tr><td>Clave maestra en la microSD hoy</td><td>Robo de la clave</td><td>M2-01 es prioritario.</td></tr>
+<tr><td>ESP-NOW solo en el canal 1</td><td>Sin intercambio entre buses mientras el WiFi está en otro canal</td><td>Configurar los routers y hotspots en el canal 1 cuando se pueda; aceptarlo como limitación.</td></tr>
+<tr><td>Web Bluetooth no funciona en iOS</td><td>Conductores con iPhone no pueden hacer de relé</td><td>Aceptado. Esos conductores pueden compartir datos por hotspot (WiFi).</td></tr>
+<tr><td>Límite de Gmail (~500 correos/día)</td><td>Correos retrasados</td><td>Suficiente para el proyecto; pasar a Brevo o Resend si crece.</td></tr>
+<tr><td>Comportamiento de la 424 ante escrituras interrumpidas</td><td>Diseño del registro</td><td>M1-02 lo confirma en la hoja de datos; el doble registro se mantiene igual.</td></tr>
+</table>
+
+<!-- ============================ 16. GLOSARIO ============================ -->
+<h2>16. Glosario</h2>
+<table>
+<tr><td style="width:22%"><b>Acuse</b></td><td>Paquete del servidor que confirma hasta qué evento recibió; permite borrar la cola del validador.</td></tr>
+<tr><td><b>Ajeno (paquete)</b></td><td>Paquete de otro bus que un validador transporta hacia el servidor.</td></tr>
+<tr><td><b>CambioLista / versión</b></td><td>Registro numerado de cada alta o baja en la lista negra o en las recargas pendientes; los validadores piden "lo que cambió desde la versión N".</td></tr>
+<tr><td><b>ESP-NOW</b></td><td>Protocolo de Espressif para comunicación directa entre ESP32, sin router (unos 100–200 m).</td></tr>
+<tr><td><b>Foto completa</b></td><td>Envío del estado entero de las listas cuando un validador está muy atrasado.</td></tr>
+<tr><td><b>HMAC / ECDSA</b></td><td>Firmas: HMAC con una clave compartida (validador ↔ servidor); ECDSA con una clave pública que cualquiera puede verificar pero solo el servidor puede producir.</td></tr>
+<tr><td><b>Idempotencia</b></td><td>Repetir una operación no cambia el resultado (reenviar un viaje o un pago no lo duplica).</td></tr>
+<tr><td><b>MQTT / Mosquitto</b></td><td>Protocolo abierto de mensajería para IoT con publicación y suscripción, y su servidor libre.</td></tr>
+<tr><td><b>OTP</b></td><td>Código de un solo uso enviado por correo (6 dígitos, 10 min).</td></tr>
+<tr><td><b>SUN / SDM</b></td><td>Función de la NTAG 424 que añade a la URL, en cada lectura, datos cifrados y una firma CMAC que el servidor verifica.</td></tr>
+<tr><td><b>Web Bluetooth</b></td><td>API del navegador (Chrome para Android) que permite a una página web hablar por BLE con un dispositivo.</td></tr>
+</table>
+
+</body>
+</html>

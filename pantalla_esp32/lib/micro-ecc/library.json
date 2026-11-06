@@ -1,0 +1,21 @@
+{
+  "name": "micro-ecc",
+  "version": "1.0.0",
+  "description": "Copia de kmackay/micro-ecc 1.0.0 (BSD-2) para verificar ECDSA P-256. Cambio local: uECC_prefijo.h renombra los símbolos con sp_ para no chocar con TinyCrypt de libbt.a. Solo esta librería se compila a -O3: ~67 ms por verificación en la ESP32 frente a ~111 ms (M0-02).",
+  "license": "BSD-2-Clause",
+  "homepage": "https://github.com/kmackay/micro-ecc",
+  "frameworks": "*",
+  "platforms": "*",
+  "build": {
+    "flags": [
+      "-O3",
+      "-DuECC_SQUARE_FUNC=1",
+      "-DuECC_OPTIMIZATION_LEVEL=3",
+      "-DuECC_SUPPORTS_secp160r1=0",
+      "-DuECC_SUPPORTS_secp192r1=0",
+      "-DuECC_SUPPORTS_secp224r1=0",
+      "-DuECC_SUPPORTS_secp256k1=0"
+    ],
+    "unflags": "-Os"
+  }
+}
