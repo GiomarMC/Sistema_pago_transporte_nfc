@@ -6,7 +6,10 @@ una copia firmada que se reconcilia con los eventos que suben los validadores.
 Todos los montos están en céntimos de sol.
 """
 
+import secrets
+
 from django.conf import settings
+from django.core.validators import RegexValidator
 from django.db import models
 
 
@@ -130,8 +133,14 @@ class Alerta(models.Model):
         return f"{self.tipo} · {self.fecha:%Y-%m-%d %H:%M}"
 
 
+def nueva_clave_hmac():
+    """32 bytes aleatorios en hexadecimal: la clave HMAC-SHA256 de un validador (C1)."""
+    return secrets.token_bytes(32).hex()
+
+
 class Validador(models.Model):
-    """Dispositivo de un bus. Se autentica con el token de su usuario."""
+    """Dispositivo de un bus. Se autentica con el token de su usuario y firma sus paquetes
+    de la sincronización v2 con su propia clave HMAC."""
     numero = models.PositiveIntegerField(unique=True,
                                          help_text="Id grabado en la tarjeta (1-899)")
     descripcion = models.CharField(max_length=80, blank=True, help_text="Bus, placa, ruta...")
@@ -139,9 +148,23 @@ class Validador(models.Model):
                                    related_name="validador")
     ultima_sync = models.DateTimeField(null=True, blank=True)
     activo = models.BooleanField(default=True)
+    clave_hmac = models.CharField(
+        max_length=64, default=nueva_clave_hmac, editable=False,
+        validators=[RegexValidator(r"^[0-9a-f]{64}$", "64 caracteres hexadecimales")],
+        help_text="Clave HMAC-SHA256 de sus paquetes. Ver y rotar: manage.py clave_validador")
 
     class Meta:
         verbose_name_plural = "validadores"
 
     def __str__(self):
         return f"Validador {self.numero} {self.descripcion}".strip()
+
+    @property
+    def clave_hmac_bytes(self) -> bytes:
+        return bytes.fromhex(self.clave_hmac)
+
+    def rotar_clave_hmac(self) -> str:
+        """Le da una clave nueva. La anterior deja de valer en cuanto se guarda."""
+        self.clave_hmac = nueva_clave_hmac()
+        self.save(update_fields=["clave_hmac"])
+        return self.clave_hmac
