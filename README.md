@@ -229,7 +229,8 @@ n.º de cuenta. El resto está en el servidor.
 |       |-- servicios.py           Lógica de negocio (sincronización, fraude, recargas, emisión)
 |       |-- views.py, urls.py      API REST
 |       |-- admin.py               Panel de administración
-|       |-- management/commands/  crear_validador, crear_operador, config_cliente, importar_sqlite
+|       |-- management/commands/  crear_validador, crear_operador, config_cliente, importar_sqlite,
+|       |                         clave_validador, generar_clave_listas
 |       `-- tests/                 Tests de la API
 |-- pantalla_esp32/                Validador de bus con ESP32, pantalla y microSD (ver su README)
 |-- docs/                          Informe de conexiones y pruebas del dispositivo (PDF)
@@ -652,7 +653,23 @@ python manage.py crear_validador 103 --descripcion "Bus ruta 5"   # muestra su t
 python manage.py crear_operador ventanilla2                       # muestra su token
 python manage.py config_cliente --url http://IP:8000 --validadores 101 102
 python manage.py importar_sqlite ruta/transporte.db               # datos de la versión antigua
+python manage.py clave_validador 103 [--rotar]                    # su clave HMAC (sync v2)
+python manage.py generar_clave_listas                             # clave ECDSA del servidor (sync v2)
 ```
+
+Claves de la sincronización v2 (contrato C1):
+
+- **Clave HMAC de cada validador.** Se crea sola al registrarlo y firma lo que
+  envía. `clave_validador` la muestra (64 caracteres hexadecimales) para
+  cargarla en su ESP32; con `--rotar` le da una nueva y la anterior deja de
+  valer al momento (por ejemplo, si roban la placa).
+- **Clave ECDSA del servidor.** Firma las listas, acuses y tarifas. Se genera
+  una sola vez con `generar_clave_listas`, que imprime la línea
+  `LISTAS_CLAVE_PRIVADA=...` para el `.env` y escribe la clave pública en
+  `pantalla_esp32/src/validador/clave_servidor.h`. La privada nunca se sube al
+  repositorio. Cambiarla obliga a reflashear todos los validadores, por eso el
+  comando se niega si ya hay una, salvo con `--forzar`. Si se pierde la
+  cabecera, `--solo-cabecera` la rehace desde el `.env`.
 
 ## 10. Panel de administración
 

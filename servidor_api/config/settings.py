@@ -179,3 +179,11 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # Pagos en línea (contrato C5): pasarela activa y secreto de sus webhooks
 PAGOS_PASARELA = os.environ.get("PAGOS_PASARELA", "simulada")
 PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
+
+# Clave privada ECDSA P-256 con la que el servidor firma LISTAS, ACUSE y TARIFAS de la
+# sincronización v2. En una línea, con los saltos del PEM como \n: la imprime
+# "manage.py generar_clave_listas". Nunca se sube al repositorio.
+LISTAS_CLAVE_PRIVADA = os.environ.get("LISTAS_CLAVE_PRIVADA", "")
+
+# Que las páginas e informes de error oculten también los ajustes con CLAVE o SECRETO
+DEFAULT_EXCEPTION_REPORTER_FILTER = "config.errores.FiltroErrores"
