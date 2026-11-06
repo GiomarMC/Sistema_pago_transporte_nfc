@@ -64,6 +64,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'transporte',
     'panel',
+    'clientes',
 ]
 
 MIDDLEWARE = [
