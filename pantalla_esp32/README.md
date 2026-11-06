@@ -163,6 +163,7 @@ generados por el código Python:
 pio test -e validador                     # todos
 pio test -e validador -f test_formato     # formato de la tarjeta
 pio test -e validador -f test_protocolo   # paquetes C1 y fragmentos (sincronización v2)
+pio test -e validador -f test_enlaces     # interfaces de enlace (C2) con sus falsos
 ```
 
 Deben terminar en `PASSED`. Si alguien cambia el formato en Python
@@ -392,9 +393,11 @@ pantalla_esp32/
 |   |-- TarjetaTransporte/      Formato de la tarjeta y firmas (copia exacta del Python)
 |   |-- ProtocoloSP/            Paquetes C1 de la sincronización v2 y fragmentos BLE/ESP-NOW
 |   |-- micro-ecc/              Copia de micro-ecc 1.0.0 para verificar ECDSA (ver abajo)
+|   |-- Enlaces/                Interfaces de enlace del contrato C2 (WiFi, 4G, BLE, ESP-NOW) y sus falsos para tests
 |   `-- LectorNFC/              Interfaz del lector, LectorPN532 (el del validador) y LectorPuente
 |-- test/test_formato/          Test del formato contra ejemplos del Python
-`-- test/test_protocolo/        Test de los paquetes C1 contra docs/contratos/vectores_c1.json
+|-- test/test_protocolo/        Test de los paquetes C1 contra docs/contratos/vectores_c1.json
+`-- test/test_enlaces/          Ejemplo de uso de CanalFalso y EnlaceFalso
 ```
 
 En `transporte/`:
