@@ -42,7 +42,8 @@ def webhook(request, pasarela):
         with transaction.atomic():
             registro, creado = EventoPasarela.objects.get_or_create(
                 pasarela=pasarela, id_evento=evento.id_evento,
-                defaults={"tipo": evento.tipo, "cuerpo": cuerpo, "firma_valida": True})
+                defaults={"tipo": evento.tipo, "id_externo": evento.id_externo,
+                          "cuerpo": cuerpo, "firma_valida": True})
     except IntegrityError:
         registro = EventoPasarela.objects.get(pasarela=pasarela, id_evento=evento.id_evento)
         creado = False

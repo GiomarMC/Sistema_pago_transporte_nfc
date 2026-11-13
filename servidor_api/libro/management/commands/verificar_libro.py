@@ -14,7 +14,9 @@ En la VM lo lanza el cron cada día a las 03:30 de Perú, después del respaldo
 from django.core.management.base import BaseCommand, CommandError
 
 from libro import libro
-from transporte.models import Alerta, soles
+from libro.models import Asiento
+from panel.models import VerificacionLibro
+from transporte.models import Alerta, Cuenta, soles
 
 ALERTA = "descuadre contable"
 
@@ -31,6 +33,11 @@ class Command(BaseCommand):
         for id_cuenta, saldo, en_libro in libro.descuadres():
             problemas.append(f"cuenta {id_cuenta}: Cuenta.saldo {soles(saldo)}, "
                              f"libro {soles(en_libro)} (diferencia {soles(saldo - en_libro)})")
+
+        # Cada corrida queda registrada: el panel muestra la última (M19-03)
+        VerificacionLibro.objects.create(
+            correcto=not problemas, diferencias=problemas,
+            cuentas=Cuenta.objects.count(), asientos=Asiento.objects.count())
 
         if not problemas:
             if opciones["verbosity"]:

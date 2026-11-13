@@ -18,7 +18,7 @@ from django.utils import timezone
 from libro import libro
 from libro.models import PREFIJO_CLIENTE, Asiento
 
-from .models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, soles
+from .models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, Validador, soles
 
 VALIDADOR_EMISOR = 0
 PUNTO_RECARGA = 900
@@ -35,6 +35,12 @@ CAJA_DE_ORIGEN = {
 }
 TIPO_ASIENTO = {"viaje": Asiento.Tipo.VIAJE, "recarga": Asiento.Tipo.RECARGA,
                 "emision": Asiento.Tipo.EMISION}
+
+
+def registrar_conexion(numero, activo):
+    """Punto de enlace para el futuro puente MQTT sp/v/{n}/conexion."""
+    Validador.objects.filter(numero=numero).update(
+        conexion_activa=activo, conexion_en=timezone.now())
 
 
 class ErrorNegocio(Exception):

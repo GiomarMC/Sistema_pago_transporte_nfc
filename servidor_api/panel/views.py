@@ -4,17 +4,23 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.contrib.auth.models import Group
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.db.models.functions import TruncDate
 from django.http import HttpResponseBadRequest
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from transporte import servicios
-from transporte.models import Alerta, Cuenta, Movimiento, Recarga, Tarjeta, Validador
+from transporte.models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, Tarjeta, Validador
 from transporte.permisos import GRUPO_OPERADORES, GRUPO_SOLICITUDES
+from libro.models import CuentaContable
+from pagos.models import EventoPasarela, OrdenRecarga
+from pagos.servicios import ErrorPago, reembolsar as reembolsar_pago
+
+from .models import ConciliacionPago, SolicitudReposicion, VerificacionLibro
 
 from .auth import operador_requerido, superusuario_requerido
 from .forms import SolicitudAccesoForm
@@ -51,6 +57,14 @@ def _estado_validador(validador, ahora):
     return "en línea", "success"
 
 
+def _conectado_validador(validador, ahora):
+    limite = ahora - timedelta(minutes=6)
+    hola = validador.hola_en
+    return bool((validador.conexion_activa and validador.conexion_en
+                 and validador.conexion_en >= limite)
+                or (hola and hola >= limite))
+
+
 @operador_requerido
 def inicio(request):
     ahora = timezone.now()
@@ -82,7 +96,8 @@ def inicio(request):
         "tarjetas_activas": Tarjeta.objects.filter(estado=Tarjeta.Estado.ACTIVA).count(),
         "viajes_hoy": resumen_viajes["total"],
         "cobrado_hoy": -(resumen_viajes["cobrado"] or 0),
-        "recargas_pendientes": Recarga.objects.filter(aplicada_en__isnull=True).count(),
+        "recargas_pendientes": Recarga.objects.filter(
+            aplicada_en__isnull=True, reembolsada_en__isnull=True).count(),
         "alertas_abiertas": Alerta.objects.filter(revisada=False).count(),
         "validadores_atrasados": Validador.objects.filter(activo=True).filter(
             Q(ultima_sync__lt=corte) | Q(ultima_sync__isnull=True)
@@ -92,6 +107,9 @@ def inicio(request):
         "alertas_recientes": Alerta.objects.filter(revisada=False)
         .select_related("tarjeta")[:4],
         "grafico": grafico,
+        "verificacion_libro": VerificacionLibro.objects.order_by("-fecha", "-pk").first(),
+        "saldos_fijos": CuentaContable.objects.filter(cuenta_cliente__isnull=True)
+            .annotate(saldo_contable=Sum("partidas__monto")).order_by("codigo"),
     }
     return render(request, "panel/inicio.html", contexto)
 
@@ -166,13 +184,114 @@ def viajes(request):
 @operador_requerido
 def validadores(request):
     ahora = timezone.now()
+    version_actual = CambioLista.objects.aggregate(m=Max("version"))["m"] or 0
     lista = [
-        {"objeto": v, "estado": _estado_validador(v, ahora)}
+        {"objeto": v, "estado": _estado_validador(v, ahora),
+         "en_linea": _conectado_validador(v, ahora),
+         "atrasado": not v.ultima_sync or v.ultima_sync < ahora - timedelta(hours=1),
+         "version_actual": version_actual,
+         "version_atraso": max(0, version_actual - v.version_listas) if v.ultimo_hola else None}
         for v in Validador.objects.order_by("numero")
     ]
     return render(request, "panel/validadores.html", {
         "titulo": "Validadores", "validadores": lista,
     })
+
+
+@operador_requerido
+def ordenes_pago(request):
+    qs = OrdenRecarga.objects.select_related("cuenta", "usuario").order_by("-creada", "-pk")
+    estado = request.GET.get("estado", "")
+    fecha_texto = request.GET.get("fecha", "")
+    cuenta = request.GET.get("cuenta", "").strip()[:64]
+    fecha = parse_date(fecha_texto) if fecha_texto else None
+    if estado in OrdenRecarga.Estado.values:
+        qs = qs.filter(estado=estado)
+    if fecha:
+        qs = qs.filter(creada__date=fecha)
+    if cuenta:
+        filtro = Q(cuenta__documento=cuenta)
+        if cuenta.isdecimal() and len(cuenta) <= 18:
+            filtro |= Q(cuenta__id=int(cuenta))
+        qs = qs.filter(filtro)
+    pagina = Paginator(qs, 30).get_page(request.GET.get("pagina"))
+    return render(request, "panel/ordenes_pago.html", {
+        "titulo": "Órdenes de pago", "pagina": pagina, "estado": estado,
+        "fecha_texto": fecha_texto, "fecha_invalida": bool(fecha_texto and not fecha),
+        "cuenta_filtro": cuenta, "estados": OrdenRecarga.Estado.choices,
+        "conciliacion": ConciliacionPago.objects.order_by("-fecha", "-pk").first(),
+    })
+
+
+@operador_requerido
+def orden_pago_detalle(request, orden_id):
+    orden = get_object_or_404(OrdenRecarga.objects.select_related("cuenta", "usuario", "recarga"), pk=orden_id)
+    eventos = EventoPasarela.objects.filter(
+        pasarela=orden.pasarela, id_externo=orden.id_externo).order_by("recibido", "pk")
+    return render(request, "panel/orden_pago_detalle.html", {
+        "titulo": f"Orden {orden.pk}", "orden": orden, "eventos": eventos,
+        "historial": orden.historial.order_by("fecha", "pk"),
+    })
+
+
+@operador_requerido
+@require_POST
+def reembolsar_orden(request, orden_id):
+    orden = get_object_or_404(OrdenRecarga, pk=orden_id)
+    motivo = request.POST.get("motivo", "").strip()[:240]
+    if not motivo:
+        return HttpResponseBadRequest("Indica el motivo del reembolso.")
+    try:
+        reembolsar_pago(orden, request.user, motivo)
+    except ErrorPago as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, "Reembolso registrado.")
+    return redirect("panel:orden_pago_detalle", orden_id=orden.pk)
+
+
+@operador_requerido
+def reposiciones(request):
+    estado = request.GET.get("estado", "")
+    qs = SolicitudReposicion.objects.select_related("cliente__usuario", "cliente__cuenta", "tarjeta")
+    if estado in SolicitudReposicion.Estado.values:
+        qs = qs.filter(estado=estado)
+    pagina = Paginator(qs.order_by("-creada", "-pk"), 30).get_page(request.GET.get("pagina"))
+    return render(request, "panel/reposiciones.html", {
+        "titulo": "Reposiciones", "pagina": pagina, "estado": estado,
+        "estados": SolicitudReposicion.Estado.choices,
+    })
+
+
+@operador_requerido
+@require_POST
+def gestionar_reposicion(request, solicitud_id):
+    accion = request.POST.get("accion")
+    with transaction.atomic():
+        solicitud = get_object_or_404(
+            SolicitudReposicion.objects.select_for_update().select_related("cliente__usuario"), pk=solicitud_id)
+        if accion == "lista" and solicitud.estado == SolicitudReposicion.Estado.SOLICITADA:
+            correo = solicitud.cliente.usuario.email
+            if not correo:
+                return HttpResponseBadRequest("El cliente necesita correo para recibir la notificación.")
+            solicitud.estado = SolicitudReposicion.Estado.LISTA
+            solicitud.lista_en = timezone.now()
+            solicitud.gestionada_por = request.user
+            solicitud.save(update_fields=["estado", "lista_en", "gestionada_por"])
+            from django.core.mail import send_mail
+            transaction.on_commit(lambda: send_mail(
+                "Tu reposición está lista", "Tu nueva tarjeta está lista para recoger.",
+                None, [correo]))
+            messages.success(request, "Reposición marcada como lista; cliente notificado.")
+        elif accion == "entregada" and solicitud.estado == SolicitudReposicion.Estado.LISTA:
+            solicitud.estado = SolicitudReposicion.Estado.ENTREGADA
+            solicitud.entregada_en = timezone.now()
+            solicitud.gestionada_por = request.user
+            solicitud.save(update_fields=["estado", "entregada_en", "gestionada_por"])
+            messages.success(request, "Reposición entregada.")
+        else:
+            return HttpResponseBadRequest("Cambio de estado no permitido.")
+    return redirect("panel:reposiciones")
 
 
 @operador_requerido
