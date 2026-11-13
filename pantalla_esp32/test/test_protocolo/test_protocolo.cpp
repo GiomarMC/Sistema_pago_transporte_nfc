@@ -94,7 +94,7 @@ void test_arma_eventos_1() {
 
 void test_arma_hola() {
   paq.cabecera = {sp::HOLA, VALIDADOR, sp::SERVIDOR, 3, CREADO};
-  paq.hola = {103, CREADO - 86400, 30, 3, 1, sp::RED_4G, -40, 12345, 6789, 20261106};
+  paq.hola = {103, CREADO - 86400, 30, 3, 1, sp::WIFI, -40, 12345, 6789, 20261106};
   const Valido &v = vector("hola");
   TEST_ASSERT_EQUAL(v.largo, sp::empaquetar(paq, CLAVE_HMAC, buf, sizeof(buf)));
   TEST_ASSERT_EQUAL_HEX8_ARRAY(v.datos, buf, v.largo);

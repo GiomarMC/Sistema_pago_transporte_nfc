@@ -39,8 +39,8 @@ BLOQUEO, RECARGA = 1, 2
 AGREGAR, QUITAR = 1, 2           # op de BLOQUEO
 PENDIENTE, APLICADA = 1, 2       # op de RECARGA
 
-# Enlace del HOLA (C1 5.4)
-WIFI, RED_4G, BLE, REENVIADO = 1, 2, 3, 4
+# Enlace del HOLA (C1 5.4). El 2 queda reservado (era 4G; el validador no lleva módem).
+WIFI, BLE, REENVIADO = 1, 3, 4
 
 _CABECERA = struct.Struct("<2sBBHHIIHH")      # 20 B
 _EVENTO = struct.Struct("<IBBHII10s2xiiII20s")  # 64 B
