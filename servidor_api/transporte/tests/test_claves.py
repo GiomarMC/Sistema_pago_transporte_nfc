@@ -24,7 +24,7 @@ def hola(origen):
     return (p.Cabecera(p.HOLA, origen=origen, destino=p.SERVIDOR, secuencia=1,
                        creado=1793000000),
             p.Hola(version_listas=1, version_tarifas=1, ultimo_evento=0, pendientes=0,
-                   ajenos=0, enlace=p.RED_4G, senal=-60, bytes_tx_hoy=0, bytes_rx_hoy=0,
+                   ajenos=0, enlace=p.WIFI, senal=-60, bytes_tx_hoy=0, bytes_rx_hoy=0,
                    version_firmware=20261106))
 
 
