@@ -11,13 +11,37 @@ from django.db import IntegrityError, transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
-from .models import Alerta, Cuenta, EstadoSync, Movimiento, Recarga, Tarifa, Tarjeta, soles
+from .models import Alerta, Cuenta, EstadoSync, Movimiento, Recarga, Tarifa, Tarjeta, Validador, soles
 from .sync_cambios import pagina, registrar_recarga, registrar_tarjeta
 
 VALIDADOR_EMISOR = 0
 PUNTO_RECARGA = 900
 RECARGA_MINIMA = 100      # S/ 1.00
 RECARGA_MAXIMA = 20000    # S/ 200.00
+
+
+@transaction.atomic
+def registrar_hola(validador, datos):
+    """Telemetría autenticada mínima para el panel; M9 integrará el paquete C1."""
+    bloqueado = Validador.objects.select_for_update().get(pk=validador.pk)
+    ahora = timezone.now()
+    bloqueado.ultimo_hola = dict(datos)
+    bloqueado.ultimo_hola_en = ahora
+    bloqueado.ultima_sync = ahora
+    bloqueado.ultimo_canal = datos["canal"]
+    bloqueado.version_listas = datos["version_listas"]
+    bloqueado.pendientes = datos["pendientes"]
+    bloqueado.consumo_dia = datos["consumo_dia"]
+    bloqueado.firmware = datos["firmware"]
+    bloqueado.save(update_fields=["ultimo_hola", "ultimo_hola_en", "ultima_sync",
+                                  "ultimo_canal", "version_listas", "pendientes",
+                                  "consumo_dia", "firmware"])
+
+
+def registrar_conexion(numero, activo):
+    """Punto de enlace para el futuro puente MQTT sp/v/{n}/conexion."""
+    Validador.objects.filter(numero=numero).update(
+        conexion_activa=activo, conexion_en=timezone.now())
 
 
 class ErrorNegocio(Exception):

@@ -1,0 +1,18 @@
+{% extends 'panel/base.html' %}{% load panel_format %}
+{% block content %}
+<div class="page-heading"><div><div class="eyebrow">PAGOS</div><h1>Órdenes de recarga</h1><p>Consulta pagos y solicitudes de reembolso.</p></div></div>
+<section class="surface filters-panel"><form method="get" class="filters">
+  <div><label for="estado">Estado</label><select id="estado" name="estado"><option value="">Todos</option>{% for valor, nombre in estados %}<option value="{{ valor }}" {% if estado == valor %}selected{% endif %}>{{ nombre }}</option>{% endfor %}</select></div>
+  <div><label for="fecha">Fecha</label><input id="fecha" type="date" name="fecha" value="{{ fecha_texto }}"></div>
+  <div><label for="cuenta">Cuenta o documento</label><input id="cuenta" name="cuenta" value="{{ cuenta_filtro }}" maxlength="64"></div>
+  <button class="button primary" type="submit">Filtrar</button>
+</form>{% if fecha_invalida %}<p class="field-error">Fecha inválida.</p>{% endif %}</section>
+<section class="surface table-surface"><div class="section-heading"><h2>Órdenes</h2><span class="muted">{{ pagina.paginator.count }} resultados</span></div>
+{% if pagina.object_list %}<div class="table-scroll"><table><thead><tr><th>Orden</th><th>Cuenta</th><th>Monto</th><th>Estado</th><th>Creada</th></tr></thead><tbody>{% for orden in pagina %}<tr><td><a href="{% url 'panel:orden_pago_detalle' orden.pk %}">{{ orden.pk|truncatechars:18 }}</a></td><td><a href="{% url 'panel:cuenta_detalle' orden.cuenta_id %}">#{{ orden.cuenta_id }} · {{ orden.cuenta.nombre }}</a></td><td>{{ orden.monto|dinero }}</td><td><span class="badge {% if orden.estado == 'acreditada' %}success{% elif orden.estado == 'fallida' or orden.estado == 'expirada' %}danger{% else %}warning{% endif %}">{{ orden.get_estado_display }}</span></td><td>{{ orden.creada|date:"d/m/Y H:i" }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<div class="empty-inline">No hay órdenes con estos filtros.</div>{% endif %}
+{% if pagina.has_other_pages %}<div class="pagination">{% if pagina.has_previous %}<a class="button subtle" href="?estado={{ estado|urlencode }}&fecha={{ fecha_texto|urlencode }}&cuenta={{ cuenta_filtro|urlencode }}&pagina={{ pagina.previous_page_number }}">Anterior</a>{% endif %}<span class="muted">Página {{ pagina.number }} de {{ pagina.paginator.num_pages }}</span>{% if pagina.has_next %}<a class="button subtle" href="?estado={{ estado|urlencode }}&fecha={{ fecha_texto|urlencode }}&cuenta={{ cuenta_filtro|urlencode }}&pagina={{ pagina.next_page_number }}">Siguiente</a>{% endif %}</div>{% endif %}</section>
+<section class="surface section-gap"><div class="section-heading"><div><div class="eyebrow">CONCILIACIÓN</div><h2>Última conciliación</h2></div></div>
+{% if conciliacion %}<p>Fecha de pagos: <strong>{{ conciliacion.dia|date:"d/m/Y" }}</strong> · Ejecutada: {{ conciliacion.fecha|date:"d/m/Y H:i" }} · {{ conciliacion.transacciones }} transacciones · {{ conciliacion.ordenes }} órdenes</p>
+<span class="badge {% if conciliacion.diferencias %}danger{% else %}success{% endif %}">{{ conciliacion.diferencias|length }} diferencias</span>
+{% if conciliacion.diferencias %}<ul>{% for diferencia in conciliacion.diferencias %}<li>{{ diferencia }}</li>{% endfor %}</ul>{% endif %}
+{% else %}<div class="empty-inline">Aún no se ha ejecutado la conciliación.</div>{% endif %}</section>
+{% endblock %}

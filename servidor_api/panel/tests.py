@@ -1,13 +1,25 @@
 from datetime import timedelta
+from io import StringIO
+import json
+import uuid
 
+from django.core.management import call_command
+from django.core.management.base import CommandError
+from django.core import mail
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
+from rest_framework.authtoken.models import Token
+from rest_framework.test import APIClient
 
-from transporte.models import Alerta, Cuenta, Movimiento, Tarifa, Tarjeta, Validador
+from transporte.models import Alerta, Cuenta, Movimiento, Tarifa, Tarjeta, Validador, EstadoSync
+from transporte import servicios as transporte_servicios
 from libro.libro import abrir_saldo_existente
+from pagos.models import ClienteCuenta, CobroSimulado, EventoPasarela, OrdenRecarga
+from pagos.servicios import crear_orden, confirmar_cobro
+from .models import ConciliacionPago, SolicitudReposicion, VerificacionLibro
 
 
 class PanelTests(TestCase):
@@ -198,3 +210,142 @@ class UsuariosTests(TestCase):
         self.assertEqual(self.client.get(ruta).status_code, 405)
         self.admin.refresh_from_db()
         self.assertTrue(self.admin.is_active)
+
+
+class M19Tests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.operador = User.objects.create_user(username="m19-operador", password="prueba")
+        self.operador.groups.add(Group.objects.get(name="operadores"))
+        self.cliente = User.objects.create_user(
+            username="m19-cliente", password="prueba", email="cliente@example.com")
+        self.cuenta = Cuenta.objects.create(
+            nombre="Cliente M19", documento="M19-123", tarifa=Tarifa.objects.get(pk=1))
+        self.vinculo = ClienteCuenta.objects.create(usuario=self.cliente, cuenta=self.cuenta)
+
+    def test_ordenes_filtros_detalle_eventos_y_reembolso_solo_operador(self):
+        orden = crear_orden(self.cliente, self.cuenta, 1000, uuid.uuid4())
+        CobroSimulado.objects.filter(orden=orden).update(estado="pagado", pagado_en=timezone.now())
+        confirmar_cobro(orden)
+        orden.refresh_from_db()
+        EventoPasarela.objects.create(
+            pasarela="simulada", id_evento="m19-evento", id_externo=orden.id_externo,
+            tipo="cobro.pagado", cuerpo=b"{}", firma_valida=True)
+        ConciliacionPago.objects.create(
+            dia=timezone.localdate(), transacciones=1, ordenes=1,
+            diferencias=["diferencia de prueba"])
+        self.client.force_login(self.operador)
+        lista = self.client.get(reverse("panel:ordenes_pago"), {
+            "estado": "acreditada", "fecha": timezone.localdate().isoformat(),
+            "cuenta": str(self.cuenta.pk)})
+        self.assertEqual(lista.status_code, 200)
+        self.assertEqual(list(lista.context["pagina"]), [orden])
+        self.assertContains(lista, "diferencia de prueba")
+        detalle = self.client.get(reverse("panel:orden_pago_detalle", args=[orden.pk]))
+        self.assertContains(detalle, "cobro.pagado")
+        self.assertContains(detalle, "Reembolsar")
+        ruta = reverse("panel:reembolsar_orden", args=[orden.pk])
+        self.assertEqual(self.client.post(ruta, {"motivo": ""}).status_code, 400)
+        self.client.force_login(self.cliente)
+        self.assertEqual(self.client.post(ruta, {"motivo": "solicitud"}).status_code, 403)
+        self.client.force_login(self.operador)
+        self.assertEqual(self.client.post(ruta, {"motivo": "solicitud"}).status_code, 302)
+        orden.refresh_from_db()
+        self.assertEqual(orden.estado, "acreditada")  # M11 bloquea reembolsos offline
+
+    def test_hola_autenticado_se_refleja_en_validadores(self):
+        bus = get_user_model().objects.create_user(username="m19-bus")
+        validador = Validador.objects.create(numero=101, usuario=bus)
+        api = APIClient()
+        api.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=bus).key}")
+        datos = {"canal": "wifi", "version_listas": 4, "pendientes": 7,
+                 "consumo_dia": 2048, "firmware": "v2.3"}
+        self.assertEqual(api.post("/api/validadores/hola/", datos, format="json").status_code, 200)
+        ajeno = APIClient()
+        ajeno.credentials(HTTP_AUTHORIZATION=f"Token {Token.objects.create(user=self.operador).key}")
+        self.assertEqual(ajeno.post("/api/validadores/hola/", datos, format="json").status_code, 403)
+        validador.refresh_from_db()
+        self.assertEqual(validador.ultimo_hola, datos)
+        self.client.force_login(self.operador)
+        respuesta = self.client.get(reverse("panel:validadores"))
+        for texto in ("wifi", "v2.3", "2048 bytes", "En línea"):
+            self.assertContains(respuesta, texto)
+        self.assertEqual(respuesta.context["validadores"][0]["objeto"].pendientes, 7)
+        Validador.objects.filter(pk=validador.pk).update(
+            ultima_sync=timezone.now() - timedelta(hours=2),
+            ultimo_hola_en=timezone.now() - timedelta(hours=2))
+        respuesta = self.client.get(reverse("panel:validadores"))
+        self.assertContains(respuesta, "fleet-stale")
+        transporte_servicios.registrar_conexion(101, True)
+        respuesta = self.client.get(reverse("panel:validadores"))
+        self.assertContains(respuesta, "En línea")
+
+    def test_verificacion_libro_desfase_aparece_en_rojo(self):
+        call_command("verificar_libro", stdout=StringIO())
+        self.client.force_login(self.operador)
+        self.assertContains(self.client.get(reverse("panel:inicio")), "Correcto")
+        Movimiento.objects.create(fecha=timezone.now(), cuenta=self.cuenta,
+                                 tipo="recarga", monto=100, saldo_final=100,
+                                 ref="sin-asiento-m19")
+        with self.assertRaises(CommandError):
+            call_command("verificar_libro", stdout=StringIO(), stderr=StringIO())
+        self.assertFalse(VerificacionLibro.objects.order_by("-pk").first().correcto)
+        respuesta = self.client.get(reverse("panel:inicio"))
+        self.assertContains(respuesta, "book-error")
+        self.assertContains(respuesta, "sin-asiento-m19")
+
+    def test_conciliacion_ejecutada_queda_visible(self):
+        call_command("conciliar_pagos", dia=timezone.localdate().isoformat(),
+                     stdout=StringIO(), stderr=StringIO())
+        self.assertEqual(ConciliacionPago.objects.count(), 1)
+        self.client.force_login(self.operador)
+        self.assertContains(self.client.get(reverse("panel:ordenes_pago")), "0 diferencias")
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_reposicion_cambia_en_portal_y_notifica_cliente(self):
+        tarjeta = Tarjeta.objects.create(uid="M19-BLOQUEADA", cuenta=self.cuenta,
+                                         estado=Tarjeta.Estado.BLOQUEADA)
+        self.client.force_login(self.cliente)
+        respuesta = self.client.post("/api/v1/reposiciones/",
+            data=json.dumps({"tarjeta_id": tarjeta.pk}), content_type="application/json")
+        self.assertEqual(respuesta.status_code, 201, respuesta.content)
+        solicitud = SolicitudReposicion.objects.get(pk=respuesta.json()["id"])
+        self.assertEqual(self.client.get("/api/v1/reposiciones/").json()[0]["estado"], "solicitada")
+        self.client.force_login(self.operador)
+        ruta = reverse("panel:gestionar_reposicion", args=[solicitud.pk])
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.client.post(ruta, {"accion": "lista"}).status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, [self.cliente.email])
+        self.client.force_login(self.cliente)
+        self.assertContains(self.client.get("/mi/reposiciones/"), "Tu nueva tarjeta está lista para recoger")
+        self.assertEqual(self.client.get("/api/v1/reposiciones/").json()[0]["estado"], "lista")
+        self.assertEqual(self.client.post(ruta, {"accion": "entregada"}).status_code, 403)
+        self.client.force_login(self.operador)
+        self.assertEqual(self.client.post(ruta, {"accion": "entregada"}).status_code, 302)
+        self.client.force_login(self.cliente)
+        self.assertEqual(self.client.get("/api/v1/reposiciones/").json()[0]["estado"], "entregada")
+        repetida = self.client.post("/api/v1/reposiciones/",
+            data=json.dumps({"tarjeta_id": tarjeta.pk}), content_type="application/json")
+        self.assertEqual(repetida.status_code, 200)
+        self.assertEqual(SolicitudReposicion.objects.count(), 1)
+
+    def test_reposicion_no_acepta_tarjeta_ajena_ni_duplicados(self):
+        propia = Tarjeta.objects.create(uid="M19-PROPIA", cuenta=self.cuenta,
+                                        estado=Tarjeta.Estado.BLOQUEADA)
+        otra_cuenta = Cuenta.objects.create(
+            nombre="Otro", documento="M19-OTRO", tarifa=Tarifa.objects.get(pk=1))
+        ajena = Tarjeta.objects.create(uid="M19-AJENA", cuenta=otra_cuenta,
+                                       estado=Tarjeta.Estado.BLOQUEADA)
+        self.client.force_login(self.cliente)
+        ruta = "/api/v1/reposiciones/"
+        for tarjeta in (ajena,):
+            respuesta = self.client.post(ruta, json.dumps({"tarjeta_id": tarjeta.pk}),
+                                         content_type="application/json")
+            self.assertEqual(respuesta.status_code, 409)
+        primera = self.client.post(ruta, json.dumps({"tarjeta_id": propia.pk}),
+                                   content_type="application/json")
+        segunda = self.client.post(ruta, json.dumps({"tarjeta_id": propia.pk}),
+                                   content_type="application/json")
+        self.assertEqual((primera.status_code, segunda.status_code), (201, 200))
+        self.assertEqual(SolicitudReposicion.objects.count(), 1)

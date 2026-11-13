@@ -5,6 +5,7 @@ from django.utils import timezone
 
 from pagos.models import OrdenRecarga
 from pagos.pasarelas import obtener_pasarela
+from panel.models import ConciliacionPago
 from transporte.models import Alerta
 
 
@@ -35,6 +36,9 @@ class Command(BaseCommand):
         for diferencia in diferencias:
             Alerta.objects.get_or_create(tipo="pago inconsistente", detalle=f"{dia}: {diferencia}")
             self.stderr.write(diferencia)
+        ConciliacionPago.objects.create(
+            dia=dia, transacciones=len(transacciones), ordenes=len(ordenes),
+            diferencias=diferencias)
         self.stdout.write(f"{dia}: {len(transacciones)} transacciones, {len(ordenes)} órdenes, {len(diferencias)} diferencias")
         if diferencias:
             raise CommandError("conciliación con diferencias")

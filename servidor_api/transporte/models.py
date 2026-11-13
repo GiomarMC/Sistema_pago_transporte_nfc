@@ -144,6 +144,15 @@ class Validador(models.Model):
     usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                    related_name="validador")
     ultima_sync = models.DateTimeField(null=True, blank=True)
+    ultimo_hola = models.JSONField(default=dict, blank=True)
+    ultimo_hola_en = models.DateTimeField(null=True, blank=True)
+    ultimo_canal = models.CharField(max_length=20, blank=True)
+    version_listas = models.BigIntegerField(null=True, blank=True)
+    pendientes = models.PositiveIntegerField(null=True, blank=True)
+    consumo_dia = models.PositiveBigIntegerField(null=True, blank=True, help_text="Bytes de datos reportados en el día")
+    firmware = models.CharField(max_length=60, blank=True)
+    conexion_en = models.DateTimeField(null=True, blank=True)
+    conexion_activa = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
 
     class Meta:

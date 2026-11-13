@@ -4,6 +4,7 @@ from django.db.models import Count, Sum
 
 from libro.libro import saldo_cliente
 from libro.models import Asiento, CorteHistorico, Partida
+from panel.models import VerificacionLibro
 from transporte.models import Alerta, Cuenta, Movimiento
 
 
@@ -23,6 +24,9 @@ class Command(BaseCommand):
         for detalle in errores:
             self.stderr.write(detalle)
             Alerta.objects.get_or_create(tipo="descuadre contable", detalle=detalle, revisada=False)
+        VerificacionLibro.objects.create(
+            correcto=not errores, diferencias=errores,
+            cuentas=Cuenta.objects.count(), asientos=Asiento.objects.count())
         if errores:
             raise CommandError(f"libro con {len(errores)} discrepancia(s)")
         self.stdout.write(self.style.SUCCESS(

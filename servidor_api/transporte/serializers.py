@@ -37,6 +37,14 @@ class SyncV2Serializer(serializers.Serializer):
         return datos
 
 
+class HolaSerializer(serializers.Serializer):
+    canal = serializers.ChoiceField(choices=["wifi", "mqtt", "http", "ble", "espnow", "sin_red"])
+    version_listas = serializers.IntegerField(min_value=0)
+    pendientes = serializers.IntegerField(min_value=0)
+    consumo_dia = serializers.IntegerField(min_value=0, help_text="Bytes transferidos hoy")
+    firmware = serializers.CharField(max_length=60)
+
+
 class EmisionSerializer(serializers.Serializer):
     uid = serializers.RegexField(r"^[0-9A-F]{8,20}$")
     cuenta = serializers.IntegerField(required=False)

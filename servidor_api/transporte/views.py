@@ -9,7 +9,7 @@ from .permisos import EsOperador, EsValidador
 from .serializers import (BloqueoSerializer, ConfirmarEmisionSerializer, CuentaSalida,
                           EmisionSerializer, EntregaSerializer, EventoSerializer,
                           MovimientoSalida, RecargaSalida, RecargaSerializer, SyncSerializer,
-                          SyncV2Serializer,
+                          SyncV2Serializer, HolaSerializer,
                           TarjetaSalida)
 
 
@@ -65,6 +65,15 @@ def sync_v2(request):
         request.user.validador, _validar_eventos(datos["eventos"]), cursor,
         hasta_version, datos["limite"],
     ))
+
+
+@api_view(["POST"])
+@permission_classes([EsValidador])
+def hola(request):
+    entrada = HolaSerializer(data=request.data)
+    entrada.is_valid(raise_exception=True)
+    servicios.registrar_hola(request.user.validador, entrada.validated_data)
+    return Response({"recibido": True})
 
 
 # --- Emisión -----------------------------------------------------------------
