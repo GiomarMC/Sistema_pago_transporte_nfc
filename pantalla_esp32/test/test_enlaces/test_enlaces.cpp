@@ -48,7 +48,7 @@ class ClienteNulo : public Client {
 // --- CanalFalso ----------------------------------------------------------------------------
 
 void test_el_hola_sale_por_el_canal_byte_a_byte() {
-  CanalFalso canal("mqtt-4g", sp::RED_4G);
+  CanalFalso canal("ble", sp::BLE);
   size_t largo = enviarHola(canal, 7);
   TEST_ASSERT_GREATER_THAN(0, largo);
   TEST_ASSERT_EQUAL(1, canal.enviados());
@@ -60,7 +60,7 @@ void test_el_hola_sale_por_el_canal_byte_a_byte() {
   TEST_ASSERT_TRUE(sp::desempaquetar(buf, largo, claveDe, nullptr, paq));
   TEST_ASSERT_EQUAL_UINT8(sp::HOLA, paq.cabecera.tipo);
   TEST_ASSERT_EQUAL_UINT32(7, paq.cabecera.secuencia);
-  TEST_ASSERT_EQUAL_UINT8(sp::RED_4G, paq.hola.enlace);
+  TEST_ASSERT_EQUAL_UINT8(sp::BLE, paq.hola.enlace);
   TEST_ASSERT_EQUAL(0, canal.enviados());
 }
 
@@ -132,10 +132,10 @@ void test_nombre_codigo_y_atender() {
 
 void test_enlace_controlado_por_el_test() {
   ClienteNulo cliente;
-  EnlaceFalso falso("4g", 2);
+  EnlaceFalso falso;
   Enlace &enlace = falso;
-  TEST_ASSERT_EQUAL_STRING("4g", enlace.nombre());
-  TEST_ASSERT_EQUAL_UINT8(2, enlace.codigo());
+  TEST_ASSERT_EQUAL_STRING("wifi", enlace.nombre());
+  TEST_ASSERT_EQUAL_UINT8(sp::WIFI, enlace.codigo());
   TEST_ASSERT_TRUE(enlace.estado() == EstadoEnlace::Apagado);
 
   enlace.encender();
