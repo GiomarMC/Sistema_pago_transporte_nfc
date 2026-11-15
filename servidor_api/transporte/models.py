@@ -11,6 +11,7 @@ import secrets
 from django.conf import settings
 from django.core.validators import RegexValidator
 from django.db import models
+from django.utils import timezone
 
 
 def soles(centimos):
@@ -25,6 +26,8 @@ class Tarifa(models.Model):
     codigo = models.PositiveSmallIntegerField(primary_key=True)
     nombre = models.CharField(max_length=40, unique=True)
     precio = models.PositiveIntegerField(help_text="Céntimos de sol")
+    # La versión de TARIFAS (C1 5.6) es la marca unix de la última modificación
+    modificada = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["codigo"]
@@ -153,6 +156,24 @@ class Validador(models.Model):
         validators=[RegexValidator(r"^[0-9a-f]{64}$", "64 caracteres hexadecimales")],
         help_text="Clave HMAC-SHA256 de sus paquetes. Ver y rotar: manage.py clave_validador")
 
+    # --- Sincronización v2 (C1) ---
+    class Enlace(models.IntegerChoices):     # campo enlace del HOLA (C1 5.4)
+        WIFI = 1, "WiFi"
+        BLE = 3, "BLE (celular del conductor)"
+        REENVIADO = 4, "Reenviado por otro bus"
+
+    ultimo_evento_contiguo = models.PositiveBigIntegerField(
+        default=0, help_text="Mayor N tal que se recibieron todos sus eventos 1..N (C1 5.7)")
+    version_listas = models.PositiveBigIntegerField(
+        default=0, help_text="Última versión de LISTAS que dijo tener en su HOLA")
+    ultimo_hola = models.JSONField(null=True, blank=True,
+                                   help_text="Campos del último HOLA recibido")
+    ultimo_enlace = models.PositiveSmallIntegerField(choices=Enlace.choices,
+                                                     null=True, blank=True)
+    mqtt_clave = models.CharField(
+        max_length=255, blank=True, editable=False,
+        help_text="Hash de su contraseña MQTT (vacío = sin acceso a MQTT)")
+
     class Meta:
         verbose_name_plural = "validadores"
 
@@ -168,3 +189,80 @@ class Validador(models.Model):
         self.clave_hmac = nueva_clave_hmac()
         self.save(update_fields=["clave_hmac"])
         return self.clave_hmac
+
+
+class CambioLista(models.Model):
+    """Un cambio de lista negra o de recargas, con versión global creciente (C1 5.5).
+
+    Los validadores piden los cambios desde su version_listas. a, b y c son los
+    campos de la entrada de 16 B: BLOQUEO → a = id de tarjeta; RECARGA → a = id
+    de cuenta, b = seq, c = monto en céntimos."""
+
+    class Tipo(models.IntegerChoices):
+        BLOQUEO = 1, "Bloqueo"
+        RECARGA = 2, "Recarga"
+
+    # op de BLOQUEO: 1 = agregar a la lista negra, 2 = quitar.
+    # op de RECARGA: 1 = pendiente, 2 = ya aplicada (borrar).
+    AGREGAR, QUITAR = 1, 2
+    PENDIENTE, APLICADA = 1, 2
+
+    version = models.BigAutoField(primary_key=True)
+    tipo = models.PositiveSmallIntegerField(choices=Tipo.choices)
+    op = models.PositiveSmallIntegerField()
+    a = models.PositiveBigIntegerField()
+    b = models.PositiveBigIntegerField(default=0)
+    c = models.PositiveBigIntegerField(default=0)
+    urgente = models.BooleanField(default=False,
+                                  help_text="Se publica además como LISTAS urgente a todos")
+    creado = models.DateTimeField(default=timezone.now)
+    difundido_en = models.DateTimeField(null=True, blank=True,
+                                        help_text="Cuándo se publicó el paquete urgente")
+
+    class Meta:
+        ordering = ["version"]
+        verbose_name = "cambio de lista"
+        verbose_name_plural = "cambios de lista"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(tipo__in=[1, 2]),
+                                   name="cambio_tipo_valido"),
+            models.CheckConstraint(condition=models.Q(op__in=[1, 2]), name="cambio_op_valida"),
+            # Los campos van como uint32 en la entrada de C1
+            models.CheckConstraint(
+                condition=models.Q(a__lte=0xFFFFFFFF, b__lte=0xFFFFFFFF, c__lte=0xFFFFFFFF),
+                name="cambio_campos_uint32"),
+        ]
+        indexes = [
+            models.Index(fields=["urgente", "difundido_en"], name="cambio_urgente_idx",
+                         condition=models.Q(urgente=True, difundido_en__isnull=True)),
+        ]
+
+    def __str__(self):
+        return f"v{self.version} · {self.get_tipo_display()} op {self.op} · {self.a}"
+
+
+class EventoRecibido(models.Model):
+    """Id de evento ya recibido de un validador: reenviarlo no hace nada (C1 5.7)."""
+
+    class Via(models.TextChoices):
+        MQTT = "mqtt", "MQTT"
+        HTTP = "http", "HTTP"
+        BLE = "ble", "BLE (celular del conductor)"
+        ESPNOW = "espnow", "ESP-NOW (otro bus)"
+
+    validador = models.ForeignKey(Validador, on_delete=models.CASCADE,
+                                  related_name="eventos_recibidos")
+    id_evento = models.PositiveBigIntegerField()
+    recibido = models.DateTimeField(auto_now_add=True)
+    via = models.CharField(max_length=6, choices=Via.choices)
+
+    class Meta:
+        verbose_name = "evento recibido"
+        verbose_name_plural = "eventos recibidos"
+        constraints = [
+            models.UniqueConstraint(fields=["validador", "id_evento"],
+                                    name="evento_recibido_unico"),
+        ]
+
+    def __str__(self):
+        return f"Validador {self.validador_id} · evento {self.id_evento} ({self.via})"
