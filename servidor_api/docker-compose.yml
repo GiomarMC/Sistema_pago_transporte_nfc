@@ -21,6 +21,7 @@ services:
 
   web:
     build: .
+    image: subepe-servidor
     env_file: .env
     environment:
       # Dentro de Docker la base de datos es el servicio "db"
@@ -42,6 +43,24 @@ services:
     volumes:
       - ./mosquitto:/mosquitto/config:ro
       - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+
+  # Puente MQTT ↔ Django (M9-06): misma imagen que web, sin migrar al arrancar
+  # (las aplica web). Se reconecta solo si se reinicia mosquitto o db.
+  puente:
+    image: subepe-servidor
+    pull_policy: never
+    entrypoint: ["python", "manage.py", "puente_mqtt"]
+    command: []
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      MQTT_HOST: mosquitto
+    depends_on:
+      - web
+      - mosquitto
+    stop_grace_period: 10s
     restart: unless-stopped
 
 volumes:

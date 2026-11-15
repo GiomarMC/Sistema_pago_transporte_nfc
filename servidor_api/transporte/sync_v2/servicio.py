@@ -163,11 +163,11 @@ def _hola(validador, hola, via, portador) -> list[bytes]:
                                   "ultima_sync"])
 
     respuestas = [_acuse(validador, _avanzar_contiguo(validador))]
-    respuestas += [_firmar(LISTAS, validador.numero, cuerpo)
+    respuestas += [firmar(LISTAS, validador.numero, cuerpo)
                    for cuerpo in listas_para(hola.version_listas)]
     tarifas = tarifas_actuales()
     if tarifas.version != hola.version_tarifas:
-        respuestas.append(_firmar(TARIFAS, validador.numero, tarifas))
+        respuestas.append(firmar(TARIFAS, validador.numero, tarifas))
     return respuestas
 
 
@@ -221,10 +221,10 @@ def tarifas_actuales() -> Tarifas:
 # --- Respuestas firmadas ----------------------------------------------------------------
 
 def _acuse(validador, hasta_evento) -> bytes:
-    return _firmar(ACUSE, validador.numero, Acuse(hasta_evento, int(timezone.now().timestamp())))
+    return firmar(ACUSE, validador.numero, Acuse(hasta_evento, int(timezone.now().timestamp())))
 
 
-def _firmar(tipo, destino, cuerpo) -> bytes:
+def firmar(tipo, destino, cuerpo) -> bytes:
     cabecera = Cabecera(tipo, origen=SERVIDOR, destino=destino,
                         secuencia=siguiente_secuencia(), creado=int(timezone.now().timestamp()))
     return empaquetar(cabecera, cuerpo, clave_ecdsa=claves.clave_privada_listas())
