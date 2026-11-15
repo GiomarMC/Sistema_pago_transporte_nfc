@@ -197,6 +197,9 @@ LISTAS_CLAVE_PRIVADA = os.environ.get("LISTAS_CLAVE_PRIVADA", "")
 
 # Contraseña del usuario "puente" de Mosquitto (sincronización v2 por MQTT)
 MQTT_PUENTE_CLAVE = os.environ.get("MQTT_PUENTE_CLAVE", "")
+# Broker al que se conecta el puente (dentro de Docker, el servicio "mosquitto")
+MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
+MQTT_PUERTO = int(os.environ.get("MQTT_PUERTO", "1883"))
 
 # Que las páginas e informes de error oculten también los ajustes con CLAVE o SECRETO
 DEFAULT_EXCEPTION_REPORTER_FILTER = "config.errores.FiltroErrores"

@@ -678,6 +678,11 @@ Claves de la sincronización v2 (contrato C1):
   de Mosquitto con `bash mosquitto/credenciales.sh`, que también se ejecuta en
   cada despliegue. El usuario `puente` usa `MQTT_PUENTE_CLAVE` del `.env`.
   `bash mosquitto/probar_acl.sh` comprueba la ACL en un broker desechable.
+- **Puente MQTT.** El servicio `puente` de Docker Compose (`manage.py
+  puente_mqtt`) procesa lo que los validadores publican en `sp/v/<n.º>/sube`,
+  les responde en `sp/v/<n.º>/baja` y difunde cada bloqueo urgente a todos los
+  buses por `sp/todos/urgente` en un par de segundos. Se reconecta solo si se
+  reinicia Mosquitto o PostgreSQL.
 
 ## 10. Panel de administración
 
