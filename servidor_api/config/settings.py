@@ -195,5 +195,8 @@ PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
 # "manage.py generar_clave_listas". Nunca se sube al repositorio.
 LISTAS_CLAVE_PRIVADA = os.environ.get("LISTAS_CLAVE_PRIVADA", "")
 
+# Contraseña del usuario "puente" de Mosquitto (sincronización v2 por MQTT)
+MQTT_PUENTE_CLAVE = os.environ.get("MQTT_PUENTE_CLAVE", "")
+
 # Que las páginas e informes de error oculten también los ajustes con CLAVE o SECRETO
 DEFAULT_EXCEPTION_REPORTER_FILTER = "config.errores.FiltroErrores"

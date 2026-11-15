@@ -184,6 +184,16 @@ class Validador(models.Model):
     def clave_hmac_bytes(self) -> bytes:
         return bytes.fromhex(self.clave_hmac)
 
+    def nueva_clave_mqtt(self) -> str:
+        """Le da una contraseña MQTT nueva y devuelve el texto en claro (solo se
+        guarda su hash). La anterior deja de valer al regenerar las credenciales."""
+        from transporte.sync_v2 import mqtt
+
+        clave = mqtt.nueva_clave()
+        self.mqtt_clave = mqtt.hash_mosquitto(clave)
+        self.save(update_fields=["mqtt_clave"])
+        return clave
+
     def rotar_clave_hmac(self) -> str:
         """Le da una clave nueva. La anterior deja de valer en cuanto se guarda."""
         self.clave_hmac = nueva_clave_hmac()

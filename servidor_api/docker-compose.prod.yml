@@ -2,6 +2,7 @@
 #   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
 # Requiere en .env: DOMINIO, DJANGO_ALLOWED_HOSTS=<el dominio> y DJANGO_HTTPS=1.
 # Django deja de publicarse en el puerto 8000: solo se entra por Caddy (80/443).
+# Mosquitto publica el 8883 (MQTT con TLS) con el certificado que obtiene Caddy.
 
 services:
   web:
@@ -22,6 +23,18 @@ services:
     depends_on:
       - web
     restart: unless-stopped
+
+  mosquitto:
+    environment:
+      DOMINIO: ${DOMINIO:?Define DOMINIO en el archivo .env}
+    ports:
+      - "8883:8883"
+    volumes:
+      # Listener 8883 con TLS y el certificado de Caddy (lo copia certificado.sh)
+      - ./mosquitto/tls:/mosquitto/config/conf.d:ro
+      - caddy_data:/caddy:ro
+    depends_on:
+      - caddy
 
 volumes:
   caddy_data:

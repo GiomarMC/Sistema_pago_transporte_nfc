@@ -1,4 +1,5 @@
-# Servidor del sistema de transporte: API + panel de administración + PostgreSQL.
+# Servidor del sistema de transporte: API + panel de administración + PostgreSQL
+# + broker MQTT (Mosquitto) de la sincronización v2.
 #   docker compose up -d --build
 # La configuración (contraseñas, clave secreta) se lee de .env (ver .env.example).
 
@@ -32,5 +33,17 @@ services:
       - "${WEB_PORT:-8000}:8000"
     restart: unless-stopped
 
+  # MQTT de la sincronización v2 (C1 5.8). Aquí solo el 1883 sin TLS, dentro de
+  # la red de Docker (para el puente); no se publica. En producción se suma el
+  # 8883 con TLS (docker-compose.prod.yml). Usuarios: mosquitto/credenciales.sh
+  mosquitto:
+    image: eclipse-mosquitto:2
+    command: ["sh", "/mosquitto/config/arrancar.sh"]
+    volumes:
+      - ./mosquitto:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  mosquitto_data:
