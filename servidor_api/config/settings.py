@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -174,6 +175,15 @@ REST_FRAMEWORK = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Caché en archivos: la comparten los procesos de gunicorn del contenedor, así los
+# límites de frecuencia (p. ej. 60/min en /api/v2/paquetes/) cuentan para todos.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.environ.get("CACHE_DIR", str(Path(tempfile.gettempdir()) / "subepe-cache")),
+    }
+}
 
 
 # Pagos en línea (contrato C5): pasarela activa y secreto de sus webhooks
