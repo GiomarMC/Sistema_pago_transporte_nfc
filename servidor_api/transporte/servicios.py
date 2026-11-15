@@ -3,6 +3,10 @@ Lógica de negocio del servidor. Las vistas solo validan la entrada y llaman aqu
 
 Toda modificación de saldo bloquea la fila de la cuenta (select_for_update):
 varios validadores pueden sincronizar a la vez sin pisarse.
+
+Cada cambio de lista negra o de recargas pendientes se registra en CambioLista
+dentro de la misma transacción (sincronización v2, C1 5.5): si la operación
+falla, el cambio tampoco queda.
 """
 
 from datetime import datetime
@@ -11,7 +15,7 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
-from .models import Alerta, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, soles
+from .models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, soles
 
 VALIDADOR_EMISOR = 0
 PUNTO_RECARGA = 900
@@ -44,11 +48,38 @@ def alertar(tarjeta, tipo, detalle=""):
     Alerta.objects.create(tarjeta=tarjeta, tipo=tipo, detalle=detalle)
 
 
+# --- Cambios de lista (sincronización v2) --------------------------------------
+
+def _bloqueos(ids_tarjeta, urgente):
+    """Agrega las tarjetas a la lista negra de los validadores."""
+    CambioLista.objects.bulk_create([
+        CambioLista(tipo=CambioLista.Tipo.BLOQUEO, op=CambioLista.AGREGAR, a=i, urgente=urgente)
+        for i in ids_tarjeta])
+
+
+def _recargas(recargas, op):
+    CambioLista.objects.bulk_create([
+        CambioLista(tipo=CambioLista.Tipo.RECARGA, op=op, a=r.cuenta_id, b=r.seq, c=r.monto)
+        for r in recargas])
+
+
+def cambios_desde(version, limite=120):
+    """Cambios de lista posteriores a version, en orden (como mucho limite: las
+    entradas que caben en un paquete LISTAS)."""
+    return list(CambioLista.objects.filter(version__gt=version).order_by("version")[:limite])
+
+
+@transaction.atomic
 def bloquear(tarjeta, motivo, tipo="bloqueo automático"):
-    if tarjeta.estado == Tarjeta.Estado.ACTIVA:
-        tarjeta.estado = Tarjeta.Estado.BLOQUEADA
-        tarjeta.bloqueada_en = timezone.now()
-        tarjeta.save(update_fields=["estado", "bloqueada_en"])
+    # UPDATE condicional: con dos bloqueos a la vez, solo uno cambia la fila
+    # (y registra el cambio de lista), aunque los dos vieran la tarjeta activa.
+    ahora = timezone.now()
+    if Tarjeta.objects.filter(pk=tarjeta.pk, estado=Tarjeta.Estado.ACTIVA).update(
+            estado=Tarjeta.Estado.BLOQUEADA, bloqueada_en=ahora):
+        tarjeta.estado, tarjeta.bloqueada_en = Tarjeta.Estado.BLOQUEADA, ahora
+        _bloqueos([tarjeta.pk], urgente=True)
+    else:
+        tarjeta.refresh_from_db(fields=["estado", "bloqueada_en"])
     alertar(tarjeta, tipo, motivo)
 
 
@@ -64,6 +95,7 @@ def crear_recarga(id_cuenta, monto, origen) -> Recarga:
     seq = (cuenta.recargas.aggregate(m=Max("seq"))["m"] or 0) + 1
     recarga = Recarga.objects.create(cuenta=cuenta, seq=seq, monto=monto, origen=origen)
     registrar_movimiento(cuenta, None, "recarga", monto, ref=f"R{recarga.id}")
+    _recargas([recarga], CambioLista.PENDIENTE)
     return recarga
 
 
@@ -78,15 +110,24 @@ def recargas_para_tarjeta(id_cuenta, ultima_en_tarjeta):
     return total, hasta
 
 
+@transaction.atomic
 def entregar_recargas(tarjeta, hasta_seq, por, fecha=None):
     """Marca como entregadas las recargas hasta hasta_seq, solo si la tarjeta es
     la activa de la cuenta (si un bus desactualizado las grabó en una tarjeta ya
     bloqueada, siguen pendientes para la tarjeta nueva)."""
     if tarjeta.estado != Tarjeta.Estado.ACTIVA:
         return 0
-    return Recarga.objects.filter(cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq,
-                                  aplicada_en__isnull=True).update(
+    # select_for_update: si otro validador entrega las mismas a la vez, espera y
+    # al releer ya no las ve pendientes (un solo cambio "aplicada" por recarga).
+    entregadas = list(Recarga.objects.select_for_update().filter(
+        cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq, aplicada_en__isnull=True)
+        .order_by("seq"))
+    if not entregadas:
+        return 0
+    Recarga.objects.filter(pk__in=[r.pk for r in entregadas]).update(
         aplicada_en=fecha or timezone.now(), aplicada_por=por, tarjeta=tarjeta)
+    _recargas(entregadas, CambioLista.APLICADA)
+    return len(entregadas)
 
 
 @transaction.atomic
@@ -130,9 +171,11 @@ def confirmar_emision(id_tarjeta, contador=None):
     cuenta = _cuenta_bloqueada(tarjeta.cuenta_id)
     ahora = timezone.now()
 
-    Tarjeta.objects.filter(uid=tarjeta.uid, estado__in=[Tarjeta.Estado.ACTIVA,
-                                                        Tarjeta.Estado.PENDIENTE]) \
-        .exclude(pk=tarjeta.pk).update(estado=Tarjeta.Estado.ANULADA, bloqueada_en=ahora)
+    # Emisiones anteriores de la misma tarjeta física: se regraba encima, no
+    # quedan en manos de nadie, así que no hace falta difundirlas como urgentes.
+    _bloqueos(_anular(Tarjeta.objects.filter(uid=tarjeta.uid).exclude(pk=tarjeta.pk), ahora),
+              urgente=False)
+    # Las otras tarjetas activas de la cuenta (bloquear() registra su cambio)
     reemplazadas = list(cuenta.tarjetas.filter(estado=Tarjeta.Estado.ACTIVA).exclude(pk=tarjeta.pk))
     for t in reemplazadas:
         bloquear(t, f"reemplazada por la tarjeta {tarjeta.id}", tipo="reemplazo")
@@ -159,12 +202,21 @@ def cancelar_emision(id_tarjeta):
         cuenta.delete()
 
 
+def _anular(tarjetas, ahora):
+    """Anula las tarjetas activas o pendientes del queryset. Devuelve sus ids."""
+    ids = list(tarjetas.select_for_update().filter(
+        estado__in=[Tarjeta.Estado.ACTIVA, Tarjeta.Estado.PENDIENTE])
+        .order_by("pk").values_list("pk", flat=True))
+    Tarjeta.objects.filter(pk__in=ids).update(estado=Tarjeta.Estado.ANULADA, bloqueada_en=ahora)
+    return ids
+
+
 @transaction.atomic
 def anular_por_uid(uid):
     """Tarjeta física restablecida a fábrica: sus emisiones dejan de ser válidas."""
-    return Tarjeta.objects.filter(uid=uid, estado__in=[Tarjeta.Estado.ACTIVA,
-                                                       Tarjeta.Estado.PENDIENTE]) \
-        .update(estado=Tarjeta.Estado.ANULADA, bloqueada_en=timezone.now())
+    ids = _anular(Tarjeta.objects.filter(uid=uid), timezone.now())
+    _bloqueos(ids, urgente=True)
+    return len(ids)
 
 
 # --- Sincronización con validadores -------------------------------------------
