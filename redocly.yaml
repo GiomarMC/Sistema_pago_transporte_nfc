@@ -1,0 +1,6 @@
+# Reglas de `redocly lint` para docs/contratos/api-cliente-v1.yaml (C4).
+extends:
+  - recommended
+rules:
+  # Django usa rutas con barra final (/api/v1/resumen/): es parte del contrato.
+  no-path-trailing-slash: off

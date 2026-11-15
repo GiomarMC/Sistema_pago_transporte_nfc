@@ -1,0 +1,1139 @@
+openapi: 3.1.0
+info:
+  title: SubePe — API del portal del cliente (C4)
+  version: 1.0.0
+  summary: Contrato C4 entre el portal mi.subepe.app y el servidor.
+  description: |
+    Fuente del contrato C4 (sección 8 del plan de módulos). La tabla del plan
+    es un resumen de este archivo; si difieren, manda este archivo.
+
+    Reglas generales:
+
+    - JSON en UTF-8.
+    - Autenticación por la cookie de sesión del host `mi.subepe.app`. Los
+      métodos que modifican datos (POST, DELETE) llevan además la cabecera
+      `X-CSRFToken` con el valor de la cookie `csrftoken`.
+    - Los montos son enteros en céntimos (`1240` = S/ 12.40).
+    - Las fechas y horas van en ISO 8601 con zona horaria
+      (`2026-10-23T08:15:00-05:00`); los filtros de día van como `AAAA-MM-DD`.
+    - Todo error responde con el objeto `Error`
+      (`{"error": {"codigo", "mensaje", "campos"}}`). El cliente decide por
+      `codigo`; `mensaje` se puede mostrar tal cual.
+
+    Códigos de error: `no_autenticado` (401), `prohibido` (403),
+    `no_encontrado` (404), `validacion` (400), `credenciales_invalidas` (401),
+    `bloqueo_temporal` (429, con `reintentar_en`), `otp_invalido` (400),
+    `otp_expirado` (400), `activacion_invalida` (400),
+    `monto_fuera_de_limite` (400), `limite_diario` (400),
+    `idempotencia_conflicto` (409), `tarjeta_no_activa` (409).
+  license:
+    name: Uso académico
+servers:
+  - url: https://mi.subepe.app/api/v1
+    description: Producción
+  - url: http://mi.localhost:8000/api/v1
+    description: Desarrollo local
+security:
+  - sesion: []
+tags:
+  - name: activacion
+    description: Activación de la tarjeta y creación del usuario (sin sesión).
+  - name: sesion
+    description: Inicio y cierre de sesión, con OTP para dispositivos nuevos.
+  - name: contrasena
+    description: Recuperar, restablecer y cambiar la contraseña.
+  - name: consulta
+    description: Saldo, movimientos, perfil y seguridad (con sesión).
+  - name: tarjeta
+    description: Bloqueo de la tarjeta y solicitud de reposición.
+  - name: recargas
+    description: Órdenes de recarga pagadas en la pasarela.
+
+paths:
+  # ------------------------------------------------------------------ Activación
+  /activacion/:
+    post:
+      tags: [activacion]
+      operationId: activarTarjeta
+      summary: Paso 1 — comprobar documento, tarjeta y código del comprobante
+      description: |
+        Devuelve un `token_activacion` válido 15 minutos. Cualquier dato
+        incorrecto responde el mismo `activacion_invalida` (mensaje genérico).
+        Tras 5 intentos fallidos con el mismo documento se responde
+        `bloqueo_temporal` durante 30 minutos.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [documento, numero_tarjeta, codigo]
+              properties:
+                documento: { $ref: "#/components/schemas/Documento" }
+                numero_tarjeta:
+                  type: string
+                  pattern: "^[0-9]{9}$"
+                  description: Los 9 dígitos impresos en la tarjeta (con dígito Luhn).
+                  examples: ["123456782"]
+                codigo:
+                  type: string
+                  pattern: "^[A-Z0-9]{8}$"
+                  description: Código de 8 caracteres del comprobante de emisión.
+                  examples: ["K7Q2M9XA"]
+            example:
+              documento: "45678912"
+              numero_tarjeta: "123456782"
+              codigo: "K7Q2M9XA"
+      responses:
+        "200":
+          description: Datos correctos.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [token_activacion, nombre_enmascarado]
+                properties:
+                  token_activacion: { type: string }
+                  nombre_enmascarado:
+                    type: string
+                    examples: ["A** Q*****"]
+              example:
+                token_activacion: "act_3f9c2b7e1d"
+                nombre_enmascarado: "A** Q*****"
+        "400": { $ref: "#/components/responses/ValidacionOActivacion" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "429": { $ref: "#/components/responses/BloqueoTemporal" }
+
+  /activacion/correo/:
+    post:
+      tags: [activacion]
+      operationId: activacionCorreo
+      summary: Paso 2 — registrar el correo y enviarle un OTP
+      description: Envía un OTP de 6 dígitos válido 10 minutos.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token_activacion, correo]
+              properties:
+                token_activacion: { type: string }
+                correo: { $ref: "#/components/schemas/Correo" }
+            example:
+              token_activacion: "act_3f9c2b7e1d"
+              correo: "ana.quispe@example.com"
+      responses:
+        "200": { $ref: "#/components/responses/Enviado" }
+        "400": { $ref: "#/components/responses/ValidacionOActivacion" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /activacion/confirmar/:
+    post:
+      tags: [activacion]
+      operationId: activacionConfirmar
+      summary: Paso 3 — confirmar el OTP y fijar la contraseña
+      description: |
+        Crea el usuario, marca el código de activación como usado e inicia
+        sesión (la respuesta trae la cookie de sesión).
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token_activacion, otp, contrasena]
+              properties:
+                token_activacion: { type: string }
+                otp: { $ref: "#/components/schemas/Otp" }
+                contrasena: { $ref: "#/components/schemas/ContrasenaNueva" }
+            example:
+              token_activacion: "act_3f9c2b7e1d"
+              otp: "482913"
+              contrasena: "Micro-2026-segura"
+      responses:
+        "201": { $ref: "#/components/responses/OkCreado" }
+        "400": { $ref: "#/components/responses/ErrorOtpOActivacion" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  # ------------------------------------------------------------------ Sesión
+  /sesion/:
+    post:
+      tags: [sesion]
+      operationId: ingresar
+      summary: Iniciar sesión con documento y contraseña
+      description: |
+        Si el dispositivo (cookie `sp_disp`) no es confiable, se envía un OTP
+        al correo, `requiere_otp` es `true` y la sesión queda a medias hasta
+        `POST /sesion/otp/`.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [documento, contrasena]
+              properties:
+                documento: { $ref: "#/components/schemas/Documento" }
+                contrasena: { type: string, format: password }
+            example:
+              documento: "45678912"
+              contrasena: "Micro-2026-segura"
+      responses:
+        "200":
+          description: Credenciales correctas.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [requiere_otp]
+                properties:
+                  requiere_otp: { type: boolean }
+              example: { requiere_otp: true }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/CredencialesInvalidas" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "429": { $ref: "#/components/responses/BloqueoTemporal" }
+    delete:
+      tags: [sesion]
+      operationId: salir
+      summary: Cerrar la sesión
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      responses:
+        "204": { description: Sesión cerrada. }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /sesion/otp/:
+    post:
+      tags: [sesion]
+      operationId: confirmarOtp
+      summary: Completar el inicio de sesión con el OTP
+      description: |
+        Solo vale tras un `POST /sesion/` con `requiere_otp: true`.
+        `recordar_dispositivo` deja el dispositivo como confiable 90 días.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [otp]
+              properties:
+                otp: { $ref: "#/components/schemas/Otp" }
+                recordar_dispositivo: { type: boolean, default: false }
+            example: { otp: "482913", recordar_dispositivo: true }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/ErrorOtp" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  # ------------------------------------------------------------------ Contraseña
+  /contrasena/recuperar/:
+    post:
+      tags: [contrasena]
+      operationId: recuperarContrasena
+      summary: Pedir un enlace para restablecer la contraseña
+      description: |
+        Responde siempre 202, exista o no el documento. Si existe, manda al
+        correo un enlace `https://mi.subepe.app/restablecer?uid=..&token=..`
+        válido 30 minutos.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [documento]
+              properties:
+                documento: { $ref: "#/components/schemas/Documento" }
+            example: { documento: "45678912" }
+      responses:
+        "202": { description: Solicitud recibida (sin cuerpo). }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "429": { $ref: "#/components/responses/BloqueoTemporal" }
+
+  /contrasena/restablecer/:
+    post:
+      tags: [contrasena]
+      operationId: restablecerContrasena
+      summary: Fijar una contraseña nueva con el enlace del correo
+      description: Cierra todas las sesiones abiertas del usuario.
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uid, token, contrasena]
+              properties:
+                uid: { type: string }
+                token: { type: string }
+                contrasena: { $ref: "#/components/schemas/ContrasenaNueva" }
+            example:
+              uid: "MTI"
+              token: "c2v4k1-8f0a2d9e6b"
+              contrasena: "Otra-clave-2026"
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400":
+          description: Datos inválidos o enlace vencido (`validacion`, con `campos.token`).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error:
+                  codigo: validacion
+                  mensaje: El enlace venció o ya se usó. Pide uno nuevo.
+                  campos: { token: ["Enlace inválido o vencido."] }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /contrasena/cambiar/:
+    post:
+      tags: [contrasena]
+      operationId: cambiarContrasena
+      summary: Cambiar la contraseña con sesión iniciada
+      description: Cierra las demás sesiones; la actual sigue abierta.
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [actual, nueva]
+              properties:
+                actual: { type: string, format: password }
+                nueva: { $ref: "#/components/schemas/ContrasenaNueva" }
+            example: { actual: "Micro-2026-segura", nueva: "Otra-clave-2026" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticadoOCredenciales" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  # ------------------------------------------------------------------ Consulta
+  /resumen/:
+    get:
+      tags: [consulta]
+      operationId: resumen
+      summary: Cliente, cuenta y tarjetas
+      description: |
+        `por_cargar_en_tarjeta` es la suma de las recargas acreditadas en la
+        cuenta que aún no llegan a la tarjeta (se cargan en el próximo viaje).
+      responses:
+        "200":
+          description: Resumen de la cuenta.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Resumen" }
+              example:
+                cliente:
+                  nombre: Ana Quispe
+                  documento_enmascarado: "****8912"
+                  correo: ana.quispe@example.com
+                cuenta:
+                  id: 1
+                  saldo: 1240
+                  por_cargar_en_tarjeta: 0
+                  tarifa: { codigo: 1, nombre: General, precio: 100 }
+                tarjetas:
+                  - id: 7
+                    numero_impreso: "123456782"
+                    estado: activa
+                    emitida: "2026-09-02T10:30:00-05:00"
+                    ultimo_uso: "2026-11-13T18:42:10-05:00"
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+
+  /movimientos/:
+    get:
+      tags: [consulta]
+      operationId: movimientos
+      summary: Movimientos de la cuenta, del más reciente al más antiguo
+      description: 20 resultados por página.
+      parameters:
+        - name: desde
+          in: query
+          description: Primer día incluido (AAAA-MM-DD).
+          schema: { type: string, format: date }
+        - name: hasta
+          in: query
+          description: Último día incluido (AAAA-MM-DD).
+          schema: { type: string, format: date }
+        - name: tipo
+          in: query
+          schema: { $ref: "#/components/schemas/TipoMovimiento" }
+        - name: pagina
+          in: query
+          schema: { type: integer, minimum: 1, default: 1 }
+      responses:
+        "200":
+          description: Una página de movimientos.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [resultados, pagina, paginas]
+                properties:
+                  resultados:
+                    type: array
+                    maxItems: 20
+                    items: { $ref: "#/components/schemas/Movimiento" }
+                  pagina: { type: integer, minimum: 1 }
+                  paginas:
+                    type: integer
+                    minimum: 0
+                    description: Total de páginas (0 si no hay resultados).
+              example:
+                resultados:
+                  - fecha: "2026-11-13T18:42:10-05:00"
+                    tipo: viaje
+                    monto: -100
+                    saldo_final: 1240
+                    descripcion: Pasaje — Ruta 7
+                    validador: VAL-012
+                  - fecha: "2026-11-12T09:05:44-05:00"
+                    tipo: recarga
+                    monto: 1000
+                    saldo_final: 1340
+                    descripcion: Recarga en línea
+                    validador: null
+                pagina: 1
+                paginas: 3
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+
+  /perfil/:
+    get:
+      tags: [consulta]
+      operationId: perfil
+      summary: Datos del cliente
+      responses:
+        "200":
+          description: Perfil.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Perfil" }
+              example:
+                nombre: Ana Quispe
+                documento_enmascarado: "****8912"
+                correo: ana.quispe@example.com
+                creado: "2026-09-02T10:41:00-05:00"
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+
+  /perfil/correo/:
+    post:
+      tags: [consulta]
+      operationId: cambiarCorreo
+      summary: Pedir el cambio de correo (envía un OTP al correo nuevo)
+      description: El correo no cambia hasta confirmar el OTP.
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correo]
+              properties:
+                correo: { $ref: "#/components/schemas/Correo" }
+            example: { correo: "ana.nuevo@example.com" }
+      responses:
+        "200": { $ref: "#/components/responses/Enviado" }
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /perfil/correo/confirmar/:
+    post:
+      tags: [consulta]
+      operationId: confirmarCorreo
+      summary: Confirmar el correo nuevo con el OTP
+      description: Cambia el correo y avisa al correo anterior.
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [correo, otp]
+              properties:
+                correo: { $ref: "#/components/schemas/Correo" }
+                otp: { $ref: "#/components/schemas/Otp" }
+            example: { correo: "ana.nuevo@example.com", otp: "730215" }
+      responses:
+        "200": { $ref: "#/components/responses/Ok" }
+        "400": { $ref: "#/components/responses/ErrorOtp" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+
+  /seguridad/accesos/:
+    get:
+      tags: [consulta]
+      operationId: accesos
+      summary: Últimos 20 intentos de acceso
+      responses:
+        "200":
+          description: Accesos, del más reciente al más antiguo.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 20
+                items: { $ref: "#/components/schemas/Acceso" }
+              example:
+                - fecha: "2026-11-13T18:40:02-05:00"
+                  ip: 190.117.32.8
+                  dispositivo: Chrome en Android
+                  exito: true
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+
+  /seguridad/dispositivos/:
+    get:
+      tags: [consulta]
+      operationId: dispositivos
+      summary: Dispositivos confiables
+      responses:
+        "200":
+          description: Dispositivos.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Dispositivo" }
+              example:
+                - id: 3
+                  nombre: Chrome en Android
+                  ultimo_uso: "2026-11-13T18:40:02-05:00"
+                  confiable_hasta: "2027-02-11T18:40:02-05:00"
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+
+  /seguridad/dispositivos/{id}/:
+    delete:
+      tags: [consulta]
+      operationId: olvidarDispositivo
+      summary: Dejar de confiar en un dispositivo
+      parameters:
+        - $ref: "#/components/parameters/IdEntero"
+        - $ref: "#/components/parameters/CSRF"
+      responses:
+        "204": { description: Dispositivo eliminado. }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  # ------------------------------------------------------------------ Tarjeta
+  /tarjetas/{id}/bloquear/:
+    post:
+      tags: [tarjeta]
+      operationId: bloquearTarjeta
+      summary: Bloquear la tarjeta por robo o pérdida
+      description: |
+        Irreversible: una tarjeta bloqueada no se reactiva; se pide una
+        reposición y el saldo pasa a la nueva. Pide la contraseña. Un `id`
+        ajeno responde 404.
+      parameters:
+        - $ref: "#/components/parameters/IdEntero"
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [motivo, contrasena]
+              properties:
+                motivo: { type: string, enum: [robo, perdida] }
+                contrasena: { type: string, format: password }
+            example: { motivo: perdida, contrasena: "Micro-2026-segura" }
+      responses:
+        "200":
+          description: Tarjeta bloqueada.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [estado, bloqueada_en]
+                properties:
+                  estado: { type: string, const: bloqueada }
+                  bloqueada_en: { $ref: "#/components/schemas/FechaHora" }
+              example:
+                estado: bloqueada
+                bloqueada_en: "2026-11-14T09:12:00-05:00"
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticadoOCredenciales" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+        "409": { $ref: "#/components/responses/TarjetaNoActiva" }
+
+  /reposiciones/:
+    get:
+      tags: [tarjeta]
+      operationId: reposiciones
+      summary: Solicitudes de reposición del cliente
+      responses:
+        "200":
+          description: Reposiciones, de la más reciente a la más antigua.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Reposicion" }
+              example:
+                - id: 2
+                  tarjeta_id: 7
+                  estado: solicitada
+                  creada: "2026-11-14T09:15:00-05:00"
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+    post:
+      tags: [tarjeta]
+      operationId: solicitarReposicion
+      summary: Pedir una tarjeta nueva para una tarjeta bloqueada
+      description: |
+        Solo si la tarjeta está bloqueada; si no, responde `validacion` con
+        `campos.tarjeta_id`. Se recoge en ventanilla con el DNI.
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tarjeta_id]
+              properties:
+                tarjeta_id: { type: integer }
+            example: { tarjeta_id: 7 }
+      responses:
+        "201":
+          description: Reposición solicitada.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Reposicion" }
+              example:
+                id: 2
+                tarjeta_id: 7
+                estado: solicitada
+                creada: "2026-11-14T09:15:00-05:00"
+        "400": { $ref: "#/components/responses/Validacion" }
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+  # ------------------------------------------------------------------ Recargas
+  /recargas/ordenes/:
+    get:
+      tags: [recargas]
+      operationId: ordenes
+      summary: Órdenes de recarga del cliente
+      responses:
+        "200":
+          description: Órdenes, de la más reciente a la más antigua.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Orden" }
+              example:
+                - id: 6f1c0a8e-2b3d-4c5e-9f70-1a2b3c4d5e6f
+                  estado: acreditada
+                  monto: 1000
+                  creada: "2026-11-12T09:01:00-05:00"
+                  pagada_en: "2026-11-12T09:03:12-05:00"
+                  acreditada_en: "2026-11-12T09:03:15-05:00"
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+    post:
+      tags: [recargas]
+      operationId: crearOrden
+      summary: Crear una orden de recarga
+      description: |
+        Montos entre 100 y 20000 céntimos (S/ 1.00–200.00). Máximo S/ 500 al
+        día por cuenta y máximo 3 órdenes pendientes (ambos `limite_diario`).
+
+        Idempotente por `Idempotency-Key`: repetir la misma clave con el mismo
+        monto devuelve la misma orden; la misma clave con otro monto responde
+        `idempotencia_conflicto`. El portal genera la clave una vez por intento
+        de compra y la reutiliza en los reintentos.
+
+        El navegador se redirige a `url_pago`. La orden nunca se acredita por
+        la redirección de vuelta, solo por el webhook verificado de la pasarela.
+      parameters:
+        - $ref: "#/components/parameters/CSRF"
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, format: uuid }
+          example: 0b7d6c9e-3a4f-4e21-8d5b-9c1e2f3a4b5c
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [monto]
+              properties:
+                monto: { type: integer, minimum: 100, maximum: 20000 }
+            example: { monto: 1000 }
+      responses:
+        "201":
+          description: Orden creada (o la misma orden si se repite la clave).
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrdenCreada" }
+              example:
+                id: 6f1c0a8e-2b3d-4c5e-9f70-1a2b3c4d5e6f
+                estado: pendiente
+                monto: 1000
+                url_pago: https://subepe.app/pagos/simulador/6f1c0a8e/
+                expira: "2026-11-14T09:45:00-05:00"
+        "400":
+          description: "`validacion`, `monto_fuera_de_limite` o `limite_diario`."
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              examples:
+                monto_fuera_de_limite:
+                  value:
+                    error:
+                      codigo: monto_fuera_de_limite
+                      mensaje: El monto debe estar entre S/ 1.00 y S/ 200.00.
+                      campos: { monto: ["Fuera de límite."] }
+                limite_diario:
+                  value:
+                    error:
+                      codigo: limite_diario
+                      mensaje: Superaste el máximo de S/ 500.00 en recargas de hoy.
+                      campos: {}
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "409":
+          description: La misma `Idempotency-Key` se usó con otro monto.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+              example:
+                error:
+                  codigo: idempotencia_conflicto
+                  mensaje: Esta compra ya se inició con otro monto.
+                  campos: {}
+
+  /recargas/ordenes/{id}/:
+    get:
+      tags: [recargas]
+      operationId: orden
+      summary: Estado de una orden de recarga
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Orden.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Orden" }
+              example:
+                id: 6f1c0a8e-2b3d-4c5e-9f70-1a2b3c4d5e6f
+                estado: pagada
+                monto: 1000
+                creada: "2026-11-14T09:15:00-05:00"
+                pagada_en: "2026-11-14T09:16:40-05:00"
+                acreditada_en: null
+        "401": { $ref: "#/components/responses/NoAutenticado" }
+        "403": { $ref: "#/components/responses/Prohibido" }
+        "404": { $ref: "#/components/responses/NoEncontrado" }
+
+components:
+  securitySchemes:
+    sesion:
+      type: apiKey
+      in: cookie
+      name: sessionid
+      description: Cookie de sesión de Django del host mi.subepe.app.
+
+  parameters:
+    CSRF:
+      name: X-CSRFToken
+      in: header
+      required: true
+      description: Valor de la cookie `csrftoken`.
+      schema: { type: string }
+    IdEntero:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+
+  schemas:
+    FechaHora:
+      type: string
+      format: date-time
+      examples: ["2026-10-23T08:15:00-05:00"]
+    Centimos:
+      type: integer
+      description: Monto en céntimos de sol.
+      examples: [1240]
+    Documento:
+      type: string
+      pattern: "^[0-9]{8}$"
+      description: DNI de 8 dígitos.
+      examples: ["45678912"]
+    DocumentoEnmascarado:
+      type: string
+      pattern: "^\\*{4}[0-9]{4}$"
+      examples: ["****8912"]
+    Correo:
+      type: string
+      format: email
+      maxLength: 254
+    Otp:
+      type: string
+      pattern: "^[0-9]{6}$"
+      examples: ["482913"]
+    ContrasenaNueva:
+      type: string
+      format: password
+      minLength: 8
+      maxLength: 128
+      description: Mínimo 8 caracteres; no puede ser solo números ni parecerse al documento.
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [codigo, mensaje, campos]
+          properties:
+            codigo: { $ref: "#/components/schemas/CodigoError" }
+            mensaje:
+              type: string
+              description: Texto en español para mostrar al cliente.
+            campos:
+              type: object
+              description: Errores por campo (vacío si el error no es de un campo).
+              additionalProperties:
+                type: array
+                items: { type: string }
+            reintentar_en:
+              type: integer
+              minimum: 1
+              description: Solo en `bloqueo_temporal`; segundos hasta poder reintentar.
+    CodigoError:
+      type: string
+      enum:
+        - no_autenticado
+        - prohibido
+        - no_encontrado
+        - validacion
+        - credenciales_invalidas
+        - bloqueo_temporal
+        - otp_invalido
+        - otp_expirado
+        - activacion_invalida
+        - monto_fuera_de_limite
+        - limite_diario
+        - idempotencia_conflicto
+        - tarjeta_no_activa
+
+    Resumen:
+      type: object
+      required: [cliente, cuenta, tarjetas]
+      properties:
+        cliente:
+          type: object
+          required: [nombre, documento_enmascarado, correo]
+          properties:
+            nombre: { type: string }
+            documento_enmascarado: { $ref: "#/components/schemas/DocumentoEnmascarado" }
+            correo: { $ref: "#/components/schemas/Correo" }
+        cuenta:
+          type: object
+          required: [id, saldo, por_cargar_en_tarjeta, tarifa]
+          properties:
+            id: { type: integer }
+            saldo:
+              $ref: "#/components/schemas/Centimos"
+              description: Puede ser negativo (viaje con saldo insuficiente permitido).
+            por_cargar_en_tarjeta:
+              type: integer
+              minimum: 0
+            tarifa: { $ref: "#/components/schemas/Tarifa" }
+        tarjetas:
+          type: array
+          items: { $ref: "#/components/schemas/Tarjeta" }
+    Tarifa:
+      type: object
+      required: [codigo, nombre, precio]
+      properties:
+        codigo: { type: integer }
+        nombre: { type: string, examples: [General, Universitario, Escolar] }
+        precio: { $ref: "#/components/schemas/Centimos" }
+    Tarjeta:
+      type: object
+      required: [id, numero_impreso, estado, emitida, ultimo_uso]
+      properties:
+        id: { type: integer }
+        numero_impreso:
+          type: string
+          pattern: "^[0-9]{9}$"
+        estado: { type: string, enum: [activa, bloqueada] }
+        emitida: { $ref: "#/components/schemas/FechaHora" }
+        ultimo_uso:
+          oneOf:
+            - $ref: "#/components/schemas/FechaHora"
+            - type: "null"
+    TipoMovimiento:
+      type: string
+      enum: [viaje, recarga, emision, ajuste]
+    Movimiento:
+      type: object
+      required: [fecha, tipo, monto, saldo_final, descripcion, validador]
+      properties:
+        fecha: { $ref: "#/components/schemas/FechaHora" }
+        tipo: { $ref: "#/components/schemas/TipoMovimiento" }
+        monto:
+          $ref: "#/components/schemas/Centimos"
+          description: Positivo si suma saldo, negativo si resta.
+        saldo_final: { $ref: "#/components/schemas/Centimos" }
+        descripcion: { type: string }
+        validador:
+          description: Código del validador (solo en viajes).
+          type: [string, "null"]
+    Perfil:
+      type: object
+      required: [nombre, documento_enmascarado, correo, creado]
+      properties:
+        nombre: { type: string }
+        documento_enmascarado: { $ref: "#/components/schemas/DocumentoEnmascarado" }
+        correo: { $ref: "#/components/schemas/Correo" }
+        creado: { $ref: "#/components/schemas/FechaHora" }
+    Acceso:
+      type: object
+      required: [fecha, ip, dispositivo, exito]
+      properties:
+        fecha: { $ref: "#/components/schemas/FechaHora" }
+        ip: { type: string }
+        dispositivo: { type: string }
+        exito: { type: boolean }
+    Dispositivo:
+      type: object
+      required: [id, nombre, ultimo_uso, confiable_hasta]
+      properties:
+        id: { type: integer }
+        nombre: { type: string }
+        ultimo_uso: { $ref: "#/components/schemas/FechaHora" }
+        confiable_hasta: { $ref: "#/components/schemas/FechaHora" }
+    Reposicion:
+      type: object
+      required: [id, tarjeta_id, estado, creada]
+      properties:
+        id: { type: integer }
+        tarjeta_id: { type: integer }
+        estado: { type: string, enum: [solicitada, lista, entregada] }
+        creada: { $ref: "#/components/schemas/FechaHora" }
+    EstadoOrden:
+      type: string
+      enum: [creada, pendiente, pagada, acreditada, fallida, expirada, reembolsada]
+    OrdenCreada:
+      type: object
+      required: [id, estado, monto, url_pago, expira]
+      properties:
+        id: { type: string, format: uuid }
+        estado: { $ref: "#/components/schemas/EstadoOrden" }
+        monto: { $ref: "#/components/schemas/Centimos" }
+        url_pago: { type: string, format: uri }
+        expira: { $ref: "#/components/schemas/FechaHora" }
+    Orden:
+      type: object
+      required: [id, estado, monto, creada, pagada_en, acreditada_en]
+      properties:
+        id: { type: string, format: uuid }
+        estado: { $ref: "#/components/schemas/EstadoOrden" }
+        monto: { $ref: "#/components/schemas/Centimos" }
+        creada: { $ref: "#/components/schemas/FechaHora" }
+        pagada_en:
+          oneOf:
+            - $ref: "#/components/schemas/FechaHora"
+            - type: "null"
+        acreditada_en:
+          oneOf:
+            - $ref: "#/components/schemas/FechaHora"
+            - type: "null"
+
+  responses:
+    Ok:
+      description: Hecho.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties:
+              ok: { type: boolean, const: true }
+          example: { ok: true }
+    OkCreado:
+      description: Creado.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [ok]
+            properties:
+              ok: { type: boolean, const: true }
+          example: { ok: true }
+    Enviado:
+      description: OTP enviado.
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [enviado]
+            properties:
+              enviado: { type: boolean, const: true }
+          example: { enviado: true }
+    Validacion:
+      description: Datos inválidos (`validacion`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: validacion
+              mensaje: Revisa los datos marcados.
+              campos: { documento: ["El DNI tiene 8 dígitos."] }
+    ValidacionOActivacion:
+      description: "`validacion` o `activacion_invalida`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: activacion_invalida
+              mensaje: Los datos no coinciden con ninguna tarjeta por activar.
+              campos: {}
+    ErrorOtp:
+      description: "`validacion`, `otp_invalido` u `otp_expirado`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: otp_invalido
+              mensaje: El código no es correcto.
+              campos: { otp: ["Código incorrecto."] }
+    ErrorOtpOActivacion:
+      description: "`validacion`, `otp_invalido`, `otp_expirado` o `activacion_invalida`."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: otp_expirado
+              mensaje: El código venció. Pide uno nuevo.
+              campos: {}
+    NoAutenticado:
+      description: Falta la sesión (`no_autenticado`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: no_autenticado
+              mensaje: Inicia sesión para continuar.
+              campos: {}
+    CredencialesInvalidas:
+      description: Documento o contraseña incorrectos (`credenciales_invalidas`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: credenciales_invalidas
+              mensaje: DNI o contraseña incorrectos.
+              campos: {}
+    NoAutenticadoOCredenciales:
+      description: "`no_autenticado`, o `credenciales_invalidas` si la contraseña no es la actual."
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: credenciales_invalidas
+              mensaje: La contraseña no es correcta.
+              campos: { contrasena: ["Contraseña incorrecta."] }
+    Prohibido:
+      description: CSRF inválido o usuario sin cuenta de cliente (`prohibido`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: prohibido
+              mensaje: No tienes permiso para hacer esto.
+              campos: {}
+    NoEncontrado:
+      description: No existe o no es del cliente (`no_encontrado`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: no_encontrado
+              mensaje: No encontramos lo que buscas.
+              campos: {}
+    BloqueoTemporal:
+      description: Demasiados intentos (`bloqueo_temporal`), con `reintentar_en` en segundos.
+      headers:
+        Retry-After:
+          description: Igual a `reintentar_en`.
+          schema: { type: integer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: bloqueo_temporal
+              mensaje: Demasiados intentos. Espera unos minutos.
+              campos: {}
+              reintentar_en: 1800
+    TarjetaNoActiva:
+      description: La tarjeta ya está bloqueada (`tarjeta_no_activa`).
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+          example:
+            error:
+              codigo: tarjeta_no_activa
+              mensaje: Esta tarjeta ya está bloqueada.
+              campos: {}
