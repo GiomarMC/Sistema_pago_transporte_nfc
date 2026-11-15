@@ -31,8 +31,6 @@ info:
 servers:
   - url: https://mi.subepe.app/api/v1
     description: Producción
-  - url: http://mi.localhost:8000/api/v1
-    description: Desarrollo local
 security:
   - sesion: []
 tags:

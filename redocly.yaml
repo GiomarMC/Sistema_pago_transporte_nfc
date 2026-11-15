@@ -4,3 +4,5 @@ extends:
 rules:
   # Django usa rutas con barra final (/api/v1/resumen/): es parte del contrato.
   no-path-trailing-slash: off
+  # El proyecto no tiene licencia SPDX ni URL de licencia ("Uso académico").
+  info-license-strict: off
