@@ -654,6 +654,7 @@ python manage.py crear_operador ventanilla2                       # muestra su t
 python manage.py config_cliente --url http://IP:8000 --validadores 101 102
 python manage.py importar_sqlite ruta/transporte.db               # datos de la versión antigua
 python manage.py clave_validador 103 [--rotar]                    # su clave HMAC (sync v2)
+python manage.py clave_validador 103 --mqtt                       # su contraseña MQTT (sync v2)
 python manage.py generar_clave_listas                             # clave ECDSA del servidor (sync v2)
 ```
 
@@ -670,6 +671,13 @@ Claves de la sincronización v2 (contrato C1):
   repositorio. Cambiarla obliga a reflashear todos los validadores, por eso el
   comando se niega si ya hay una, salvo con `--forzar`. Si se pierde la
   cabecera, `--solo-cabecera` la rehace desde el `.env`.
+- **Contraseña MQTT de cada validador.** El usuario MQTT es su número.
+  `clave_validador <n.º> --mqtt` genera una contraseña nueva y la muestra **una
+  sola vez** (el servidor guarda solo su hash, en el formato de Mosquitto) para
+  cargarla en su ESP32. Empieza a valer al regenerar el archivo de contraseñas
+  de Mosquitto con `bash mosquitto/credenciales.sh`, que también se ejecuta en
+  cada despliegue. El usuario `puente` usa `MQTT_PUENTE_CLAVE` del `.env`.
+  `bash mosquitto/probar_acl.sh` comprueba la ACL en un broker desechable.
 
 ## 10. Panel de administración
 

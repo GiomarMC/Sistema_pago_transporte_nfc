@@ -7,19 +7,26 @@
 # También se puede lanzar a mano en la VM. El .env no se toca (no está en git).
 #
 # Con esa misma clave, el comando "respaldar" no despliega: devuelve una copia de
-# la base de datos (respaldar.sh), para .github/workflows/respaldo.yml.
+# la base de datos (respaldar.sh), para .github/workflows/respaldo.yml. Y
+# "renovar-mqtt" le pasa a Mosquitto el certificado que Caddy haya renovado
+# (.github/workflows/certificado-mqtt.yml, a diario).
 #
 # Todo va dentro de main(): bash lee el archivo mientras lo ejecuta, y el
 # "git reset" de abajo puede cambiar este mismo script.
 main() {
   set -euo pipefail
   cd "$(dirname "$0")"
+  local compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
   case "${SSH_ORIGINAL_COMMAND:-}" in
     "") ;;  # sin comando: desplegar
     respaldar) exec bash respaldar.sh ;;
+    renovar-mqtt)
+      $compose exec -T mosquitto sh /mosquitto/config/certificado.sh
+      $compose kill -s HUP mosquitto >/dev/null 2>&1
+      echo "Mosquitto recargó el certificado"
+      return 0 ;;
     *) echo "Comando no permitido: $SSH_ORIGINAL_COMMAND" >&2; return 1 ;;
   esac
-  local compose="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
 
   echo "== Código"
   local antes
@@ -36,6 +43,11 @@ main() {
     echo "   Caddyfile cambió: recreando caddy"
     $compose up -d --force-recreate caddy 2>&1 | tail -1
   fi
+  # Mosquitto lee su configuración solo al arrancar (el HUP no cambia listeners)
+  if ! git diff --quiet "$antes" HEAD -- mosquitto/; then
+    echo "   mosquitto/ cambió: recreando mosquitto"
+    $compose up -d --force-recreate mosquitto 2>&1 | tail -1
+  fi
 
   echo "== Esperando a Django"
   for _ in $(seq 1 30); do
@@ -44,6 +56,8 @@ import os, urllib.request as u
 host = os.environ['DJANGO_ALLOWED_HOSTS'].split(',')[0].replace('*', 'localhost')
 u.urlopen(u.Request('http://localhost:8000/panel/ingresar/', headers={'Host': host}), timeout=3)" 2>/dev/null; then
       echo "   web responde"
+      echo "== Usuarios MQTT"
+      COMPOSE="$compose" bash mosquitto/credenciales.sh
       docker image prune -f >/dev/null
       return 0
     fi

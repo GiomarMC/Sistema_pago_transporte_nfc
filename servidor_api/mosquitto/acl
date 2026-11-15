@@ -1,0 +1,15 @@
+# ACL de C1 5.8. "pattern" vale para todos los usuarios (%u = usuario = n.º de
+# validador); "topic" vale solo para el último "user" declarado encima.
+
+# Cada validador: publica lo suyo, lee lo suyo y las listas urgentes para todos.
+pattern write sp/v/%u/sube
+pattern write sp/v/%u/conexion
+pattern read sp/v/%u/baja
+# C1 lo escribe como "topic read sp/todos/#" debajo de "user puente": así solo lo
+# leería el puente. Como pattern lo leen todos los validadores (Mosquitto avisa
+# de que no lleva %u ni %c al cargar la ACL; es intencional).
+pattern read sp/todos/#
+
+# El puente del servidor (M9-06): todo sp/
+user puente
+topic readwrite sp/#
