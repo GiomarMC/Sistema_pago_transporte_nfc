@@ -1,5 +1,6 @@
 # CI/CD del servidor (servidor_api):
-#   - en cada pull request y push: tests de Django con PostgreSQL
+#   - en cada pull request y push: tests de Django con PostgreSQL y prueba de la
+#     ACL de Mosquitto
 #   - en push a main, si los tests pasan: despliegue en la VM de Oracle Cloud
 #
 # Secretos del repositorio (Settings → Secrets and variables → Actions):
@@ -51,8 +52,15 @@ jobs:
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test
 
+  mosquitto:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: ACL y contraseñas de Mosquitto en un broker desechable
+        run: bash servidor_api/mosquitto/probar_acl.sh
+
   desplegar:
-    needs: tests
+    needs: [tests, mosquitto]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     concurrency:

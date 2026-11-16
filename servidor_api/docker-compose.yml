@@ -1,4 +1,5 @@
-# Servidor del sistema de transporte: API + panel de administración + PostgreSQL.
+# Servidor del sistema de transporte: API + panel de administración + PostgreSQL
+# + broker MQTT (Mosquitto) de la sincronización v2.
 #   docker compose up -d --build
 # La configuración (contraseñas, clave secreta) se lee de .env (ver .env.example).
 
@@ -20,6 +21,7 @@ services:
 
   web:
     build: .
+    image: subepe-servidor
     env_file: .env
     environment:
       # Dentro de Docker la base de datos es el servicio "db"
@@ -32,5 +34,35 @@ services:
       - "${WEB_PORT:-8000}:8000"
     restart: unless-stopped
 
+  # MQTT de la sincronización v2 (C1 5.8). Aquí solo el 1883 sin TLS, dentro de
+  # la red de Docker (para el puente); no se publica. En producción se suma el
+  # 8883 con TLS (docker-compose.prod.yml). Usuarios: mosquitto/credenciales.sh
+  mosquitto:
+    image: eclipse-mosquitto:2
+    command: ["sh", "/mosquitto/config/arrancar.sh"]
+    volumes:
+      - ./mosquitto:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+    restart: unless-stopped
+
+  # Puente MQTT ↔ Django (M9-06): misma imagen que web, sin migrar al arrancar
+  # (las aplica web). Se reconecta solo si se reinicia mosquitto o db.
+  puente:
+    image: subepe-servidor
+    pull_policy: never
+    entrypoint: ["python", "manage.py", "puente_mqtt"]
+    command: []
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: "5432"
+      MQTT_HOST: mosquitto
+    depends_on:
+      - web
+      - mosquitto
+    stop_grace_period: 10s
+    restart: unless-stopped
+
 volumes:
   pgdata:
+  mosquitto_data:

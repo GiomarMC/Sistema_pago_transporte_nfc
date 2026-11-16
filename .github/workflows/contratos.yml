@@ -1,0 +1,35 @@
+# Contrato C4 (API del portal del cliente):
+#   - valida docs/contratos/api-cliente-v1.yaml con Redocly (OpenAPI 3.1)
+#   - prueba api.js y api-simulada.js con node:test
+name: Contratos
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "docs/contratos/api-cliente-v1.yaml"
+      - "redocly.yaml"
+      - "servidor_api/portal/static/portal/js/**"
+      - "servidor_api/portal/tests/**"
+      - ".github/workflows/contratos.yml"
+  pull_request:
+    paths:
+      - "docs/contratos/api-cliente-v1.yaml"
+      - "redocly.yaml"
+      - "servidor_api/portal/static/portal/js/**"
+      - "servidor_api/portal/tests/**"
+      - ".github/workflows/contratos.yml"
+  workflow_dispatch:
+
+jobs:
+  c4:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: OpenAPI válido
+        run: npx --yes @redocly/cli@2 lint docs/contratos/api-cliente-v1.yaml
+      - name: Pruebas de api.js y api-simulada.js
+        run: node --test servidor_api/portal/tests/*.test.mjs

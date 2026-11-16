@@ -1,6 +1,7 @@
 from django.urls import path
 
 from . import views
+from .sync_v2 import vistas as vistas_v2
 
 urlpatterns = [
     path("sync/", views.sync),
@@ -15,4 +16,5 @@ urlpatterns = [
     path("cuentas/<int:id_cuenta>/bloquear/", views.cuenta_bloquear),
     path("recargas/", views.recargas),
     path("recargas/entregas/", views.recargas_entrega),
+    path("v2/paquetes/", vistas_v2.Paquetes.as_view()),
 ]

@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
 import os
+import tempfile
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -64,6 +65,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'transporte',
     'panel',
+    'pagos',
 ]
 
 MIDDLEWARE = [
@@ -173,3 +175,31 @@ REST_FRAMEWORK = {
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Caché en archivos: la comparten los procesos de gunicorn del contenedor, así los
+# límites de frecuencia (p. ej. 60/min en /api/v2/paquetes/) cuentan para todos.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+        "LOCATION": os.environ.get("CACHE_DIR", str(Path(tempfile.gettempdir()) / "subepe-cache")),
+    }
+}
+
+
+# Pagos en línea (contrato C5): pasarela activa y secreto de sus webhooks
+PAGOS_PASARELA = os.environ.get("PAGOS_PASARELA", "simulada")
+PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
+
+# Clave privada ECDSA P-256 con la que el servidor firma LISTAS, ACUSE y TARIFAS de la
+# sincronización v2. En una línea, con los saltos del PEM como \n: la imprime
+# "manage.py generar_clave_listas". Nunca se sube al repositorio.
+LISTAS_CLAVE_PRIVADA = os.environ.get("LISTAS_CLAVE_PRIVADA", "")
+
+# Contraseña del usuario "puente" de Mosquitto (sincronización v2 por MQTT)
+MQTT_PUENTE_CLAVE = os.environ.get("MQTT_PUENTE_CLAVE", "")
+# Broker al que se conecta el puente (dentro de Docker, el servicio "mosquitto")
+MQTT_HOST = os.environ.get("MQTT_HOST", "mosquitto")
+MQTT_PUERTO = int(os.environ.get("MQTT_PUERTO", "1883"))
+
+# Que las páginas e informes de error oculten también los ajustes con CLAVE o SECRETO
+DEFAULT_EXCEPTION_REPORTER_FILTER = "config.errores.FiltroErrores"

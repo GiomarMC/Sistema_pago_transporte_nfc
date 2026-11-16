@@ -1,0 +1,33 @@
+# Renovación diaria del certificado TLS de Mosquitto (MQTT, puerto 8883).
+#
+# Caddy renueva solo el certificado de Let's Encrypt; Mosquitto usa una copia
+# (certificado.sh) y hay que avisarle. GitHub entra a la VM con la clave de
+# despliegue, que aquí solo puede ejecutar "renovar-mqtt" de desplegar.sh:
+# copia el certificado vigente y manda HUP (las conexiones abiertas siguen).
+#
+# Secretos: VM_HOST, VM_SSH_KEY y VM_KNOWN_HOSTS (los del despliegue)
+name: Certificado MQTT
+
+on:
+  schedule:
+    - cron: "30 8 * * *"  # todos los días a las 03:30 de Perú (tras el respaldo)
+  workflow_dispatch:
+
+jobs:
+  renovar:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: despliegue  # no coincide con un despliegue en curso
+      cancel-in-progress: false
+    steps:
+      - name: Recargar el certificado en Mosquitto
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+          VM_KNOWN_HOSTS: ${{ secrets.VM_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/despliegue && chmod 600 ~/.ssh/despliegue
+          printf '%s\n' "$VM_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          ssh -i ~/.ssh/despliegue -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "ubuntu@$VM_HOST" renovar-mqtt

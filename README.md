@@ -229,7 +229,8 @@ n.º de cuenta. El resto está en el servidor.
 |       |-- servicios.py           Lógica de negocio (sincronización, fraude, recargas, emisión)
 |       |-- views.py, urls.py      API REST
 |       |-- admin.py               Panel de administración
-|       |-- management/commands/  crear_validador, crear_operador, config_cliente, importar_sqlite
+|       |-- management/commands/  crear_validador, crear_operador, config_cliente, importar_sqlite,
+|       |                         clave_validador, generar_clave_listas
 |       `-- tests/                 Tests de la API
 |-- pantalla_esp32/                Validador de bus con ESP32, pantalla y microSD (ver su README)
 |-- docs/                          Informe de conexiones y pruebas del dispositivo (PDF)
@@ -513,6 +514,42 @@ superusuario aprueba la cuenta en la sección Usuarios del panel.
 `.env.example`, más `DOMINIO=subepe.app`, `DJANGO_ALLOWED_HOSTS=subepe.app`
 y `DJANGO_HTTPS=1`.
 
+**Puertos abiertos.** La VM recibe conexiones en el **22** (SSH), el **80** y el
+**443** (Caddy: web, panel y API) y el **8883** (Mosquitto: MQTT con TLS para la
+sincronización v2 de los validadores). En Oracle una conexión entrante pasa por
+**dos firewalls**, y el puerto tiene que estar abierto en los dos:
+
+1. **Security List de la VCN** (fuera de la VM, desde la consola de Oracle):
+   Red → Redes virtuales en la nube → `subepe-vcn` → Listas de seguridad →
+   *Default Security List for subepe-vcn* (la de la subred pública; ya tiene el
+   22, el 80 y el 443) → *Agregar reglas de entrada*: sin estado sin marcar,
+   CIDR de origen `0.0.0.0/0`, protocolo TCP, puerto de destino `8883`.
+2. **`iptables` dentro de la VM.** La imagen de Ubuntu de Oracle termina la
+   cadena `INPUT` con un `REJECT`; la regla nueva tiene que ir **antes** de él
+   (junto a la del 443):
+
+   ```bash
+   sudo iptables -L INPUT -n --line-numbers        # n.º de línea del REJECT
+   sudo iptables -I INPUT <n.º del REJECT> -p tcp -m state --state NEW --dport 8883 -j ACCEPT
+   sudo netfilter-persistent save                  # sobrevive a los reinicios
+   sudo grep 8883 /etc/iptables/rules.v4           # comprobar que quedó guardada
+   ```
+
+Cómo saber en qué capa está cerrado un puerto, probando desde fuera
+(`nc -vz subepe.app 8883`):
+
+| Resultado | Significa |
+|---|---|
+| Se queda esperando hasta agotar el tiempo | La Security List lo bloquea |
+| *No route to host* al instante | Pasa Oracle; lo rechaza el `iptables` de la VM |
+| *Connection refused* | Los dos firewalls abiertos; no hay nada escuchando (Mosquitto apagado) |
+| Conecta | Todo bien |
+
+Con Mosquitto en marcha, `openssl s_client -connect subepe.app:8883 -servername
+subepe.app` tiene que mostrar el certificado de Let's Encrypt de `subepe.app`.
+Mosquitto usa una copia del que obtiene Caddy (`mosquitto/certificado.sh`), y
+`.github/workflows/certificado-mqtt.yml` la renueva cada día.
+
 **Copias de seguridad.** Cada noche (03:00 de Perú), `.github/workflows/respaldo.yml`
 saca una copia de la base de datos, comprueba que se puede leer, la **cifra** y
 la guarda 30 días en la pestaña Actions del repositorio (ejecución «Respaldo» →
@@ -530,8 +567,17 @@ ssh ubuntu@<IP de la VM> 'cd Sistema_pago_transporte_nfc/servidor_api && bash re
 Secretos del repositorio (Settings → Secrets and variables → Actions):
 `VM_HOST`, `VM_SSH_KEY`, `VM_KNOWN_HOSTS` (despliegue y copias) y
 `RESPALDO_CLAVE` (cifrado de las copias; sin ella no se pueden recuperar, así
-que también hay que guardarla fuera de GitHub). Al cambiar de VM se actualizan
-`VM_HOST` y `VM_KNOWN_HOSTS`, y el registro DNS de los dominios.
+que también hay que guardarla fuera de GitHub).
+
+**Al cambiar de VM:**
+
+1. Abrir el 80, el 443 y el 8883 en la Security List de su VCN y en el
+   `iptables` de la VM nueva (ver *Puertos abiertos*; el 22 ya viene abierto).
+2. Crear `servidor_api/.env` y restaurar la última copia de la base de datos.
+3. Actualizar los secretos `VM_HOST` y `VM_KNOWN_HOSTS`, y el registro DNS de
+   los dominios a la IP nueva.
+4. Desplegar (Actions → Servidor → *Run workflow*, o un push a `main`) y
+   comprobar la web por HTTPS y el 8883 con `openssl s_client`.
 
 ## 8. Uso
 
@@ -652,7 +698,36 @@ python manage.py crear_validador 103 --descripcion "Bus ruta 5"   # muestra su t
 python manage.py crear_operador ventanilla2                       # muestra su token
 python manage.py config_cliente --url http://IP:8000 --validadores 101 102
 python manage.py importar_sqlite ruta/transporte.db               # datos de la versión antigua
+python manage.py clave_validador 103 [--rotar]                    # su clave HMAC (sync v2)
+python manage.py clave_validador 103 --mqtt                       # su contraseña MQTT (sync v2)
+python manage.py generar_clave_listas                             # clave ECDSA del servidor (sync v2)
 ```
+
+Claves de la sincronización v2 (contrato C1):
+
+- **Clave HMAC de cada validador.** Se crea sola al registrarlo y firma lo que
+  envía. `clave_validador` la muestra (64 caracteres hexadecimales) para
+  cargarla en su ESP32; con `--rotar` le da una nueva y la anterior deja de
+  valer al momento (por ejemplo, si roban la placa).
+- **Clave ECDSA del servidor.** Firma las listas, acuses y tarifas. Se genera
+  una sola vez con `generar_clave_listas`, que imprime la línea
+  `LISTAS_CLAVE_PRIVADA=...` para el `.env` y escribe la clave pública en
+  `pantalla_esp32/src/validador/clave_servidor.h`. La privada nunca se sube al
+  repositorio. Cambiarla obliga a reflashear todos los validadores, por eso el
+  comando se niega si ya hay una, salvo con `--forzar`. Si se pierde la
+  cabecera, `--solo-cabecera` la rehace desde el `.env`.
+- **Contraseña MQTT de cada validador.** El usuario MQTT es su número.
+  `clave_validador <n.º> --mqtt` genera una contraseña nueva y la muestra **una
+  sola vez** (el servidor guarda solo su hash, en el formato de Mosquitto) para
+  cargarla en su ESP32. Empieza a valer al regenerar el archivo de contraseñas
+  de Mosquitto con `bash mosquitto/credenciales.sh`, que también se ejecuta en
+  cada despliegue. El usuario `puente` usa `MQTT_PUENTE_CLAVE` del `.env`.
+  `bash mosquitto/probar_acl.sh` comprueba la ACL en un broker desechable.
+- **Puente MQTT.** El servicio `puente` de Docker Compose (`manage.py
+  puente_mqtt`) procesa lo que los validadores publican en `sp/v/<n.º>/sube`,
+  les responde en `sp/v/<n.º>/baja` y difunde cada bloqueo urgente a todos los
+  buses por `sp/todos/urgente` en un par de segundos. Se reconecta solo si se
+  reinicia Mosquitto o PostgreSQL.
 
 ## 10. Panel de administración
 
