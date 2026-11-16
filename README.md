@@ -514,6 +514,42 @@ superusuario aprueba la cuenta en la sección Usuarios del panel.
 `.env.example`, más `DOMINIO=subepe.app`, `DJANGO_ALLOWED_HOSTS=subepe.app`
 y `DJANGO_HTTPS=1`.
 
+**Puertos abiertos.** La VM recibe conexiones en el **22** (SSH), el **80** y el
+**443** (Caddy: web, panel y API) y el **8883** (Mosquitto: MQTT con TLS para la
+sincronización v2 de los validadores). En Oracle una conexión entrante pasa por
+**dos firewalls**, y el puerto tiene que estar abierto en los dos:
+
+1. **Security List de la VCN** (fuera de la VM, desde la consola de Oracle):
+   Red → Redes virtuales en la nube → `subepe-vcn` → Listas de seguridad →
+   *Default Security List for subepe-vcn* (la de la subred pública; ya tiene el
+   22, el 80 y el 443) → *Agregar reglas de entrada*: sin estado sin marcar,
+   CIDR de origen `0.0.0.0/0`, protocolo TCP, puerto de destino `8883`.
+2. **`iptables` dentro de la VM.** La imagen de Ubuntu de Oracle termina la
+   cadena `INPUT` con un `REJECT`; la regla nueva tiene que ir **antes** de él
+   (junto a la del 443):
+
+   ```bash
+   sudo iptables -L INPUT -n --line-numbers        # n.º de línea del REJECT
+   sudo iptables -I INPUT <n.º del REJECT> -p tcp -m state --state NEW --dport 8883 -j ACCEPT
+   sudo netfilter-persistent save                  # sobrevive a los reinicios
+   sudo grep 8883 /etc/iptables/rules.v4           # comprobar que quedó guardada
+   ```
+
+Cómo saber en qué capa está cerrado un puerto, probando desde fuera
+(`nc -vz subepe.app 8883`):
+
+| Resultado | Significa |
+|---|---|
+| Se queda esperando hasta agotar el tiempo | La Security List lo bloquea |
+| *No route to host* al instante | Pasa Oracle; lo rechaza el `iptables` de la VM |
+| *Connection refused* | Los dos firewalls abiertos; no hay nada escuchando (Mosquitto apagado) |
+| Conecta | Todo bien |
+
+Con Mosquitto en marcha, `openssl s_client -connect subepe.app:8883 -servername
+subepe.app` tiene que mostrar el certificado de Let's Encrypt de `subepe.app`.
+Mosquitto usa una copia del que obtiene Caddy (`mosquitto/certificado.sh`), y
+`.github/workflows/certificado-mqtt.yml` la renueva cada día.
+
 **Copias de seguridad.** Cada noche (03:00 de Perú), `.github/workflows/respaldo.yml`
 saca una copia de la base de datos, comprueba que se puede leer, la **cifra** y
 la guarda 30 días en la pestaña Actions del repositorio (ejecución «Respaldo» →
@@ -531,8 +567,17 @@ ssh ubuntu@<IP de la VM> 'cd Sistema_pago_transporte_nfc/servidor_api && bash re
 Secretos del repositorio (Settings → Secrets and variables → Actions):
 `VM_HOST`, `VM_SSH_KEY`, `VM_KNOWN_HOSTS` (despliegue y copias) y
 `RESPALDO_CLAVE` (cifrado de las copias; sin ella no se pueden recuperar, así
-que también hay que guardarla fuera de GitHub). Al cambiar de VM se actualizan
-`VM_HOST` y `VM_KNOWN_HOSTS`, y el registro DNS de los dominios.
+que también hay que guardarla fuera de GitHub).
+
+**Al cambiar de VM:**
+
+1. Abrir el 80, el 443 y el 8883 en la Security List de su VCN y en el
+   `iptables` de la VM nueva (ver *Puertos abiertos*; el 22 ya viene abierto).
+2. Crear `servidor_api/.env` y restaurar la última copia de la base de datos.
+3. Actualizar los secretos `VM_HOST` y `VM_KNOWN_HOSTS`, y el registro DNS de
+   los dominios a la IP nueva.
+4. Desplegar (Actions → Servidor → *Run workflow*, o un push a `main`) y
+   comprobar la web por HTTPS y el 8883 con `openssl s_client`.
 
 ## 8. Uso
 
