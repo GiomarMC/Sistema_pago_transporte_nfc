@@ -3,6 +3,7 @@ transacción que el saldo."""
 
 from unittest import mock
 
+from django.core.management import call_command
 from django.db import transaction
 from django.db.models import Sum
 from django.test import TestCase
@@ -35,11 +36,12 @@ class Base(TestCase):
                       .values_list("cuenta_contable__codigo", "monto"))
 
     def assertCuadra(self):
-        """Lo que hará verificar_libro (M10-05): el libro suma cero y cada saldo
-        en caché coincide con el del libro."""
+        """El libro suma cero y cada saldo en caché coincide con el del libro,
+        según verificar_libro (M10-05)."""
         self.assertEqual(Partida.objects.aggregate(s=Sum("monto"))["s"] or 0, 0)
         for cuenta in Cuenta.objects.all():
             self.assertEqual(cuenta.saldo, libro.saldo_cliente(cuenta), f"cuenta {cuenta.id}")
+        call_command("verificar_libro", verbosity=0)    # CommandError si descuadra
 
 
 class Contrapartidas(Base):

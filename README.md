@@ -565,6 +565,27 @@ scp respaldo.dump ubuntu@<IP de la VM>:
 ssh ubuntu@<IP de la VM> 'cd Sistema_pago_transporte_nfc/servidor_api && bash restaurar.sh ~/respaldo.dump'
 ```
 
+**Verificación del libro mayor.** Cada día a las 03:30 de Perú, media hora
+después del respaldo, el cron de la VM ejecuta `servidor_api/verificar_libro.sh`,
+que corre `manage.py verificar_libro` en el contenedor `web`. Comprueba que las
+partidas del libro suman cero y que `Cuenta.saldo` coincide con el libro en
+cada cliente. Cada diferencia queda como alerta **«descuadre contable»** en el
+panel, y el comando sale con código 1. La salida se acumula en
+`~/verificar_libro.log`.
+
+```bash
+# En la VM: ver el resultado de las últimas noches, o verificar ahora
+tail -n 20 ~/verificar_libro.log
+bash ~/Sistema_pago_transporte_nfc/servidor_api/verificar_libro.sh
+```
+
+La línea del crontab la instala `desplegar.sh` en cada despliegue
+(`instalar_cron.sh`; solo toca su propia línea, marcada `# subepe:
+verificar_libro`). La VM está en UTC y Perú es UTC−5 sin horario de verano, así
+que figura como `30 8 * * *`. El primer despliegue que trae este script todavía
+corre el `desplegar.sh` anterior; para no esperar al siguiente, se puede lanzar
+una vez a mano: `bash ~/Sistema_pago_transporte_nfc/servidor_api/instalar_cron.sh`.
+
 Secretos del repositorio (Settings → Secrets and variables → Actions):
 `VM_HOST`, `VM_SSH_KEY`, `VM_KNOWN_HOSTS` (despliegue y copias) y
 `RESPALDO_CLAVE` (cifrado de las copias; sin ella no se pueden recuperar, así

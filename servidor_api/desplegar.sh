@@ -58,6 +58,7 @@ u.urlopen(u.Request('http://localhost:8000/panel/ingresar/', headers={'Host': ho
       echo "   web responde"
       echo "== Usuarios MQTT"
       COMPOSE="$compose" bash mosquitto/credenciales.sh
+      bash instalar_cron.sh
       docker image prune -f >/dev/null
       return 0
     fi
