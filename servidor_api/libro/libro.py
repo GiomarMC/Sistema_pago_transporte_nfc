@@ -21,7 +21,10 @@ Un error no se borra: `revertir` registra un asiento espejo con ref "rev-<ref>".
 from collections import Counter
 
 from django.db import IntegrityError, transaction
-from django.db.models import Sum
+from django.db.models import F, Sum
+from django.db.models.functions import Coalesce
+
+from transporte.models import Cuenta
 
 from .models import Asiento, CuentaContable, Partida
 
@@ -114,6 +117,26 @@ def saldo_cliente(cuenta) -> int:
     suma = (Partida.objects.filter(cuenta_contable__cuenta_cliente_id=id_cuenta)
             .aggregate(s=Sum("monto"))["s"])
     return -(suma or 0)
+
+
+def suma_global() -> int:
+    """Suma de todas las partidas del libro: si no es cero, algo se escribió por
+    fuera de registrar()."""
+    return Partida.objects.aggregate(s=Sum("monto"))["s"] or 0
+
+
+def descuadres():
+    """Cuentas de cliente cuyo saldo en caché (Cuenta.saldo) no es el del libro.
+
+    Devuelve [(id_cuenta, saldo_en_cuenta, saldo_en_libro), ...] por id. Una sola
+    consulta: ve todos los saldos en el mismo instante, aunque haya cobros en
+    curso (cada uno toca saldo y libro en su propia transacción).
+    """
+    cuentas = (Cuenta.objects
+               .annotate(en_libro=-Coalesce(Sum("cuenta_contable__partidas__monto"), 0))
+               .exclude(saldo=F("en_libro"))
+               .order_by("id"))
+    return [(c.id, c.saldo, c.en_libro) for c in cuentas]
 
 
 def revertir(asiento, motivo, creado_por=None) -> Asiento:
