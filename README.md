@@ -224,6 +224,7 @@ n.º de cuenta. El resto está en el servidor.
 |   |-- .env.example               Plantilla de configuración
 |   |-- requirements.txt
 |   |-- config/                    Configuración de Django
+|   |-- libro/                     Libro mayor de doble partida: asientos y partidas inmutables
 |   `-- transporte/                Aplicación
 |       |-- models.py              Cuentas, tarjetas, recargas, movimientos, alertas, validadores
 |       |-- servicios.py           Lógica de negocio (sincronización, fraude, recargas, emisión)
