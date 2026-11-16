@@ -15,12 +15,26 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.utils import timezone
 
+from libro import libro
+from libro.models import PREFIJO_CLIENTE, Asiento
+
 from .models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, Tarifa, Tarjeta, soles
 
 VALIDADOR_EMISOR = 0
 PUNTO_RECARGA = 900
 RECARGA_MINIMA = 100      # S/ 1.00
 RECARGA_MAXIMA = 20000    # S/ 200.00
+
+# Libro mayor: a qué caja entra el dinero de una recarga según su origen
+CAJA_DE_ORIGEN = {
+    "web": "CAJA_PASARELA",
+    "yape": "CAJA_PASARELA",
+    "punto": "CAJA_VENTANILLA",
+    "ventanilla": "CAJA_VENTANILLA",
+    "emision": "CAJA_VENTANILLA",   # saldo inicial pagado al emitir la tarjeta
+}
+TIPO_ASIENTO = {"viaje": Asiento.Tipo.VIAJE, "recarga": Asiento.Tipo.RECARGA,
+                "emision": Asiento.Tipo.EMISION}
 
 
 class ErrorNegocio(Exception):
@@ -33,15 +47,38 @@ def _cuenta_bloqueada(id_cuenta) -> Cuenta:
     return Cuenta.objects.select_for_update().get(pk=id_cuenta)
 
 
+def _contrapartida(tipo, origen):
+    """Cuenta contable del otro lado del SALDO_CLIENTE en un movimiento."""
+    if tipo == "viaje":
+        return "INGRESOS_PASAJES"
+    if tipo == "emision":
+        return "CAJA_VENTANILLA"    # saldo inicial cobrado al emitir
+    if tipo == "recarga" and origen in CAJA_DE_ORIGEN:
+        return CAJA_DE_ORIGEN[origen]
+    raise ErrorNegocio(f"no se sabe a qué caja va un movimiento {tipo!r} de origen {origen!r}")
+
+
+@transaction.atomic
 def registrar_movimiento(cuenta, tarjeta, tipo, monto, *, operacion=None, validador=None,
-                         fecha=None, ref=None, contador=None) -> Movimiento:
-    """Aplica el monto al saldo de la cuenta (que debe estar bloqueada) y lo registra."""
+                         fecha=None, ref=None, contador=None, origen=None) -> Movimiento:
+    """Aplica el monto al saldo de la cuenta (que debe estar bloqueada), lo
+    registra y asienta en el libro mayor, todo o nada.
+
+    Si mueve dinero, el asiento lleva la ref del movimiento (o "mov-<id>") y
+    la contrapartida según el tipo y, en las recargas, el origen del dinero.
+    """
     cuenta.saldo += monto
     cuenta.save(update_fields=["saldo"])
-    return Movimiento.objects.create(
+    movimiento = Movimiento.objects.create(
         fecha=fecha or timezone.now(), cuenta=cuenta, tarjeta=tarjeta, tipo=tipo, monto=monto,
         saldo_final=cuenta.saldo, operacion=operacion, validador=validador, ref=ref,
         contador=contador)
+    if monto:
+        libro.registrar(TIPO_ASIENTO[tipo], ref or f"mov-{movimiento.id}",
+                        [(f"{PREFIJO_CLIENTE}{cuenta.id}", -monto),
+                         (_contrapartida(tipo, origen), monto)],
+                        fecha=movimiento.fecha, descripcion=str(movimiento))
+    return movimiento
 
 
 def alertar(tarjeta, tipo, detalle=""):
@@ -91,10 +128,13 @@ def crear_recarga(id_cuenta, monto, origen) -> Recarga:
     if not RECARGA_MINIMA <= monto <= RECARGA_MAXIMA:
         raise ErrorNegocio(f"el monto debe estar entre {soles(RECARGA_MINIMA)} y "
                            f"{soles(RECARGA_MAXIMA)}")
+    if origen not in CAJA_DE_ORIGEN:
+        raise ErrorNegocio(f"origen de recarga desconocido: {origen!r} "
+                           f"(válidos: {', '.join(CAJA_DE_ORIGEN)})")
     cuenta = _cuenta_bloqueada(id_cuenta)
     seq = (cuenta.recargas.aggregate(m=Max("seq"))["m"] or 0) + 1
     recarga = Recarga.objects.create(cuenta=cuenta, seq=seq, monto=monto, origen=origen)
-    registrar_movimiento(cuenta, None, "recarga", monto, ref=f"R{recarga.id}")
+    registrar_movimiento(cuenta, None, "recarga", monto, ref=f"R{recarga.id}", origen=origen)
     _recargas([recarga], CambioLista.PENDIENTE)
     return recarga
 
