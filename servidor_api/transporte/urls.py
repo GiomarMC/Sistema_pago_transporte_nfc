@@ -9,6 +9,8 @@ urlpatterns = [
     path("emisiones/<int:id_tarjeta>/confirmar/", views.emision_confirmar),
     path("emisiones/<int:id_tarjeta>/cancelar/", views.emision_cancelar),
     path("tarjetas/<int:id_tarjeta>/", views.tarjeta_detalle),
+    path("tarjetas/<int:id_tarjeta>/codigo-activacion/", views.codigo_activacion_regenerar),
+    path("tarjetas/<int:id_tarjeta>/comprobante/", views.tarjeta_comprobante),
     path("tarjetas/<int:id_tarjeta>/bloquear/", views.tarjeta_bloquear),
     path("tarjetas/uid/<str:uid>/anular/", views.tarjeta_anular_uid),
     path("cuentas/", views.cuentas_buscar),

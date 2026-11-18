@@ -19,6 +19,9 @@ from transporte.permisos import GRUPO_OPERADORES, GRUPO_SOLICITUDES
 from libro.models import CuentaContable
 from pagos.models import EventoPasarela, OrdenRecarga
 from pagos.servicios import ErrorPago, reembolsar as reembolsar_pago
+from clientes.comprobante import comprobante as renderizar_comprobante
+from clientes.activacion import regenerar_codigo
+from clientes.models import Cliente
 
 from .models import ConciliacionPago, SolicitudReposicion, VerificacionLibro
 
@@ -137,6 +140,7 @@ def cuenta_detalle(request, cuenta_id):
         "tarjetas": cuenta.tarjetas.order_by("-id"),
         "movimientos": cuenta.movimientos.select_related("tarjeta")[:20],
         "recargas_pendientes": cuenta.recargas.filter(aplicada_en__isnull=True).order_by("seq")[:10],
+        "sin_cliente": not Cliente.objects.filter(cuenta_id=cuenta.pk).exists(),
     })
 
 
@@ -154,6 +158,29 @@ def bloquear_tarjeta(request, tarjeta_id):
             servicios.bloquear(tarjeta, motivo, tipo="bloqueo manual desde el panel")
             messages.success(request, f"Tarjeta {tarjeta.pk} bloqueada. Los validadores la recibirán al sincronizar.")
     return redirect("panel:cuenta_detalle", cuenta_id=tarjeta.cuenta_id)
+
+
+@operador_requerido
+@require_POST
+def comprobante(request):
+    tarjeta_id = request.POST.get("tarjeta", "")
+    codigo = request.POST.get("codigo", "")
+    if not tarjeta_id.isdecimal() or len(codigo) != 8:
+        return HttpResponseBadRequest("Indica la tarjeta y el código recién generado.")
+    tarjeta = get_object_or_404(Tarjeta.objects.select_related("cuenta"), pk=int(tarjeta_id))
+    return renderizar_comprobante(request, tarjeta, codigo)
+
+
+@operador_requerido
+@require_POST
+def regenerar_comprobante(request, tarjeta_id):
+    try:
+        tarjeta, codigo, _ = regenerar_codigo(tarjeta_id, request.user)
+    except Tarjeta.DoesNotExist:
+        return HttpResponseBadRequest("Tarjeta no encontrada.")
+    except ValueError as exc:
+        return HttpResponseBadRequest(str(exc))
+    return renderizar_comprobante(request, tarjeta, codigo)
 
 
 @operador_requerido

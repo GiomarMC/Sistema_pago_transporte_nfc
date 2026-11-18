@@ -77,3 +77,19 @@ def llamar(metodo, ruta, datos=None, token=None, timeout=5):
         raise ErrorAPI(e.code, _mensaje(e.read())) from None
     except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
         raise SinConexion(str(getattr(e, "reason", e))) from None
+
+
+def llamar_html(metodo, ruta, datos=None, token=None, timeout=5):
+    """Obtiene un comprobante HTML sin poner el código en la URL."""
+    req = urllib.request.Request(
+        _conf()["url"].rstrip("/") + ruta, method=metodo,
+        data=None if datos is None else json.dumps(datos).encode(),
+        headers={"Content-Type": "application/json", "Accept": "text/html",
+                 "Authorization": f"Token {token or token_operador()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.read()
+    except urllib.error.HTTPError as e:
+        raise ErrorAPI(e.code, _mensaje(e.read())) from None
+    except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+        raise SinConexion(str(getattr(e, "reason", e))) from None

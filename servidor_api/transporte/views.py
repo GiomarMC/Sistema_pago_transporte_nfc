@@ -6,6 +6,9 @@ from rest_framework.response import Response
 from . import servicios
 from .models import Cuenta, Recarga, Tarjeta
 from .permisos import EsOperador, EsValidador
+from clientes.models import numero_impreso
+from clientes.activacion import regenerar_codigo
+from clientes.comprobante import comprobante
 from .serializers import (BloqueoSerializer, ConfirmarEmisionSerializer, CuentaSalida,
                           EmisionSerializer, EntregaSerializer, EventoSerializer,
                           MovimientoSalida, RecargaSalida, RecargaSerializer, SyncSerializer,
@@ -71,11 +74,39 @@ def emision_confirmar(request, id_tarjeta):
     entrada.is_valid(raise_exception=True)
     try:
         tarjeta, reemplazadas = servicios.confirmar_emision(
-            id_tarjeta, entrada.validated_data.get("contador"))
+            id_tarjeta, entrada.validated_data.get("contador"), emitido_por=request.user)
     except servicios.ErrorNegocio as e:
         return _conflicto(e)
-    return Response({"tarjeta": TarjetaSalida(tarjeta).data,
-                     "bloqueadas": [{"id": t.id, "uid": t.uid} for t in reemplazadas]})
+    salida = {"tarjeta": TarjetaSalida(tarjeta).data,
+              "numero_impreso": numero_impreso(tarjeta),
+              "bloqueadas": [{"id": t.id, "uid": t.uid} for t in reemplazadas]}
+    if hasattr(tarjeta, "codigo_activacion"):
+        salida["codigo_activacion"] = tarjeta.codigo_activacion
+        salida["codigo_expira"] = tarjeta.codigo_activacion_expira.isoformat()
+    return Response(salida)
+
+
+@api_view(["POST"])
+@permission_classes([EsOperador])
+def codigo_activacion_regenerar(request, id_tarjeta):
+    try:
+        tarjeta, codigo, registro = regenerar_codigo(id_tarjeta, request.user)
+    except Tarjeta.DoesNotExist:
+        return Response({"error": "tarjeta no encontrada"}, status=404)
+    except ValueError as exc:
+        return _conflicto(exc)
+    return Response({"tarjeta": tarjeta.id, "numero_impreso": numero_impreso(tarjeta),
+                     "codigo_activacion": codigo, "codigo_expira": registro.expira.isoformat()})
+
+
+@api_view(["POST"])
+@permission_classes([EsOperador])
+def tarjeta_comprobante(request, id_tarjeta):
+    codigo = request.data.get("codigo", "") if isinstance(request.data, dict) else ""
+    if not isinstance(codigo, str) or len(codigo) != 8:
+        return Response({"error": "indica el código recién generado"}, status=400)
+    tarjeta = get_object_or_404(Tarjeta.objects.select_related("cuenta"), pk=id_tarjeta)
+    return comprobante(request, tarjeta, codigo)
 
 
 @api_view(["POST"])
