@@ -79,7 +79,8 @@ def emision_confirmar(request, id_tarjeta):
         return _conflicto(e)
     salida = {"tarjeta": TarjetaSalida(tarjeta).data,
               "numero_impreso": numero_impreso(tarjeta),
-              "bloqueadas": [{"id": t.id, "uid": t.uid} for t in reemplazadas]}
+              "bloqueadas": [{"id": t.id, "uid": t.uid} for t in reemplazadas],
+              "reposiciones_entregadas": tarjeta.reposiciones_entregadas_ids}
     if hasattr(tarjeta, "codigo_activacion"):
         salida["codigo_activacion"] = tarjeta.codigo_activacion
         salida["codigo_expira"] = tarjeta.codigo_activacion_expira.isoformat()

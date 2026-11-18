@@ -26,6 +26,8 @@ class SolicitudReposicion(models.Model):
 
     cliente = models.ForeignKey("pagos.ClienteCuenta", on_delete=models.PROTECT)
     tarjeta = models.ForeignKey("transporte.Tarjeta", on_delete=models.PROTECT)
+    tarjeta_nueva = models.ForeignKey("transporte.Tarjeta", null=True, blank=True,
+                                     related_name="reposiciones_entregadas", on_delete=models.PROTECT)
     estado = models.CharField(max_length=10, choices=Estado.choices, default=Estado.SOLICITADA)
     creada = models.DateTimeField(auto_now_add=True)
     lista_en = models.DateTimeField(null=True, blank=True)

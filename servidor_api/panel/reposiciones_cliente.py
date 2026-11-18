@@ -6,14 +6,43 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny
 
 from pagos.api_cliente import error, titular
-from transporte.models import Tarjeta
+from transporte import servicios
+from transporte.models import Cuenta, Tarjeta
 
 from .models import SolicitudReposicion
 
 
 def _salida(solicitud):
     return {"id": solicitud.pk, "tarjeta_id": solicitud.tarjeta_id,
+            "tarjeta_nueva_id": solicitud.tarjeta_nueva_id,
             "estado": solicitud.estado, "creada": solicitud.creada.isoformat()}
+
+
+@api_view(["POST"])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AllowAny])
+def api_bloquear_tarjeta(request, tarjeta_id):
+    cliente, fallo = titular(request)
+    if fallo:
+        return fallo
+    datos = request.data if isinstance(request.data, dict) else {}
+    motivo = datos.get("motivo")
+    contrasena = datos.get("contrasena")
+    if motivo not in ("robo", "perdida") or not isinstance(contrasena, str) or not contrasena:
+        return error("validacion", "Indica robo o pérdida y confirma tu contraseña", 400)
+    if not request.user.check_password(contrasena):
+        return error("credenciales_invalidas", "Contraseña incorrecta", 403)
+    with transaction.atomic():
+        # Mismo orden de bloqueo que confirmar_emision: cuenta y luego tarjeta.
+        Cuenta.objects.select_for_update().get(pk=cliente.cuenta_id)
+        tarjeta = Tarjeta.objects.select_for_update().filter(
+            pk=tarjeta_id, cuenta_id=cliente.cuenta_id).first()
+        if tarjeta is None:
+            return error("no_encontrado", "Tarjeta no encontrada", 404)
+        if tarjeta.estado != Tarjeta.Estado.ACTIVA:
+            return error("tarjeta_no_activa", "La tarjeta ya no está activa", 409)
+        servicios.bloquear(tarjeta, motivo, tipo="bloqueo solicitado por cliente")
+    return JsonResponse({"id": tarjeta.pk, "estado": tarjeta.estado})
 
 
 @api_view(["GET", "POST"])
@@ -30,12 +59,17 @@ def api_reposiciones(request):
         tarjeta_id = int(request.data.get("tarjeta_id", 0))
     except (ValueError, TypeError):
         return error("validacion", "Tarjeta inválida", 400)
-    tarjeta = Tarjeta.objects.filter(pk=tarjeta_id, cuenta=cliente.cuenta).first()
-    if not tarjeta or tarjeta.estado != Tarjeta.Estado.BLOQUEADA:
-        return error("tarjeta_no_activa", "Solo se repone una tarjeta bloqueada propia", 409)
     try:
         with transaction.atomic():
+            Cuenta.objects.select_for_update().get(pk=cliente.cuenta_id)
+            tarjeta = Tarjeta.objects.select_for_update().filter(
+                pk=tarjeta_id, cuenta_id=cliente.cuenta_id).first()
+            if not tarjeta or tarjeta.estado != Tarjeta.Estado.BLOQUEADA:
+                return error("tarjeta_no_activa", "Solo se repone una tarjeta bloqueada propia", 409)
             anterior = SolicitudReposicion.objects.filter(tarjeta=tarjeta).first()
+            if anterior is None and Tarjeta.objects.filter(
+                    cuenta_id=cliente.cuenta_id, estado=Tarjeta.Estado.ACTIVA).exists():
+                return error("reposicion_emitida", "La cuenta ya tiene una tarjeta activa", 409)
             solicitud = anterior or SolicitudReposicion.objects.create(cliente=cliente, tarjeta=tarjeta)
             creada = anterior is None
     except IntegrityError:

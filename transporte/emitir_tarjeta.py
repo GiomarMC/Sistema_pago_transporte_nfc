@@ -156,6 +156,8 @@ def main():
     print(f"  Contador:    {contador}")
     for ant in confirmacion["bloqueadas"]:
         print(f"  Bloqueada:   tarjeta anterior n.º {ant['id']} (UID {ant['uid']})")
+    for solicitud_id in confirmacion.get("reposiciones_entregadas", []):
+        print(f"  Reposición:  solicitud n.º {solicitud_id} entregada")
 
     codigo = confirmacion.get("codigo_activacion")
     if codigo:
