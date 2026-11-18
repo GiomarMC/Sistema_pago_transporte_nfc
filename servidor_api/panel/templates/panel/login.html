@@ -4,16 +4,15 @@
 <body class="login-body">
   <main class="login-card">
     <div class="login-brand"><span class="brand-mark" aria-hidden="true">S</span><strong>Sube<span class="brand-dot">Pe</span></strong></div>
-    <div class="eyebrow">CENTRO DE CONTROL</div>
-    <h1>Todo el sistema,<br>en un solo lugar.</h1>
-    <p>Accede con tu cuenta de operador para revisar viajes, tarjetas, validadores y alertas.</p>
+    <div class="eyebrow">{% if next == '/conductor/' %}ACCESO DEL CONDUCTOR{% else %}CENTRO DE CONTROL{% endif %}</div>
+    {% if next == '/conductor/' %}<h1>Sincronizar bus</h1><p>Ingresa con tu cuenta de conductor para transferir los viajes del validador.</p>{% else %}<h1>Todo el sistema,<br>en un solo lugar.</h1><p>Accede con tu cuenta de operador para revisar viajes, tarjetas, validadores y alertas.</p>{% endif %}
     {% if form.errors %}<div class="notice error" role="alert">Usuario o contraseña incorrectos.</div>{% endif %}
     <form method="post" class="login-form">{% csrf_token %}
       <label for="id_username">Usuario</label><input id="id_username" name="username" type="text" autocomplete="username" required autofocus>
       <label for="id_password">Contraseña</label><input id="id_password" name="password" type="password" autocomplete="current-password" required>
       <input type="hidden" name="next" value="{{ next }}">
-      <button class="button primary wide" type="submit">Ingresar al panel <span aria-hidden="true">→</span></button>
+      <button class="button primary wide" type="submit">{% if next == '/conductor/' %}Ingresar como conductor{% else %}Ingresar al panel{% endif %} <span aria-hidden="true">→</span></button>
     </form>
-    <small>Acceso reservado a operadores autorizados. ¿No tienes cuenta? <a class="text-link" href="{% url 'panel:solicitar_acceso' %}">Solicitar acceso</a></small>
+    <small>{% if next == '/conductor/' %}Acceso reservado a conductores autorizados.{% else %}Acceso reservado a operadores autorizados. ¿No tienes cuenta? <a class="text-link" href="{% url 'panel:solicitar_acceso' %}">Solicitar acceso</a>{% endif %}</small>
   </main>
 </body></html>

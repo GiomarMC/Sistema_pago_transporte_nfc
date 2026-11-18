@@ -11,6 +11,8 @@ on:
       - "redocly.yaml"
       - "servidor_api/portal/static/portal/js/**"
       - "servidor_api/portal/tests/**"
+      - "servidor_api/conductor/static/**"
+      - "servidor_api/conductor/tests/**"
       - ".github/workflows/contratos.yml"
   pull_request:
     paths:
@@ -18,6 +20,8 @@ on:
       - "redocly.yaml"
       - "servidor_api/portal/static/portal/js/**"
       - "servidor_api/portal/tests/**"
+      - "servidor_api/conductor/static/**"
+      - "servidor_api/conductor/tests/**"
       - ".github/workflows/contratos.yml"
   workflow_dispatch:
 
@@ -31,5 +35,7 @@ jobs:
           node-version: "22"
       - name: OpenAPI válido
         run: npx --yes @redocly/cli@2 lint docs/contratos/api-cliente-v1.yaml
-      - name: Pruebas de api.js y api-simulada.js
+      - name: Pruebas de api.js, api-simulada.js y la interfaz del portal
         run: node --test servidor_api/portal/tests/*.test.mjs
+      - name: Pruebas del relé del conductor (BLE y cola local)
+        run: node --test servidor_api/conductor/tests/*.test.mjs

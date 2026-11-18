@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 GRUPO_OPERADORES = "operadores"
+GRUPO_CONDUCTORES = "conductores"
 # Cuentas creadas con "Solicitar acceso" en el panel, hasta que un superusuario las aprueba
 GRUPO_SOLICITUDES = "solicitudes"
 # Conductores que retransmiten por BLE los paquetes de su bus (el grupo lo crea M16-01)

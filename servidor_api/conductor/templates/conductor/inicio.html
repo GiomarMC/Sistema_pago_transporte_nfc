@@ -1,0 +1,18 @@
+{% load static %}
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sincronizar bus · SubePe</title><link rel="stylesheet" href="{% static 'conductor/estilo.css' %}">
+<script type="module" src="{% static 'conductor/rele.js' %}"></script></head>
+<body><main>
+<header><strong>SubePe</strong><span>Conductor</span></header>
+<h1>Sincronizar bus</h1>
+<p>Acércate al validador. Mantén el Bluetooth encendido y el celular cerca hasta terminar.</p>
+{% if not disponible %}<p class="aviso" role="status">La sincronización por Bluetooth todavía no está disponible.</p>{% endif %}
+<button id="conectar" type="button" {% if not disponible %}disabled{% endif %}>Conectar validador</button>
+<section aria-live="polite"><h2 id="estado">Listo para conectar</h2><p id="detalle">Los viajes se enviarán al servidor cuando el celular tenga datos.</p>
+<progress id="progreso" max="100" value="0" aria-label="Progreso de sincronización"></progress>
+<p id="almacenados"></p></section>
+<p class="ayuda">Si no aparece el bus, comprueba que esté encendido y que ningún otro celular esté conectado.</p>
+<p><a href="{% url 'conductor:guia' %}">Ver la guía e imprimirla</a></p>
+<form method="post" action="{% url 'panel:logout' %}">{% csrf_token %}<button class="salir" type="submit">Cerrar sesión</button></form>
+</main></body></html>
