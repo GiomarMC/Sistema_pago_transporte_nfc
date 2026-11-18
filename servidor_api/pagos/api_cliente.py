@@ -1,5 +1,6 @@
 from django.http import JsonResponse
 from django.db import IntegrityError, transaction
+from django.urls import reverse
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -19,8 +20,20 @@ def salida(orden, detalle=False):
                 "creada": orden.creada.isoformat(),
                 "pagada_en": orden.pagada_en.isoformat() if orden.pagada_en else None,
                 "acreditada_en": orden.acreditada_en.isoformat() if orden.acreditada_en else None}
+    # El simulador vive en este servidor; una ruta relativa funciona tanto en
+    # localhost como en el portal de pruebas y evita enviar al pasajero a 127.0.0.1.
+    url_pago = (reverse("simulador", args=[orden.id_externo])
+                if orden.pasarela == "simulada" and orden.id_externo else orden.url_pago)
     return {"id": str(orden.pk), "estado": orden.estado, "monto": orden.monto,
-            "url_pago": orden.url_pago, "expira": orden.expira.isoformat()}
+            "url_pago": url_pago, "expira": orden.expira.isoformat()}
+
+
+def url_resultado(request):
+    """A dónde vuelve el cliente tras pagar: la página de resultado del portal. En el host
+    mi.<dominio> el portal está en la raíz; en desarrollo, bajo /mi/ del mismo servidor."""
+    host_portal = request.get_host().lower().startswith("mi.")
+    return request.build_absolute_uri("/recargar/resultado/" if host_portal
+                                      else "/mi/recargar/resultado/")
 
 
 def titular(request):
@@ -61,7 +74,7 @@ def ordenes(request):
     monto = request.data.get("monto") if isinstance(request.data, dict) else None
     try:
         orden = crear_orden(request.user, cliente.cuenta, monto, clave,
-                            url_retorno=request.build_absolute_uri("/api/v1/recargas/ordenes/"))
+                            url_retorno=url_resultado(request))
     except ErrorPago as exc:
         return error(exc.codigo, str(exc), 409 if exc.codigo == "idempotencia_conflicto" else 400)
     return JsonResponse(salida(orden), status=201)

@@ -1,6 +1,7 @@
 import hashlib
 import json
 from uuid import UUID
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.db import IntegrityError, transaction
 from django.http import HttpResponse, HttpResponseRedirect, JsonResponse
@@ -116,4 +117,9 @@ def simulador(request, id_externo):
                                                for k, v in firmar(cuerpo).items()})
                 webhook(req, "simulada")
         transaction.on_commit(entregar)
-    return HttpResponseRedirect(cobro.url_retorno or reverse("simulador", args=[cobro.pk]))
+    retorno = cobro.url_retorno or reverse("simulador", args=[cobro.pk])
+    partes = urlsplit(retorno)
+    parametros = [(k, v) for k, v in parse_qsl(partes.query) if k != "orden"]
+    parametros.append(("orden", str(cobro.orden_id)))
+    return HttpResponseRedirect(urlunsplit(
+        (partes.scheme, partes.netloc, partes.path, urlencode(parametros), partes.fragment)))
