@@ -1,8 +1,61 @@
-from django.http import HttpResponse, JsonResponse
+from django.http import JsonResponse
+from django.shortcuts import render
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import ensure_csrf_cookie
+
+
+@never_cache
+@ensure_csrf_cookie
+def _pagina(request, nombre, titulo, *, publica=False):
+    base = "/mi/" if request.path.startswith("/mi/") else "/"
+    return render(request, f"portal/{nombre}.html", {
+        "pagina": nombre, "titulo": titulo, "publica": publica,
+        "portal_base": base, "script_pagina": "portal/js/paginas.js",
+    })
 
 
 def inicio(request):
-    return HttpResponse("SubePe — portal de clientes", content_type="text/plain; charset=utf-8")
+    return _pagina(request, "inicio", "Inicio")
+
+
+def ingresar(request):
+    return _pagina(request, "ingresar", "Ingresar", publica=True)
+
+
+def activar(request):
+    return _pagina(request, "activar", "Activar mi tarjeta", publica=True)
+
+
+def recuperar(request):
+    return _pagina(request, "recuperar", "Recuperar contraseña", publica=True)
+
+
+def restablecer(request):
+    return _pagina(request, "restablecer", "Nueva contraseña", publica=True)
+
+
+def movimientos(request):
+    return _pagina(request, "movimientos", "Movimientos")
+
+
+def recargar(request):
+    return _pagina(request, "recargar", "Recargar")
+
+
+def resultado(request):
+    return _pagina(request, "resultado", "Resultado del pago")
+
+
+def tarjeta(request):
+    return _pagina(request, "tarjeta", "Mi tarjeta")
+
+
+def seguridad(request):
+    return _pagina(request, "seguridad", "Seguridad")
+
+
+def perfil(request):
+    return _pagina(request, "perfil", "Mi perfil")
 
 
 def verificar_sun(request):

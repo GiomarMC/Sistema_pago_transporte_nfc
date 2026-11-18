@@ -40,6 +40,11 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 
+# Páginas y API del portal también bajo /mi/ del dominio principal: solo para desarrollo. En
+# producción el portal vive únicamente en mi.<dominio>, para que su sesión no comparta host
+# con el panel (decisión D7).
+PORTAL_EN_RUTA_MI = os.environ.get("PORTAL_EN_RUTA_MI", "1" if DEBUG else "0") == "1"
+
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost").split(",")]
 
 # Portal de clientes (mi.subepe.app; en local, mi.localhost). Sus rutas son portal.urls.

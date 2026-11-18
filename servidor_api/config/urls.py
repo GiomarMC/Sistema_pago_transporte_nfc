@@ -17,5 +17,6 @@ urlpatterns = [
     path("api/v1/", include("pagos.api_urls")),
     path("api/v1/reposiciones/", reposiciones_cliente.api_reposiciones),
     path("mi/reposiciones/", reposiciones_cliente.pagina_reposiciones),
+    path("mi/", include("portal.urls")),
     path("pagos/", include("pagos.urls_simulador")),
 ]
