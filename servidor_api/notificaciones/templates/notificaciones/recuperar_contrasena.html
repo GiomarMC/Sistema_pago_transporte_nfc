@@ -1,0 +1,6 @@
+{% extends "notificaciones/_base.html" %}
+{% block contenido %}
+<p>Hola {{ nombre }}, abre este enlace para crear una contraseña nueva. Vence en 30 minutos:</p>
+<p><a href="{{ enlace }}">Restablecer contraseña</a></p>
+<p>Si no lo solicitaste, ignora este mensaje.</p>
+{% endblock %}

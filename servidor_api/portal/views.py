@@ -1,4 +1,4 @@
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -62,3 +62,17 @@ def verificar_sun(request):
     # Verificación del mensaje SUN (URL que genera la tarjeta al acercarla a un celular)
     return JsonResponse({"error": {"codigo": "no_implementado",
                                    "mensaje": "Verificación SUN aún no disponible"}}, status=501)
+
+
+def no_encontrada(request, exception):
+    if request.path.startswith("/api/v1/"):
+        return JsonResponse({"error": {"codigo": "no_encontrado",
+                                       "mensaje": "Ruta no encontrada", "campos": {}}}, status=404)
+    return HttpResponse("Página no encontrada", status=404)
+
+
+def error_interno(request):
+    if request.path.startswith("/api/v1/"):
+        return JsonResponse({"error": {"codigo": "servidor",
+                                       "mensaje": "Error interno", "campos": {}}}, status=500)
+    return HttpResponse("Error interno", status=500)

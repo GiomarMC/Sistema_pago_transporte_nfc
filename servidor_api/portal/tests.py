@@ -8,7 +8,8 @@ PANEL = "subepe.app"
 PORTAL = "mi.subepe.app"
 
 
-@override_settings(ALLOWED_HOSTS=[PANEL, PORTAL])
+@override_settings(ALLOWED_HOSTS=[PANEL, PORTAL], DOMINIO_CLIENTE=PORTAL,
+                   DOMINIOS_PRINCIPALES={PANEL})
 class RuteoPorHostTests(TestCase):
     def setUp(self):
         self.operador = get_user_model().objects.create_user(

@@ -7,8 +7,9 @@ from django.urls import include, path
 
 from . import views
 
-# API de clientes y de pagos: cada app agrega aquí su include (p. ej. pagos.api_urls)
-api_v1 = []
+# La misma API C4 funciona en el host dedicado y en las rutas locales heredadas.
+api_v1 = [path("", include("clientes.api_urls")),
+          path("", include("pagos.api_urls"))]
 
 urlpatterns = [
     path("", views.inicio, name="inicio"),
@@ -23,5 +24,9 @@ urlpatterns = [
     path("seguridad/", views.seguridad, name="seguridad"),
     path("perfil/", views.perfil, name="perfil"),
     path("api/v1/", include(api_v1)),
+    path("pagos/", include("pagos.urls_simulador")),
     path("t", views.verificar_sun, name="verificar_sun"),
 ]
+
+handler404 = "portal.views.no_encontrada"
+handler500 = "portal.views.error_interno"

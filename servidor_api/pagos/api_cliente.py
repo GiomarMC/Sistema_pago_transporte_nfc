@@ -29,11 +29,11 @@ def salida(orden, detalle=False):
 
 
 def url_resultado(request):
-    """A dónde vuelve el cliente tras pagar: la página de resultado del portal. En el host
-    mi.<dominio> el portal está en la raíz; en desarrollo, bajo /mi/ del mismo servidor."""
-    host_portal = request.get_host().lower().startswith("mi.")
-    return request.build_absolute_uri("/recargar/resultado/" if host_portal
-                                      else "/mi/recargar/resultado/")
+    """A dónde vuelve el cliente tras pagar: la página de resultado del portal. En el host del
+    cliente (DOMINIO_CLIENTE) el portal está en la raíz; en desarrollo, bajo /mi/."""
+    return request.build_absolute_uri(
+        "/recargar/resultado/" if getattr(request, "es_portal_cliente", False)
+        else "/mi/recargar/resultado/")
 
 
 def titular(request):

@@ -3,7 +3,7 @@ import uuid
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from clientes.models import Cliente
@@ -105,6 +105,20 @@ class PortalRealTests(TestCase):
         self.assertEqual(self.client.get("/api/v1/movimientos/?tipo=recarga").json()[
             "resultados"][0]["monto"], 1000)
 
+    @override_settings(ALLOWED_HOSTS=["mi.localhost", "testserver"],
+                       DOMINIO_CLIENTE="mi.localhost")
+    def test_pago_del_host_dedicado_regresa_a_ruta_raiz(self):
+        respuesta = self.client.post(
+            "/api/v1/recargas/ordenes/", {"monto": 1000},
+            content_type="application/json", HTTP_HOST="mi.localhost",
+            HTTP_IDEMPOTENCY_KEY=str(uuid.uuid4()))
+        self.assertEqual(respuesta.status_code, 201, respuesta.content)
+        orden = OrdenRecarga.objects.get(pk=respuesta.json()["id"])
+        cobro = CobroSimulado.objects.get(orden=orden)
+        self.assertEqual(cobro.url_retorno, "http://mi.localhost/recargar/resultado/")
+        self.assertEqual(self.client.get(respuesta.json()["url_pago"],
+                                         HTTP_HOST="mi.localhost").status_code, 200)
+
     def test_bloqueo_y_solicitud_se_reflejan_en_consultas_reales(self):
         respuesta = self.client.post(
             f"/api/v1/tarjetas/{self.tarjeta.pk}/bloquear/",
@@ -133,5 +147,6 @@ class UrlResultadoTests(TestCase):
         with self.settings(ALLOWED_HOSTS=["subepe.app", "mi.subepe.app"]):
             principal = fabrica.get("/", HTTP_HOST="subepe.app")
             portal = fabrica.get("/", HTTP_HOST="mi.subepe.app")
+            portal.es_portal_cliente = True   # lo marca config.middleware.RuteoPorHost
             self.assertEqual(url_resultado(principal), "http://subepe.app/mi/recargar/resultado/")
             self.assertEqual(url_resultado(portal), "http://mi.subepe.app/recargar/resultado/")

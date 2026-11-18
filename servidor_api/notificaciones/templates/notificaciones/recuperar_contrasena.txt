@@ -1,0 +1,4 @@
+Restablece tu contraseña de SubePe
+Hola {{ nombre }}, abre este enlace para crear una contraseña nueva. Vence en 30 minutos:
+{{ enlace }}
+Si no lo solicitaste, ignora este mensaje.

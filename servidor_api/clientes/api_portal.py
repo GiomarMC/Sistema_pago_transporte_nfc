@@ -7,13 +7,17 @@ from rest_framework.permissions import AllowAny
 
 from pagos.api_cliente import titular
 
+from .api_identidad import csrf_exigido, iniciar_sesion
 from .api_resumen import datos_cliente
 
 
-@api_view(["GET", "DELETE"])
+@csrf_exigido
+@api_view(["GET", "POST", "DELETE"])
 @authentication_classes([SessionAuthentication])
 @permission_classes([AllowAny])
 def sesion(request):
+    if request.method == "POST":
+        return iniciar_sesion(request._request)
     enlace, fallo = titular(request)
     if fallo:
         return fallo
