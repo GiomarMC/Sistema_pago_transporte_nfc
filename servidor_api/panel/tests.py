@@ -142,6 +142,16 @@ class UsuariosTests(TestCase):
         self.assertEqual(self.solicitar(usuario="OPERADORA").status_code, 200)  # ya existe
         self.assertFalse(get_user_model().objects.filter(groups__name="solicitudes").exists())
 
+    def test_registro_no_admite_el_prefijo_de_clientes(self):
+        for usuario in ("cli-71234567", "CLI-71234567"):
+            with self.subTest(usuario=usuario):
+                respuesta = self.solicitar(usuario=usuario)
+                self.assertEqual(respuesta.status_code, 200)
+                self.assertContains(respuesta, "reservados")
+        self.assertFalse(get_user_model().objects.filter(username__istartswith="cli-").exists())
+        # Solo el prefijo exacto está reservado
+        self.assertEqual(self.solicitar(usuario="clinica").status_code, 302)
+
     def test_registro_se_cierra_con_muchas_pendientes(self):
         grupo = Group.objects.get(name="solicitudes")
         for n in range(50):

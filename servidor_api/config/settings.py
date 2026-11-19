@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'panel',
     'pagos',
     'libro',
+    'clientes',
 ]
 
 MIDDLEWARE = [
