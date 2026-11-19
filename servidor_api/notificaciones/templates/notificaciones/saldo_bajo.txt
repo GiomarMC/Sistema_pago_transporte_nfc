@@ -1,0 +1,3 @@
+Tu saldo SubePe es bajo
+Hola {{ nombre }}, tu saldo actual es de {{ saldo }}, menor a dos pasajes ({{ tarifa }} cada uno).
+Recarga para seguir viajando sin interrupciones.

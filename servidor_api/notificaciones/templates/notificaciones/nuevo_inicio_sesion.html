@@ -1,0 +1,8 @@
+{% extends "notificaciones/_base.html" %}
+{% block contenido %}
+<h1 style="font-size:20px;margin:0 0 12px 0;">Nuevo inicio de sesión</h1>
+<p>Hola {{ nombre }}, se inició sesión en tu cuenta desde un dispositivo nuevo.</p>
+<p style="margin:0 0 4px 0;"><strong>Fecha:</strong> {{ fecha }}</p>
+<p style="margin:0 0 16px 0;"><strong>Dispositivo:</strong> {{ dispositivo }}</p>
+<p>Si fuiste tú, no necesitas hacer nada. Si no fuiste tú, cambia tu contraseña de inmediato.</p>
+{% endblock %}
