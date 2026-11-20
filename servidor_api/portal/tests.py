@@ -19,7 +19,10 @@ class RuteoPorHostTests(TestCase):
     def test_el_portal_solo_expone_sus_rutas(self):
         portal = Client(HTTP_HOST=PORTAL)
         self.assertEqual(portal.get("/").status_code, 200)
-        self.assertEqual(portal.get("/t").status_code, 501)
+        # /t sin p ni m no es un enlace SUN válido; uno bien formado responde 501
+        # mientras la verificación criptográfica no exista (M1-08b)
+        self.assertEqual(portal.get("/t").status_code, 400)
+        self.assertEqual(portal.get("/t", {"p": "0" * 32, "m": "0" * 16}).status_code, 501)
         for ruta in ("/panel/", "/panel/ingresar/", "/admin/", "/api/sync/"):
             with self.subTest(ruta=ruta):
                 self.assertEqual(portal.get(ruta).status_code, 404)
