@@ -13,9 +13,7 @@
 #include <map>
 #include <vector>
 
-struct RedWifi {
-  String ssid, clave;
-};
+#include <RedWifi.h>
 
 struct Tarifa {
   String nombre;

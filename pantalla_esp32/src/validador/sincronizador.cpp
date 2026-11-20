@@ -1,23 +1,17 @@
 #include "sincronizador.h"
 
 #include <ArduinoJson.h>
-#include <ESPmDNS.h>
 #include <HTTPClient.h>
-#include <WiFi.h>
 
 #include <set>
 #include <vector>
-
-#include "raices_tls.h"
 
 namespace {
 
 constexpr uint32_t INTERVALO = 30000;        // ms entre sincronizaciones correctas
 constexpr uint32_t REINTENTO_MIN = 10000;    // ms tras un fallo; se duplica hasta el máximo
 constexpr uint32_t REINTENTO_MAX = 300000;
-constexpr uint32_t ESPERA_WIFI = 20000;      // ms para conectar antes de probar otra red
 constexpr size_t EVENTOS_POR_PETICION = 40;  // acota la memoria del cuerpo JSON
-constexpr uint32_t ESPERA_MDNS = 2000;       // ms para encontrar un servidor "nombre.local"
 
 // Días desde 1970-01-01 (algoritmo de H. Hinnant; sin depender de la zona horaria)
 int32_t diasDesdeCivil(int y, unsigned m, unsigned d) {
@@ -53,32 +47,18 @@ bool Sincronizador::atender() {
     return false;
   }
 
-  if (WiFi.status() != WL_CONNECTED) {
+  if (enlace_.estado() == EstadoEnlace::Apagado) enlace_.encender();
+  enlace_.atender();
+  if (enlace_.estado() != EstadoEnlace::Listo) {
     estado_ = "Sin WiFi";
-    if (wifiConectado_) {
+    if (wifiConectado_) {  // el enlace ya avisó en el registro y cerró sus clientes
       wifiConectado_ = false;
-      cerrarConexion();
-      log_("WiFi perdido; se sigue cobrando sin conexión");
-    }
-    // WiFi.begin no bloquea: la conexión avanza mientras se sigue cobrando. Si una
-    // red no conecta en ESPERA_WIFI, se prueba la siguiente de las guardadas.
-    if (!wifiIniciado_ || millis() - inicioWifi_ > ESPERA_WIFI) {
-      if (wifiIniciado_) red_ = (red_ + 1) % redes.size();
-      if (red_ >= redes.size()) red_ = 0;
-      const RedWifi &r = redes[red_];
-      if (!wifiIniciado_ || redes.size() > 1) log_("Conectando al WiFi " + r.ssid + "...");
-      WiFi.mode(WIFI_STA);
-      WiFi.setAutoReconnect(true);
-      WiFi.disconnect();
-      WiFi.begin(r.ssid.c_str(), r.clave.c_str());
-      wifiIniciado_ = true;
-      inicioWifi_ = millis();
+      http_.end();
     }
     return false;
   }
   if (!wifiConectado_) {
     wifiConectado_ = true;
-    log_("WiFi conectado a " + WiFi.SSID() + ": IP " + WiFi.localIP().toString() + ", señal " + String(WiFi.RSSI()) + " dBm");
     proxima_ = millis();  // sincroniza en cuanto hay red
   }
 
@@ -103,30 +83,25 @@ bool Sincronizador::resolverNombre(String &url) {
   while (fin < (int)url.length() && url[fin] != ':' && url[fin] != '/') fin++;
   const String host = url.substring(inicio, fin);
   if (!host.endsWith(".local")) return true;
-  if (ipServidor_ == IPAddress()) {
-    if (!mdnsIniciado_) mdnsIniciado_ = MDNS.begin(("validador-" + String(almacen_.validador())).c_str());
-    ipServidor_ = MDNS.queryHost(host.substring(0, host.length() - 6), ESPERA_MDNS);
-    if (ipServidor_ == IPAddress()) {
-      fallo("no se encontró " + host + " en la red (¿ordenador apagado o en otra red?)");
-      return false;
-    }
+  enlace_.nombreLocal("validador-" + String(almacen_.validador()));
+  const IPAddress ip = enlace_.resolverLocal(host);
+  if (ip == IPAddress()) {
+    fallo("no se encontró " + host + " en la red (¿ordenador apagado o en otra red?)");
+    return false;
   }
-  url = url.substring(0, inicio) + ipServidor_.toString() + url.substring(fin);
+  url = url.substring(0, inicio) + ip.toString() + url.substring(fin);
   return true;
 }
 
 void Sincronizador::reiniciarWifi() {
-  wifiIniciado_ = false;
   wifiConectado_ = false;
-  red_ = 0;
-  ipServidor_ = IPAddress();
-  cerrarConexion();
+  http_.end();
+  enlace_.reiniciar();
 }
 
 void Sincronizador::cerrarConexion() {
   http_.end();
-  plano_.stop();
-  seguro_.stop();
+  enlace_.cerrar();
 }
 
 void Sincronizador::fallo(const String &motivo) {
@@ -149,12 +124,7 @@ bool Sincronizador::sincronizar() {
     urlActual_ = url;
   }
   const bool https = url.startsWith("https://");
-  if (https && !seguroListo_) {
-    seguro_.setCACert(RAICES_TLS);
-    seguro_.setHandshakeTimeout(10);  // s
-    seguroListo_ = true;
-  }
-  WiFiClient &cliente = https ? static_cast<WiFiClient &>(seguro_) : plano_;
+  WiFiClient &cliente = enlace_.clienteHttp(https);
   http_.setReuse(true);
   http_.setConnectTimeout(https ? 5000 : 2000);  // por internet se tarda más que en la red local
   http_.setTimeout(https ? 8000 : 4000);
@@ -170,11 +140,11 @@ bool Sincronizador::sincronizar() {
     String motivo = codigo < 0 ? HTTPClient::errorToString(codigo) : "HTTP " + String(codigo);
     if (codigo == 401 || codigo == 403) motivo += " (token no válido o validador inactivo)";
     char tls[100];
-    if (https && codigo < 0 && seguro_.lastError(tls, sizeof(tls))) {
+    if (https && codigo < 0 && static_cast<WiFiClientSecure &>(cliente).lastError(tls, sizeof(tls))) {
       motivo += String(" (TLS: ") + tls + ")";  // p. ej. certificado no reconocido
     }
-    cerrarConexion();           // la próxima vez, conexión nueva
-    ipServidor_ = IPAddress();  // por si cambió de IP: se vuelve a buscar
+    cerrarConexion();             // la próxima vez, conexión nueva
+    enlace_.olvidarNombres();     // por si cambió de IP: se vuelve a buscar
     fallo(motivo + " en " + url);
     return false;
   }
