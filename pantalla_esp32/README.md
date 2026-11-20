@@ -442,6 +442,7 @@ En `transporte/`:
 | "Error microSD" en la pantalla | Tarjeta no insertada, de más de 32 GB o no FAT32, o cableado de la microSD (prueba con el firmware `prueba`). |
 | Cobra pero el saldo de la cuenta no baja en el servidor | Los viajes suben al sincronizar (cada 30 s con WiFi). Mira el estado en la pantalla y los mensajes (`pio device monitor`). |
 | La pantalla dice "Sin WiFi" | La red no es de 2,4 GHz, la contraseña es incorrecta o no hay señal. Corrígela con el portal (botón BOOT 3 s). |
+| La pantalla se queda en "Iniciando..." o se reinicia sola cada 45 s | El programa se bloqueó y el **watchdog** (45 s) reinició la placa. Con el monitor serie abierto, el mensaje `#WATCHDOG: el programa se bloqueó en el paso: ...` dice dónde se quedó, y al arrancar se anota `#Arranque: WATCHDOG...`. Si se repite en `setup: ui::iniciar` (la OLED, por I2C), **corta la corriente** de toda la placa y los módulos (desenchufa el USB 15 s): un simple reinicio no lo quita. Revisa también los cables de SDA (P21) y SCL (P22). Abrir el monitor serie reinicia la placa. |
 | La pantalla dice "Sin servidor" | Los mensajes de la ESP32 muestran el motivo: `HTTP 401` es un token que no es de ese servidor (vuelve a configurar con `--servidor`); un error `TLS` es un certificado que no es de Let's Encrypt; `connection refused` o un tiempo agotado, el servidor caído o una URL mal escrita. |
 
 ## 12. Estado y pendientes
