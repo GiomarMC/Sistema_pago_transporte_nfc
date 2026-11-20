@@ -223,7 +223,7 @@ def reservar_emision(uid, *, id_cuenta=None, nombre=None, documento=None, codigo
 
 
 @transaction.atomic
-def confirmar_emision(id_tarjeta, contador=None):
+def confirmar_emision(id_tarjeta, contador=None, emitido_por=None):
     """Paso 2 (tras grabar y verificar la tarjeta): la activa, anula emisiones
     anteriores de la misma tarjeta física y bloquea las otras tarjetas de la cuenta."""
     tarjeta = Tarjeta.objects.select_for_update().filter(pk=id_tarjeta).first()
@@ -246,6 +246,10 @@ def confirmar_emision(id_tarjeta, contador=None):
     entregar_recargas(tarjeta, tarjeta.recarga_inicial, VALIDADOR_EMISOR)
     registrar_movimiento(cuenta, tarjeta, "emision", 0, operacion=1,
                          validador=VALIDADOR_EMISOR, contador=contador)
+    from clientes.activacion import generar_codigo, tiene_cliente
+    if not tiene_cliente(cuenta.pk):
+        tarjeta.codigo_activacion, registro = generar_codigo(tarjeta, emitido_por)
+        tarjeta.codigo_activacion_expira = registro.expira
     return tarjeta, reemplazadas
 
 

@@ -87,7 +87,21 @@ class CodigoActivacion(CodigoHasheado):
                                 related_name="codigos_activacion")
     expira = models.DateTimeField(default=expira_activacion)
     usado_en = models.DateTimeField(null=True, blank=True)
+    anulado_en = models.DateTimeField(null=True, blank=True)
+    emitido_por = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
+                                    on_delete=models.PROTECT, related_name="codigos_emitidos")
     intentos = models.PositiveSmallIntegerField(default=0)
+
+    def vigente(self, codigo):
+        return (self.tarjeta.estado == "activa" and self.usado_en is None and self.anulado_en is None and
+                self.expira > timezone.now() and
+                not Cliente.objects.filter(cuenta_id=self.tarjeta.cuenta_id).exists() and
+                self.verificar_codigo(codigo))
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["tarjeta"], condition=Q(usado_en__isnull=True, anulado_en__isnull=True),
+            name="codigo_activacion_activo_unico")]
 
     def __str__(self):
         return f"Código de activación · tarjeta {self.tarjeta_id}"

@@ -22,6 +22,7 @@ import sys
 from datetime import date
 
 import api_cliente
+from comprobante import abrir_comprobante
 from api_cliente import ErrorAPI, SinConexion
 from config import TARIFA_POR_NOMBRE, TARIFAS, formato_soles, parsear_soles
 from recargar import ErrorRecarga, recargar_tarjeta
@@ -92,6 +93,7 @@ def main():
     p.add_argument("--saldo", default="0", help="recarga inicial en soles, p. ej. 10.50")
     p.add_argument("--cuenta", type=int, help="emitir tarjeta de reemplazo para esta cuenta")
     p.add_argument("--forzar", action="store_true", help="reemitir una tarjeta ya emitida")
+    p.add_argument("--sin-comprobante", action="store_true", help="no abrir la hoja de activación")
     args = p.parse_args()
 
     if args.cuenta is None and not (args.nombre and args.dni and args.tarifa):
@@ -147,11 +149,25 @@ def main():
     print("[OK] Tarjeta emitida y verificada")
     print(f"  Cliente:     {cuenta['nombre']} (DNI {cuenta['documento']}) — cuenta {cuenta['id']}")
     print(f"  Tarjeta:     n.º {reserva['tarjeta']}, UID {uid_hex}")
+    if confirmacion.get("numero_impreso"):
+        print(f"  Número:      {confirmacion['numero_impreso']}")
     print(f"  Tarifa:      {nombre_tarifa} ({formato_soles(precio)} por viaje)")
     print(f"  Saldo:       {formato_soles(estado.registro.saldo)}")
     print(f"  Contador:    {contador}")
     for ant in confirmacion["bloqueadas"]:
         print(f"  Bloqueada:   tarjeta anterior n.º {ant['id']} (UID {ant['uid']})")
+
+    codigo = confirmacion.get("codigo_activacion")
+    if codigo:
+        print(f"  Activación:  {codigo} (vence {confirmacion['codigo_expira']})")
+        if not args.sin_comprobante:
+            try:
+                html = api_cliente.llamar_html(
+                    "POST", f"/api/tarjetas/{reserva['tarjeta']}/comprobante/", {"codigo": codigo})
+                if not abrir_comprobante(html):
+                    print("[!] El navegador no abrió el comprobante; conserva el código mostrado arriba.")
+            except (ErrorAPI, SinConexion, OSError) as e:
+                print(f"[!] La tarjeta está emitida, pero no se pudo abrir el comprobante: {e}")
 
     if recarga:
         try:

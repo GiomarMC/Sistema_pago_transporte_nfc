@@ -1,0 +1,12 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Comprobante de tarjeta {{ numero }}</title><style>
+@page{size:A6 portrait;margin:6mm}*{box-sizing:border-box}body{font-family:Arial,sans-serif;color:#153250;margin:0;background:#eee}.hoja{width:105mm;min-height:148mm;margin:12mm auto;padding:7mm;background:#fff;border:1px solid #ddd}.marca{font-size:19px;color:#07529a;font-weight:bold}.titulo{font-size:16px;font-weight:bold;margin:11mm 0 6mm}.fila{display:flex;justify-content:space-between;gap:8px;margin:4mm 0}.fila strong{text-align:right;overflow-wrap:anywhere}.etiqueta{color:#506172}.codigo{font:700 22px/1.2 monospace;letter-spacing:2px;text-align:center;border:1px dashed #07529a;border-radius:4px;padding:3mm}.qr{text-align:center;margin:4mm 0}.qr svg{width:30mm;height:30mm}.url{text-align:center;font-size:10px;overflow-wrap:anywhere}.nota{font-size:9px;margin-top:4mm}.imprimir{display:block;margin:10px auto;padding:10px}@media print{body{background:#fff}.hoja{width:auto;min-height:0;margin:0;border:0;padding:0}.imprimir{display:none}}
+</style></head><body><div class="hoja"><div class="marca">SubePe</div><div class="titulo">Activación de tarjeta</div>
+<div class="fila"><span class="etiqueta">Nombre</span><strong>{{ tarjeta.cuenta.nombre }}</strong></div>
+<div class="fila"><span class="etiqueta">DNI</span><strong>{{ dni }}</strong></div>
+<div class="fila"><span class="etiqueta">Tarjeta</span><strong>{{ numero }}</strong></div>
+<p class="etiqueta">Código de activación</p><div class="codigo">{{ codigo }}</div>
+<p class="nota">Vence: {{ expira|date:"d/m/Y H:i" }} (72 horas desde la emisión).</p>
+<div class="qr">{{ qr }}</div><div class="url">{{ url_activacion }}</div>
+<p class="nota"><strong>Nadie de SubePe te pedirá este código.</strong> Guárdalo hasta activar la tarjeta y destruye este papel después.</p></div>
+<button class="imprimir" onclick="window.print()">Imprimir comprobante</button></body></html>
