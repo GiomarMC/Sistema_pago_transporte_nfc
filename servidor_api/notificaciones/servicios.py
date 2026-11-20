@@ -66,11 +66,20 @@ def _renderizar(tipo, contexto):
 
 
 def notificar(destinatario, tipo, **contexto):
-    """Guarda la notificación y programa su envío para cuando se confirme la transacción."""
+    """Guarda la notificación y programa su envío para cuando se confirme la transacción.
+
+    Con `_clave` el aviso es idempotente: si ya existe una con esa clave no se crea otra ni se
+    vuelve a enviar (p. ej. "recarga_acreditada:<orden>")."""
+    clave = contexto.pop("_clave", None)
     asunto, texto, html = _renderizar(tipo, contexto)
-    notificacion = Notificacion.objects.create(
-        destinatario=destinatario, tipo=tipo, asunto=asunto, texto=texto, html=html
-    )
+    datos = {"destinatario": destinatario, "tipo": tipo, "asunto": asunto,
+             "texto": texto, "html": html}
+    if clave:
+        notificacion, creada = Notificacion.objects.get_or_create(clave=clave, defaults=datos)
+        if not creada:
+            return notificacion
+    else:
+        notificacion = Notificacion.objects.create(**datos)
     if tipo == TIPO_OTP:
         transaction.on_commit(functools.partial(_intentar_envio, notificacion.pk))
     else:

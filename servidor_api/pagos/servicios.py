@@ -140,7 +140,10 @@ def acreditar(orden):
     bloqueada.recarga = recarga
     bloqueada.acreditada_en = timezone.now()
     bloqueada.save(update_fields=["recarga", "acreditada_en"])
-    return transicion(bloqueada, "acreditada", "recarga acreditada en cuenta")
+    resultado = transicion(bloqueada, "acreditada", "recarga acreditada en cuenta")
+    from notificaciones.disparadores import al_acreditar, intentar_sin_interrumpir
+    intentar_sin_interrumpir(al_acreditar, resultado)
+    return resultado
 
 
 def confirmar_cobro(orden):

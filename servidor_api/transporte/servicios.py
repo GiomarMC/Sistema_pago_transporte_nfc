@@ -84,6 +84,9 @@ def registrar_movimiento(cuenta, tarjeta, tipo, monto, *, operacion=None, valida
                         [(f"{PREFIJO_CLIENTE}{cuenta.id}", -monto),
                          (_contrapartida(tipo, origen), monto)],
                         fecha=movimiento.fecha, descripcion=str(movimiento))
+    if tipo == "viaje":
+        from notificaciones.disparadores import al_registrar_viaje, intentar_sin_interrumpir
+        intentar_sin_interrumpir(al_registrar_viaje, movimiento)
     return movimiento
 
 
@@ -123,13 +126,18 @@ def bloquear(tarjeta, motivo, tipo="bloqueo automático"):
     # UPDATE condicional: con dos bloqueos a la vez, solo uno cambia la fila
     # (y registra el cambio de lista), aunque los dos vieran la tarjeta activa.
     ahora = timezone.now()
-    if Tarjeta.objects.filter(pk=tarjeta.pk, estado=Tarjeta.Estado.ACTIVA).update(
-            estado=Tarjeta.Estado.BLOQUEADA, bloqueada_en=ahora):
+    recien_bloqueada = bool(Tarjeta.objects.filter(
+        pk=tarjeta.pk, estado=Tarjeta.Estado.ACTIVA).update(
+            estado=Tarjeta.Estado.BLOQUEADA, bloqueada_en=ahora))
+    if recien_bloqueada:
         tarjeta.estado, tarjeta.bloqueada_en = Tarjeta.Estado.BLOQUEADA, ahora
         _bloqueos([tarjeta.pk], urgente=True)
     else:
         tarjeta.refresh_from_db(fields=["estado", "bloqueada_en"])
     alertar(tarjeta, tipo, motivo)
+    if recien_bloqueada:
+        from notificaciones.disparadores import al_bloquear, intentar_sin_interrumpir
+        intentar_sin_interrumpir(al_bloquear, tarjeta)
 
 
 # --- Recargas -----------------------------------------------------------------
