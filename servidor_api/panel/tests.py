@@ -331,7 +331,7 @@ class M19Tests(TestCase):
         self.assertEqual(mail.outbox[0].to, [self.cliente.email])
         self.assertEqual(Notificacion.objects.filter(tipo="reposicion_lista").count(), 1)
         self.client.force_login(self.cliente)
-        self.assertContains(self.client.get("/mi/reposiciones/"), "Tu nueva tarjeta está lista para recoger")
+        self.assertEqual(self.client.get("/mi/reposiciones/").status_code, 301)   # se mudó al portal
         self.assertEqual(self.client.get("/api/v1/reposiciones/").json()[0]["estado"], "lista")
         self.assertEqual(self.client.post(ruta, {"accion": "entregada"}).status_code, 403)
         self.client.force_login(self.operador)

@@ -1,8 +1,8 @@
 from django.conf import settings
 from django.http import HttpResponseNotFound
 
-# Páginas de cliente que ya sirve el dominio principal bajo /mi/ (M19), aparte del portal
-RUTAS_MI_DEL_PANEL = ("/mi/reposiciones/",)
+# Ruta antigua de M19 que solo redirige al portal; no es una página del portal bajo /mi/
+RUTAS_MI_REDIRIGIDAS = ("/mi/reposiciones/",)
 
 
 class RuteoPorHost:
@@ -26,7 +26,7 @@ class RuteoPorHost:
         elif host in settings.DOMINIOS_PRINCIPALES:
             request.urlconf = settings.URLCONF_PRINCIPAL
         elif (request.path.startswith("/mi/") and not settings.PORTAL_EN_RUTA_MI
-              and not request.path.startswith(RUTAS_MI_DEL_PANEL)):
+              and not request.path.startswith(RUTAS_MI_REDIRIGIDAS)):
             return HttpResponseNotFound()
         respuesta = self.get_response(request)
         if getattr(request, "es_portal_cliente", False):

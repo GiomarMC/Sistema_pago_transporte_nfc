@@ -146,7 +146,6 @@ class RoboReposicionTests(TestCase):
         self.assertIsNotNone(solicitud.entregada_en)
         self.assertEqual(Notificacion.objects.filter(tipo="reposicion_lista").count(), 1)
         self.assertEqual(self.cliente.get("/api/v1/reposiciones/").json()[0]["tarjeta_nueva_id"], nueva.pk)
-        self.assertContains(self.cliente.get("/mi/reposiciones/"), f"nueva #{nueva.pk}")
         self.assertEqual(self.cliente.get("/api/v1/resumen/").json()["tarjetas"][0]["id"],
                          nueva.pk)
         self.assertEqual(confirmacion.data["tarjeta"]["estado"], "activa")

@@ -53,10 +53,19 @@ class RutaMiSoloEnDesarrolloTests(TestCase):
         self.assertEqual(self.client.get("/mi/ingresar/").status_code, 404)
         self.assertEqual(self.client.get("/mi/api/v1/resumen/").status_code, 404)
 
-    @override_settings(PORTAL_EN_RUTA_MI=False)
-    def test_la_pagina_de_reposiciones_del_panel_sigue_disponible(self):
-        # Ruta de M19 (no es del portal): pide sesión, pero no debe dar 404
-        self.assertNotEqual(self.client.get("/mi/reposiciones/").status_code, 404)
+    @override_settings(PORTAL_EN_RUTA_MI=False, DOMINIO_CLIENTE="mi.subepe.app")
+    def test_la_pagina_antigua_de_reposiciones_redirige_al_portal(self):
+        # Era una página de cliente de M19: ahora es "Mi tarjeta" en el host del portal
+        respuesta = self.client.get("/mi/reposiciones/")
+        self.assertRedirects(respuesta, "http://mi.subepe.app/tarjeta/", status_code=301,
+                             fetch_redirect_response=False)
+
+    @override_settings(DOMINIO_CLIENTE="mi.subepe.app", DOMINIOS_PRINCIPALES={"subepe.app"},
+                       ALLOWED_HOSTS=["subepe.app", "mi.subepe.app"])
+    def test_el_dominio_principal_tambien_redirige_conservando_el_puerto(self):
+        respuesta = self.client.get("/mi/reposiciones/", HTTP_HOST="subepe.app:8443")
+        self.assertRedirects(respuesta, "http://mi.subepe.app:8443/tarjeta/", status_code=301,
+                             fetch_redirect_response=False)
 
     @override_settings(PORTAL_EN_RUTA_MI=True)
     def test_en_desarrollo_mi_sirve_el_portal(self):
