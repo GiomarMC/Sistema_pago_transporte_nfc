@@ -11,25 +11,24 @@ import api_cliente
 from api_cliente import ErrorAPI, SinConexion
 from config import TARIFAS, formato_soles
 from tarjeta import claves, formato
-from tarjeta.ntag215 import ErrorTarjeta, NTAG215
+from tarjeta.base import ErrorTarjeta, TipoNoSoportado, esperar_tarjeta
 
 
 def main():
-    t = NTAG215.esperar()
+    try:
+        t = esperar_tarjeta()
+    except TipoNoSoportado as e:
+        sys.exit(f"UID {e.uid.hex().upper()}: {e}")
     uid_hex = t.uid.hex().upper()
     try:
-        if not t.es_ntag215():
-            sys.exit(f"UID {uid_hex}: no es una NTAG215")
-        pwd, pack = claves.contrasena(t.uid)
-        if not t.puede_leer(formato.PAG_INICIO):
+        if t.protegida():
             try:
-                if t.autenticar(pwd) != pack:
-                    raise ErrorTarjeta("PACK incorrecto")
+                t.autenticar()
             except ErrorTarjeta:
                 sys.exit(f"UID {uid_hex}: protegida con una contraseña que no es de este sistema")
-        area = t.leer(formato.PAG_INICIO, formato.PAG_FIN)
+        area = t.leer_area()
         try:
-            contador = t.contador_nfc()
+            contador = t.contador()
         except ErrorTarjeta:
             contador = None
         est = formato.decodificar(area, t.uid, claves.clave_firma(t.uid))

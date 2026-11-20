@@ -21,29 +21,30 @@ import api_cliente
 from api_cliente import ErrorAPI, SinConexion
 from config import PUNTO_RECARGA, formato_soles, parsear_soles
 from tarjeta import claves, formato
-from tarjeta.ntag215 import ErrorTarjeta, NTAG215
+from tarjeta.base import ErrorTarjeta, TarjetaFisica, TipoNoSoportado, esperar_tarjeta
 
 
 class ErrorRecarga(Exception):
     pass
 
 
-def recargar_tarjeta(t: NTAG215, monto: int):
+NO_VALIDA = "tarjeta no válida o no emitida por este sistema"
+
+
+def recargar_tarjeta(t: TarjetaFisica, monto: int):
     """Recarga en punto con la tarjeta ya conectada. Pide al servidor la recarga
     (y las remotas pendientes), graba el nuevo saldo y confirma la entrega.
     Devuelve (saldo anterior, saldo nuevo, abonado, datos de la cuenta)."""
-    pwd, pack = claves.contrasena(t.uid)
     try:
-        if t.autenticar(pwd) != pack:
-            raise ErrorTarjeta("PACK")
+        t.autenticar()
     except ErrorTarjeta:
-        raise ErrorRecarga("tarjeta no válida o no emitida por este sistema")
+        raise ErrorRecarga(NO_VALIDA)
     clave = claves.clave_firma(t.uid)
     try:
-        est = formato.decodificar(t.leer(formato.PAG_INICIO, formato.PAG_FIN), t.uid, clave)
+        est = formato.decodificar(t.leer_area(), t.uid, clave)
     except formato.ErrorFormato as e:
         raise ErrorRecarga(str(e))
-    contador = t.contador_nfc()
+    contador = t.contador()
     cab, reg = est.cabecera, est.registro
     if cab.estado != formato.ACTIVA:
         raise ErrorRecarga("la tarjeta está bloqueada: no se recarga")
@@ -63,12 +64,8 @@ def recargar_tarjeta(t: NTAG215, monto: int):
     nuevo = formato.Registro(reg.saldo + abono, reg.operacion + 1,
                              datetime.now(timezone.utc).replace(microsecond=0),
                              PUNTO_RECARGA, hasta)
-    pagina = formato.PAG_REGISTROS[est.ranura_libre]
-    datos = nuevo.a_bytes(t.uid, clave, cab)
     try:
-        t.escribir_paginas(pagina, datos)
-        if t.leer(pagina, pagina + len(datos) // 4 - 1) != datos:
-            raise ErrorTarjeta("verificación de escritura")
+        t.escribir_registro(est.ranura_libre, nuevo.a_bytes(t.uid, clave, cab))
     except ErrorTarjeta:
         raise ErrorRecarga("la tarjeta se retiró antes de terminar. La recarga ya está abonada "
                            "en la cuenta: se grabará en el próximo viaje o con  recargar.py --aplicar")
@@ -124,8 +121,10 @@ def main():
         if args.dni:
             recarga_remota(args.dni, monto, args.origen)
             return
-        with NTAG215.esperar() as t:
+        with esperar_tarjeta() as t:
             antes, despues, abono, cuenta = recargar_tarjeta(t, monto)
+    except TipoNoSoportado:
+        sys.exit(f"[X] {NO_VALIDA}")
     except SinConexion as e:
         sys.exit(f"[X] Sin conexión con el servidor ({e}): no se puede recargar ahora")
     except (ErrorRecarga, ErrorTarjeta) as e:
