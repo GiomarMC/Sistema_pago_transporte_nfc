@@ -1,0 +1,3 @@
+Intento de uso de tu tarjeta bloqueada
+Hola {{ nombre }}, el {{ fecha }} se intentó usar tu tarjeta N.º {{ tarjeta }}, que está bloqueada.
+Si no reconoces ese viaje, comunícate con nosotros cuanto antes.

@@ -1,0 +1,5 @@
+{% extends "notificaciones/_base.html" %}
+{% block contenido %}
+<p>Tu código de verificación es <strong style="font-size:22px;letter-spacing:2px;">{{ codigo }}</strong>.</p>
+<p>Vence en {{ minutos }} minutos. Si no lo solicitaste, ignora este mensaje.</p>
+{% endblock %}

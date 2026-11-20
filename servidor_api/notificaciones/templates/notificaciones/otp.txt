@@ -1,0 +1,3 @@
+Código de verificación
+Tu código de verificación es {{ codigo }}. Vence en {{ minutos }} minutos.
+Si no lo solicitaste, ignora este mensaje.
