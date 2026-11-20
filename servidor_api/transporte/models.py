@@ -7,6 +7,7 @@ Todos los montos están en céntimos de sol.
 """
 
 import secrets
+from datetime import datetime
 
 from django.conf import settings
 from django.core.validators import RegexValidator
@@ -155,6 +156,9 @@ class Validador(models.Model):
     usuario = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                    related_name="validador")
     ultima_sync = models.DateTimeField(null=True, blank=True)
+    # Estado de conexión del tópico MQTT sp/v/{n}/conexion (lo escribe registrar_conexion)
+    conexion_en = models.DateTimeField(null=True, blank=True)
+    conexion_activa = models.BooleanField(default=False)
     activo = models.BooleanField(default=True)
     clave_hmac = models.CharField(
         max_length=64, default=nueva_clave_hmac, editable=False,
@@ -184,6 +188,40 @@ class Validador(models.Model):
 
     def __str__(self):
         return f"Validador {self.numero} {self.descripcion}".strip()
+
+    # --- Lo último que dijo el validador en su HOLA (C1 5.4), para el panel ---
+    def _hola(self, campo):
+        return (self.ultimo_hola or {}).get(campo)
+
+    @property
+    def hola_en(self):
+        """Cuándo llegó el último HOLA (None si nunca)."""
+        recibido = self._hola("recibido")
+        return datetime.fromisoformat(recibido) if recibido else None
+
+    @property
+    def canal(self) -> str:
+        """Enlace del último HOLA; el 2 (4G) quedó reservado y sale como desconocido."""
+        enlace = self._hola("enlace")
+        if enlace is None:
+            return ""
+        return dict(self.Enlace.choices).get(enlace, "desconocido")
+
+    @property
+    def eventos_pendientes(self):
+        return self._hola("pendientes")
+
+    @property
+    def consumo_bytes(self):
+        """Bytes enviados y recibidos hoy, según el último HOLA."""
+        if self._hola("bytes_tx_hoy") is None:
+            return None
+        return self._hola("bytes_tx_hoy") + (self._hola("bytes_rx_hoy") or 0)
+
+    @property
+    def firmware(self):
+        """Versión de firmware (AAAAMMDD) del último HOLA."""
+        return self._hola("version_firmware")
 
     @property
     def clave_hmac_bytes(self) -> bytes:

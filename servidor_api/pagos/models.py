@@ -50,6 +50,7 @@ class OrdenRecarga(models.Model):
 class EventoPasarela(models.Model):
     pasarela = models.CharField(max_length=30)
     id_evento = models.CharField(max_length=100)
+    id_externo = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     tipo = models.CharField(max_length=40, blank=True)
     cuerpo = models.BinaryField()
     firma_valida = models.BooleanField(default=False)
