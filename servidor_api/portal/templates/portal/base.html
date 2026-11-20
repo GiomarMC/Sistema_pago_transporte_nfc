@@ -1,0 +1,50 @@
+{% load static %}
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#10334a">
+  <title>{{ titulo }} · SubePe</title>
+  <link rel="stylesheet" href="{% static 'portal/css/portal.css' %}">
+</head>
+<body data-pagina="{{ pagina }}" data-base="{{ portal_base }}" data-publica="{{ publica|yesno:'1,0' }}">
+  <a class="saltar" href="#contenido">Saltar al contenido</a>
+  <header class="cabecera">
+    <div class="cabecera-interior">
+      <a class="marca" href="{{ portal_base }}" data-nav aria-label="SubePe, ir a Inicio">
+        <span class="marca-icono" aria-hidden="true">S</span><span>SubePe</span>
+      </a>
+      <span class="cabecera-descripcion">Tu transporte, a tu ritmo</span>
+      <span id="modo-prueba" class="modo-prueba" hidden>Modo de prueba</span>
+    </div>
+  </header>
+
+  {% if not publica %}
+  <nav class="navegacion" aria-label="Navegación principal">
+    <a href="{{ portal_base }}" data-nav data-seccion="inicio"><span aria-hidden="true">⌂</span>Inicio</a>
+    <a href="{{ portal_base }}movimientos/" data-nav data-seccion="movimientos"><span aria-hidden="true">≡</span>Movimientos</a>
+    <a href="{{ portal_base }}recargar/" data-nav data-seccion="recargar"><span aria-hidden="true">＋</span>Recargar</a>
+    <a href="{{ portal_base }}tarjeta/" data-nav data-seccion="tarjeta"><span aria-hidden="true">▣</span>Mi tarjeta</a>
+    <a href="{{ portal_base }}perfil/" data-nav data-seccion="perfil"><span aria-hidden="true">•••</span>Más</a>
+  </nav>
+  {% endif %}
+
+  <main id="contenido" class="contenedor" tabindex="-1">
+    {% block contenido %}{% endblock %}
+  </main>
+
+  <div id="aviso" class="aviso" role="status" aria-live="polite" hidden></div>
+  <dialog id="confirmacion" aria-labelledby="confirmacion-titulo">
+    <form method="dialog" class="dialogo-contenido">
+      <h2 id="confirmacion-titulo">Confirmar</h2>
+      <p id="confirmacion-texto"></p>
+      <div class="acciones"><button value="cancelar" class="boton secundario">Cancelar</button>
+        <button value="confirmar" class="boton primario">Confirmar</button></div>
+    </form>
+  </dialog>
+
+  <script type="module" src="{% static 'portal/js/app.js' %}"></script>
+  <script type="module" src="{% static script_pagina %}"></script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{% extends 'portal/base.html' %}{% block contenido %}
+<div class="limitado"><div class="pagina-cabecera"><h1>Ingresa a tu cuenta</h1><p>Consulta tu saldo y gestiona tu tarjeta.</p></div>
+<section class="tarjeta"><p id="credenciales-demo" class="alerta" hidden>Prueba: DNI 45678912, contraseña subepe123 y código 123456.</p>
+<form id="form-ingreso" class="formulario"><div class="campo"><label for="dni">DNI</label><input id="dni" name="dni" inputmode="numeric" autocomplete="username" maxlength="8" pattern="[0-9]{8}" required></div>
+<div class="campo"><label for="clave">Contraseña</label><div class="grupo-input"><input id="clave" type="password" autocomplete="current-password" required><button type="button" id="ver-clave" class="boton secundario" aria-label="Mostrar contraseña">Mostrar</button></div></div>
+<div id="error-ingreso" class="alerta error" role="alert" hidden></div><button class="boton primario ancho">Ingresar</button></form>
+<form id="form-otp" class="formulario" hidden><h2>Confirma tu acceso</h2><p>Ingresa el código de 6 dígitos enviado a tu correo.</p><div class="campo"><label for="otp">Código de verificación</label><input id="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required></div><label><input id="recordar" type="checkbox"> Recordar este dispositivo</label><button class="boton primario ancho">Confirmar</button><button type="button" id="reenviar" class="boton secundario ancho" disabled>Reenviar código (60 s)</button><div id="error-otp" class="alerta error" role="alert" hidden></div></form>
+<p><a href="{{ portal_base }}recuperar/" data-nav>Olvidé mi contraseña</a> · <a href="{{ portal_base }}activar/" data-nav>Activar tarjeta</a></p></section></div>
+{% endblock %}

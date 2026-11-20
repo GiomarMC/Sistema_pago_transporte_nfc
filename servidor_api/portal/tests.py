@@ -42,3 +42,21 @@ class RuteoPorHostTests(TestCase):
         portal = Client(HTTP_HOST=PORTAL)
         portal.cookies = panel.cookies
         self.assertEqual(portal.get("/panel/").status_code, 404)
+
+
+class RutaMiSoloEnDesarrolloTests(TestCase):
+    """El portal bajo /mi/ del dominio principal no se expone en producción (decisión D7)."""
+
+    @override_settings(PORTAL_EN_RUTA_MI=False)
+    def test_en_produccion_mi_responde_404(self):
+        self.assertEqual(self.client.get("/mi/ingresar/").status_code, 404)
+        self.assertEqual(self.client.get("/mi/api/v1/resumen/").status_code, 404)
+
+    @override_settings(PORTAL_EN_RUTA_MI=False)
+    def test_la_pagina_de_reposiciones_del_panel_sigue_disponible(self):
+        # Ruta de M19 (no es del portal): pide sesión, pero no debe dar 404
+        self.assertNotEqual(self.client.get("/mi/reposiciones/").status_code, 404)
+
+    @override_settings(PORTAL_EN_RUTA_MI=True)
+    def test_en_desarrollo_mi_sirve_el_portal(self):
+        self.assertEqual(self.client.get("/mi/ingresar/").status_code, 200)
