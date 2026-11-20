@@ -11,3 +11,7 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
     lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp test_host/test_vecinos.cpp \
     -o /tmp/subepe-m8-test-vecinos
 /tmp/subepe-m8-test-vecinos
+g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
+    lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp lib/Enlaces/EmisorFragmentos.cpp \
+    test_host/test_emisor.cpp -o /tmp/subepe-m8-test-emisor
+/tmp/subepe-m8-test-emisor

@@ -10,11 +10,13 @@ VecinosEspNow *VecinosEspNow::instancia_ = nullptr;
 namespace {
 const uint8_t DIFUSION[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 constexpr size_t COLA_BALIZAS = 8;  // sobra: caben 5 vecinos por segundo
+constexpr size_t COLA_TRAMAS = 16;  // fragmentos por atender; el emisor manda de uno en uno
 }  // namespace
 
 VecinosEspNow::~VecinosEspNow() {
   if (iniciado_) esp_now_deinit();
   if (cola_) vQueueDelete(cola_);
+  if (colaTramas_) vQueueDelete(colaTramas_);
   if (instancia_ == this) instancia_ = nullptr;
 }
 
@@ -39,7 +41,8 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   if (iniciado_) return;
   canal_ = canalWifi ? canalWifi : 1;
   if (!cola_) cola_ = xQueueCreate(COLA_BALIZAS, sizeof(Recibida));
-  if (!cola_) {
+  if (!colaTramas_) colaTramas_ = xQueueCreate(COLA_TRAMAS, sizeof(TramaCruda));
+  if (!cola_ || !colaTramas_) {
     anotar("ESP-NOW: ERROR, no hay memoria para la cola de balizas");
     return;
   }
@@ -62,6 +65,8 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   }
   instancia_ = this;
   esp_now_register_recv_cb(&VecinosEspNow::alRecibir);
+  esp_now_register_send_cb(reinterpret_cast<esp_now_send_cb_t>(&VecinosEspNow::alEnviar));
+  idMensaje_ = esp_random();
   iniciado_ = true;
   programarSiguiente(millis(), true);
   uint8_t propiaMac[6];
@@ -69,17 +74,34 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   anotar("ESP-NOW: iniciado en el canal " + String(canal_) + ", MAC " + macTexto(propiaMac));
 }
 
-// Corre en la tarea del WiFi: solo filtra y encola; la tabla la toca atender()
+// Corre en la tarea del WiFi: solo filtra y encola; la tabla y el reensamblador los toca atender()
 void VecinosEspNow::alRecibir(const uint8_t *mac, const uint8_t *datos, int largo) {
   VecinosEspNow *yo = instancia_;
-  if (!yo || !yo->cola_ || largo < (int)sp::TAM_BALIZA || datos[0] != 'E' || datos[1] != 'N' ||
-      datos[2] != sp::BALIZA)
-    return;  // otras clases de trama (fragmentos, pedidos) son de M8-02
-  Recibida r;
-  memcpy(r.mac, mac, 6);
-  memcpy(r.datos, datos, sp::TAM_BALIZA);
-  yo->recibidas_++;
-  if (xQueueSend(yo->cola_, &r, 0) != pdTRUE) yo->perdidasCola_++;
+  if (!yo || !yo->cola_ || largo < 6 || datos[0] != 'E' || datos[1] != 'N') return;
+  if (datos[2] == sp::BALIZA) {
+    if (largo < (int)sp::TAM_BALIZA) return;
+    Recibida r;
+    memcpy(r.mac, mac, 6);
+    memcpy(r.datos, datos, sp::TAM_BALIZA);
+    yo->recibidas_++;
+    if (xQueueSend(yo->cola_, &r, 0) != pdTRUE) yo->perdidasCola_++;
+  } else if (datos[2] == sp::FRAGMENTO && largo <= (int)sp::TAM_TRAMA_MAXIMO) {
+    TramaCruda t;
+    memcpy(t.mac, mac, 6);
+    t.largo = largo;
+    memcpy(t.datos, datos, largo);
+    if (xQueueSend(yo->colaTramas_, &t, 0) != pdTRUE) yo->tramasPerdidas_++;
+  }
+  // PEDIDO y otras clases: no se usan todavía
+}
+
+// Corre en la tarea del WiFi: la radio dice si el último fragmento dirigido llegó. Las
+// balizas (a difusión) también pasan por aquí y se ignoran.
+void VecinosEspNow::alEnviar(const uint8_t *mac, int estado) {
+  VecinosEspNow *yo = instancia_;
+  if (!yo || memcmp(mac, DIFUSION, 6) == 0) return;
+  yo->avisoLlego_ = estado == ESP_NOW_SEND_SUCCESS;
+  yo->avisoListo_ = true;
 }
 
 void VecinosEspNow::programarSiguiente(uint32_t ahoraMs, bool primera) {
@@ -128,10 +150,111 @@ void VecinosEspNow::atender() {
            String(tabla_.cantidad()));
   }
 
-  if ((int32_t)(ahora - proximaMs_) >= 0) {
+  atenderRecepcion(ahora);
+  atenderEnvio(ahora);
+
+  // Mientras se transfiere un mensaje la radio se deja para los fragmentos; la baliza espera
+  if ((int32_t)(ahora - proximaMs_) >= 0 && !emisor_.ocupado()) {
     enviarBaliza();
     programarSiguiente(ahora, false);
   }
+}
+
+void VecinosEspNow::atenderRecepcion(uint32_t ahoraMs) {
+  TramaCruda t;
+  while (xQueueReceive(colaTramas_, &t, 0) == pdTRUE) {
+    if (reens_.recibir(t.datos, t.largo, ahoraMs) != sp::Reensamblador::Resultado::COMPLETO) continue;
+    if (cuenta_ >= MENSAJES_EN_ESPERA) {  // nadie los está recogiendo
+      sinSitio_++;
+      continue;
+    }
+    MensajeRecibido &m = espera_[(cabeza_ + cuenta_) % MENSAJES_EN_ESPERA];
+    memcpy(m.mac, t.mac, 6);
+    m.largo = reens_.largo();
+    memcpy(m.datos, reens_.mensaje(), m.largo);
+    cuenta_++;
+  }
+  reens_.revisar(ahoraMs);
+}
+
+void VecinosEspNow::atenderEnvio(uint32_t ahoraMs) {
+  if (avisoListo_) {
+    avisoListo_ = false;
+    if (esperandoAviso_) {
+      esperandoAviso_ = false;
+      emisor_.resultado(avisoLlego_, ahoraMs);
+    }
+  }
+  emisor_.revisar(ahoraMs);
+  if (esperandoAviso_ && !emisor_.ocupado()) esperandoAviso_ = false;
+
+  const EmisorFragmentos::Fin fin = emisor_.tomarFin();
+  if (fin == EmisorFragmentos::Fin::ENTREGADO) {
+    enviados_++;
+    soltarDestino();
+  } else if (fin == EmisorFragmentos::Fin::ABORTADO) {
+    abortados_++;
+    anotar("ESP-NOW: mensaje a " + macTexto(destino_) + " ABORTADO: un fragmento no llegó tras " +
+           String(EmisorFragmentos::REINTENTOS) + " reintentos");
+    soltarDestino();
+  }
+
+  if (emisor_.ocupado() && !esperandoAviso_) {
+    uint8_t trama[sp::TAM_TRAMA_MAXIMO];
+    const size_t largo = emisor_.siguienteTrama(trama, ahoraMs);
+    if (largo == 0) return;
+    if (esp_now_send(destino_, trama, largo) == ESP_OK) {
+      esperandoAviso_ = true;
+      avisoListo_ = false;
+    } else {
+      erroresEnvio_++;
+      emisor_.resultado(false, ahoraMs);  // la radio no la aceptó: cuenta como un fallo
+    }
+  }
+}
+
+void VecinosEspNow::soltarDestino() {
+  if (hayDestino_) esp_now_del_peer(destino_);
+  hayDestino_ = false;
+}
+
+VecinosEspNow::Envio VecinosEspNow::enviar(const uint8_t mac[6], const uint8_t *mensaje, size_t largo) {
+  if (!activo()) return Envio::PAUSADO;
+  if (mensaje == nullptr || largo == 0 || largo > MAX_MENSAJE) return Envio::MENSAJE_INVALIDO;
+  if (emisor_.ocupado()) return Envio::OCUPADO;
+  if (!tabla_.esVecino(mac)) return Envio::NO_ES_VECINO;
+
+  esp_now_peer_info_t par = {};
+  memcpy(par.peer_addr, mac, 6);
+  par.channel = 0;  // el canal actual de la radio
+  par.ifidx = WIFI_IF_STA;
+  par.encrypt = false;
+  const bool existia = esp_now_is_peer_exist(mac);
+  if (!existia && esp_now_add_peer(&par) != ESP_OK) return Envio::ERROR_RADIO;
+
+  if (tabla_.reservarEnvio(mac) != TablaVecinos::Reserva::CONCEDIDA) {
+    if (!existia) esp_now_del_peer(mac);
+    return Envio::LIMITE_ALCANZADO;
+  }
+  memcpy(destino_, mac, 6);
+  hayDestino_ = !existia;  // solo se retira el par que se registró para esta transferencia
+  emisor_.iniciar(mensaje, largo, propia_.validador, ++idMensaje_);
+  esperandoAviso_ = false;
+  return Envio::ACEPTADO;
+}
+
+size_t VecinosEspNow::recibir(uint8_t *buf, size_t max, uint8_t *macOrigen) {
+  if (cuenta_ == 0) return 0;
+  MensajeRecibido &m = espera_[cabeza_];
+  const size_t largo = m.largo;
+  if (macOrigen) memcpy(macOrigen, m.mac, 6);
+  const size_t copia = largo < max ? largo : max;
+  if (buf && copia) memcpy(buf, m.datos, copia);
+  cabeza_ = (cabeza_ + 1) % MENSAJES_EN_ESPERA;
+  cuenta_--;
+  if (largo > max) return 0;  // no cabía: se pierde, pero no se queda atascado
+  recibidosOk_++;
+  return largo;
 }
 
 void VecinosEspNow::pausar(bool si) {
@@ -140,8 +263,17 @@ void VecinosEspNow::pausar(bool si) {
   if (si) {
     // Pausado no se oye a nadie: la tabla dejaría de ser verdad
     tabla_.vaciar();
+    emisor_.cancelar();
+    esperandoAviso_ = false;
+    avisoListo_ = false;
+    soltarDestino();
+    reens_ = sp::Reensamblador();
+    cuenta_ = 0;
     Recibida descartada;
     while (xQueueReceive(cola_, &descartada, 0) == pdTRUE) {
+    }
+    TramaCruda descartadaT;
+    while (xQueueReceive(colaTramas_, &descartadaT, 0) == pdTRUE) {
     }
     anotar("ESP-NOW: en pausa (el WiFi usa otro canal)");
   } else {
