@@ -1,4 +1,5 @@
 from django.http import JsonResponse
+from django.db import IntegrityError, transaction
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny
@@ -25,10 +26,23 @@ def salida(orden, detalle=False):
 def titular(request):
     if not request.user.is_authenticated:
         return None, error("no_autenticado", "Inicia sesión", 401)
+    from clientes.models import Cliente
+    cliente = Cliente.objects.filter(usuario=request.user).first()
     try:
-        return ClienteCuenta.objects.select_related("cuenta").get(usuario=request.user), None
+        enlace = ClienteCuenta.objects.select_related("cuenta").get(usuario=request.user)
     except ClienteCuenta.DoesNotExist:
-        return None, error("prohibido", "No hay cuenta de cliente asociada", 403)
+        # M12 registra la titularidad en Cliente; M11 conserva este enlace mínimo.
+        if cliente is None:
+            return None, error("prohibido", "No hay cuenta de cliente asociada", 403)
+        try:
+            with transaction.atomic():
+                enlace, _ = ClienteCuenta.objects.get_or_create(
+                    usuario=request.user, defaults={"cuenta_id": cliente.cuenta_id})
+        except IntegrityError:
+            return None, error("prohibido", "Titularidad de cuenta inconsistente", 403)
+    if cliente is not None and enlace.cuenta_id != cliente.cuenta_id:
+        return None, error("prohibido", "Titularidad de cuenta inconsistente", 403)
+    return enlace, None
 
 
 @api_view(["GET", "POST"])

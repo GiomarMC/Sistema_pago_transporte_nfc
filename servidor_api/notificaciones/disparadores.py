@@ -40,6 +40,13 @@ def intentar_sin_interrumpir(funcion, *args):
 
 def correo_verificado(cuenta):
     """Dirección a la que notificar, o None si el cliente no tiene correo verificado."""
+    # Si existe identidad M12, su verificación prevalece sobre el correo
+    # heredado en Cuenta; evita avisar a una dirección anterior del cliente.
+    from clientes.models import Cliente
+    cliente = Cliente.objects.filter(cuenta_id=cuenta.pk).values(
+        "correo", "correo_verificado").first()
+    if cliente is not None:
+        return cliente["correo"] if cliente["correo_verificado"] else None
     if cuenta.correo and cuenta.correo_verificado_en is not None:
         return cuenta.correo
     return None
@@ -72,13 +79,15 @@ def al_bloquear(tarjeta):
 
 
 def al_reposicion_lista(solicitud):
-    """Avisa una sola vez cuando la reposición queda lista para recoger."""
+    """Avisa una sola vez cuando la reposición queda lista o se entrega en emisión."""
     cuenta = solicitud.tarjeta.cuenta
     destino = correo_verificado(cuenta)
     if destino is None:
         return []
     return [notificar(destino, "reposicion_lista", nombre=cuenta.nombre,
                       tarjeta=solicitud.tarjeta_id,
+                      tarjeta_nueva=solicitud.tarjeta_nueva_id,
+                      entregada=solicitud.estado == "entregada",
                       _clave=f"reposicion_lista:{solicitud.pk}")]
 
 

@@ -1,6 +1,6 @@
 {% extends "notificaciones/_base.html" %}
 {% block contenido %}
-<h1 style="font-size:20px;margin:0 0 12px 0;">Tarjeta de reemplazo lista</h1>
-<p>Hola {{ nombre }}, tu tarjeta de reemplazo N.º <strong>{{ tarjeta }}</strong> ya está preparada.</p>
-<p>Tu saldo pasará a esa tarjeta cuando la uses en un validador del bus.</p>
+<h1 style="font-size:20px;margin:0 0 12px 0;">{% if entregada %}Tarjeta de reemplazo entregada{% else %}Tarjeta de reemplazo lista{% endif %}</h1>
+<p>Hola {{ nombre }}, {% if entregada %}tu tarjeta de reemplazo N.º <strong>{{ tarjeta_nueva }}</strong> fue emitida y entregada.{% else %}tu reposición de la tarjeta N.º <strong>{{ tarjeta }}</strong> está lista para recoger.{% endif %}</p>
+<p>Tu saldo permanece en tu cuenta.</p>
 {% endblock %}

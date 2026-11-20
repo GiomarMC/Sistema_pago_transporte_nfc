@@ -250,6 +250,25 @@ def confirmar_emision(id_tarjeta, contador=None, emitido_por=None):
     if not tiene_cliente(cuenta.pk):
         tarjeta.codigo_activacion, registro = generar_codigo(tarjeta, emitido_por)
         tarjeta.codigo_activacion_expira = registro.expira
+    # La entrega solo se confirma después de grabar y verificar la tarjeta física.
+    # La cuenta ya está bloqueada: serializa emisiones y solicitudes de esta cuenta.
+    from panel.models import SolicitudReposicion
+    from notificaciones.disparadores import al_reposicion_lista, intentar_sin_interrumpir
+    tarjeta.reposiciones_entregadas_ids = []
+    solicitudes = SolicitudReposicion.objects.select_for_update().select_related("tarjeta").filter(
+        cliente__cuenta_id=cuenta.pk).exclude(estado=SolicitudReposicion.Estado.ENTREGADA)
+    for solicitud in solicitudes:
+        avisar = solicitud.estado == SolicitudReposicion.Estado.SOLICITADA
+        solicitud.estado = SolicitudReposicion.Estado.ENTREGADA
+        solicitud.lista_en = solicitud.lista_en or ahora
+        solicitud.entregada_en = ahora
+        solicitud.tarjeta_nueva = tarjeta
+        solicitud.gestionada_por = emitido_por
+        solicitud.save(update_fields=["estado", "lista_en", "entregada_en",
+                                      "tarjeta_nueva", "gestionada_por"])
+        tarjeta.reposiciones_entregadas_ids.append(solicitud.pk)
+        if avisar:
+            intentar_sin_interrumpir(al_reposicion_lista, solicitud)
     return tarjeta, reemplazadas
 
 
