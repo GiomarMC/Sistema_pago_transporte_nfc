@@ -30,6 +30,9 @@ Arduino_GFX *gfx = new Arduino_SSD1283A(bus, PIN_RST, 0 /* rotación */);
 
 String esperaLinea1 = "Validador";
 String esperaLinea2 = "";
+String canalActual = "-";
+int8_t senalActual = 0;
+uint16_t pendientesActuales = 0;
 uint32_t volverAEsperaEn = 0;   // 0 = la pantalla de espera ya está dibujada
 bool informacionFija = false;   // pantalla de información: no se sustituye sola
 
@@ -90,6 +93,15 @@ void pantallaResultado(char tipo, const String lineas[3]) {
 
 void pantallaEspera() {
   gfx->fillScreen(COLOR_ESPERA);
+  gfx->setTextSize(1);
+  gfx->setTextColor(BLANCO);
+  gfx->setCursor(4, 2);
+  gfx->print(canalActual);
+  gfx->setCursor(36, 2);
+  if (senalActual) gfx->print(String(senalActual));
+  gfx->setCursor(84, 2);
+  gfx->print("P:");
+  gfx->print(pendientesActuales);
   // Símbolo de "acercar tarjeta": rectángulo con ondas
   gfx->drawRoundRect(45, 14, 40, 28, 4, BLANCO);
   gfx->fillRect(51, 20, 10, 8, BLANCO);
@@ -124,6 +136,12 @@ void espera(const String &l1, const String &l2) {
   esperaLinea1 = l1;
   esperaLinea2 = l2;
   if (volverAEsperaEn == 0 && !informacionFija) pantallaEspera();
+}
+
+void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
+  canalActual = canal ? canal : "-";
+  senalActual = senal;
+  pendientesActuales = pendientes;
 }
 
 void actualizar() {

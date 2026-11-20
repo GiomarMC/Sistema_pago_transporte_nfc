@@ -26,6 +26,7 @@
 #include <LectorPN532.h>
 #include <LectorPuente.h>
 #include <PantallaUI.h>
+#include <WiFi.h>
 #include <string.h>
 
 #include "almacen.h"
@@ -55,6 +56,22 @@ Sincronizador sincronizador(almacen, log);
 PortalWifi portal(almacen, log);
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
 uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
+
+#ifdef M15_MEDIR_LOOP
+struct MedirLoop {
+  uint32_t inicio = micros();
+  ~MedirLoop() {
+    static uint32_t maximoUs = 0, ultimoReporte = 0;
+    const uint32_t duracion = micros() - inicio;
+    if (duracion > maximoUs) maximoUs = duracion;
+    if (millis() - ultimoReporte >= 10000) {
+      Serial.println("# M15 loop_max_us=" + String(maximoUs));
+      maximoUs = 0;
+      ultimoReporte = millis();
+    }
+  }
+};
+#endif
 
 // true cuando BOOT lleva PULSACION_PORTAL ms pulsado
 bool botonMantenido() {
@@ -189,6 +206,9 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
 }
 
 void pantallaEspera() {
+  const bool wifiLista = WiFi.status() == WL_CONNECTED;
+  ui::estadoCanal(wifiLista ? "W" : "-", wifiLista ? static_cast<int8_t>(WiFi.RSSI() / 2) : 0,
+                  static_cast<uint16_t>(min(almacen.pendientes(), static_cast<uint32_t>(65535))));
   if (!almacen.listo()) {
     ui::espera("Error microSD", "Revise la tarjeta SD");
   } else if (!lector.conectado()) {
@@ -245,6 +265,15 @@ void iniciarLector() {
   ultimoIntentoLector = millis();
 }
 
+void comprobarModoSync() {
+  static String modoAvisado;
+  const String pedido = almacen.config("sync");
+  if (pedido == modoAvisado) return;
+  modoAvisado = pedido;
+  if (pedido == "v2") log("sync=v2 aún no disponible: falta SincronizadorV2 y los enlaces; se mantiene v1");
+  else if (pedido.length() && pedido != "v1") log("sync desconocido; se mantiene v1");
+}
+
 }  // namespace
 
 void setup() {
@@ -254,12 +283,17 @@ void setup() {
   pinMode(PIN_BOOT, INPUT_PULLUP);
   almacen.iniciar();
   iniciarLector();
+  comprobarModoSync();
   pantallaEspera();
   // Sin ninguna red guardada, el portal se abre solo (se cierra a los 10 min sin uso)
   if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) portal.iniciar();
 }
 
 void loop() {
+#ifdef M15_MEDIR_LOOP
+  MedirLoop medirLoop;
+#endif
+  comprobarModoSync();
   if (portal.activo()) {
     // Mientras se configura el WiFi no se cobra
     if (portal.atender()) {

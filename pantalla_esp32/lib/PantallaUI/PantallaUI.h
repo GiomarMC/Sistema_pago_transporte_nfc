@@ -15,6 +15,10 @@ void resultado(char tipo, const String &l1, const String &l2 = "", const String 
 // Cambia las dos líneas pequeñas de la pantalla de espera (no interrumpe un resultado).
 void espera(const String &l1, const String &l2);
 
+// Barra superior de espera: canal activo (W, BT o -), señal en dBm/2
+// y cantidad de eventos pendientes. No interrumpe la pantalla de resultado.
+void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes);
+
 // Llamar en cada vuelta de loop(): vuelve a la espera cuando toca.
 void actualizar();
 
