@@ -140,8 +140,10 @@ class DisparadoresTests(TestCase):
             disparadores.al_registrar_viaje(self.viaje(saldo=100, ref="V101-1"))
         Notificacion.objects.update(creada=timezone.now() - timedelta(days=1))
 
-        with self.captureOnCommitCallbacks(execute=True):
-            disparadores.al_registrar_viaje(self.viaje(saldo=100, ref="V101-2"))
+        manana = timezone.localdate() + timedelta(days=1)
+        with mock.patch("notificaciones.disparadores.timezone.localdate", return_value=manana):
+            with self.captureOnCommitCallbacks(execute=True):
+                disparadores.al_registrar_viaje(self.viaje(saldo=100, ref="V101-2"))
 
         self.assertEqual(Notificacion.objects.filter(tipo="saldo_bajo").count(), 2)
 

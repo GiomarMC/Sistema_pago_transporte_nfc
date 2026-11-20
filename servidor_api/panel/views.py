@@ -271,18 +271,13 @@ def gestionar_reposicion(request, solicitud_id):
         solicitud = get_object_or_404(
             SolicitudReposicion.objects.select_for_update().select_related("cliente__usuario"), pk=solicitud_id)
         if accion == "lista" and solicitud.estado == SolicitudReposicion.Estado.SOLICITADA:
-            correo = solicitud.cliente.usuario.email
-            if not correo:
-                return HttpResponseBadRequest("El cliente necesita correo para recibir la notificación.")
             solicitud.estado = SolicitudReposicion.Estado.LISTA
             solicitud.lista_en = timezone.now()
             solicitud.gestionada_por = request.user
             solicitud.save(update_fields=["estado", "lista_en", "gestionada_por"])
-            from django.core.mail import send_mail
-            transaction.on_commit(lambda: send_mail(
-                "Tu reposición está lista", "Tu nueva tarjeta está lista para recoger.",
-                None, [correo]))
-            messages.success(request, "Reposición marcada como lista; cliente notificado.")
+            from notificaciones.disparadores import al_reposicion_lista, intentar_sin_interrumpir
+            intentar_sin_interrumpir(al_reposicion_lista, solicitud)
+            messages.success(request, "Reposición marcada como lista; el aviso se envía si hay correo verificado.")
         elif accion == "entregada" and solicitud.estado == SolicitudReposicion.Estado.LISTA:
             solicitud.estado = SolicitudReposicion.Estado.ENTREGADA
             solicitud.entregada_en = timezone.now()

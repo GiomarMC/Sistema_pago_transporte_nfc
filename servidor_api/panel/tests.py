@@ -16,6 +16,7 @@ from transporte.models import Alerta, Cuenta, Movimiento, Tarifa, Tarjeta, Valid
 from transporte import servicios as transporte_servicios
 from pagos.models import ClienteCuenta, CobroSimulado, EventoPasarela, OrdenRecarga
 from pagos.servicios import crear_orden, confirmar_cobro
+from notificaciones.models import Notificacion
 from .models import ConciliacionPago, SolicitudReposicion, VerificacionLibro
 
 
@@ -226,7 +227,8 @@ class M19Tests(TestCase):
         self.cliente = User.objects.create_user(
             username="m19-cliente", password="prueba", email="cliente@example.com")
         self.cuenta = Cuenta.objects.create(
-            nombre="Cliente M19", documento="M19-123", tarifa=Tarifa.objects.get(pk=1))
+            nombre="Cliente M19", documento="M19-123", tarifa=Tarifa.objects.get(pk=1),
+            correo="cliente@example.com", correo_verificado_en=timezone.now())
         self.vinculo = ClienteCuenta.objects.create(usuario=self.cliente, cuenta=self.cuenta)
 
     def test_ordenes_filtros_detalle_eventos_y_reembolso_solo_operador(self):
@@ -310,7 +312,8 @@ class M19Tests(TestCase):
         self.client.force_login(self.operador)
         self.assertContains(self.client.get(reverse("panel:ordenes_pago")), "0 diferencias")
 
-    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    @override_settings(MAILERS={"default": {
+        "BACKEND": "django.core.mail.backends.locmem.EmailBackend"}})
     def test_reposicion_cambia_en_portal_y_notifica_cliente(self):
         tarjeta = Tarjeta.objects.create(uid="M19-BLOQUEADA", cuenta=self.cuenta,
                                          estado=Tarjeta.Estado.BLOQUEADA)
@@ -326,6 +329,7 @@ class M19Tests(TestCase):
             self.assertEqual(self.client.post(ruta, {"accion": "lista"}).status_code, 302)
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, [self.cliente.email])
+        self.assertEqual(Notificacion.objects.filter(tipo="reposicion_lista").count(), 1)
         self.client.force_login(self.cliente)
         self.assertContains(self.client.get("/mi/reposiciones/"), "Tu nueva tarjeta está lista para recoger")
         self.assertEqual(self.client.get("/api/v1/reposiciones/").json()[0]["estado"], "lista")
@@ -338,6 +342,24 @@ class M19Tests(TestCase):
             data=json.dumps({"tarjeta_id": tarjeta.pk}), content_type="application/json")
         self.assertEqual(repetida.status_code, 200)
         self.assertEqual(SolicitudReposicion.objects.count(), 1)
+
+    def test_reposicion_sin_correo_verificado_actualiza_estado_sin_enviar(self):
+        self.cuenta.correo_verificado_en = None
+        self.cuenta.save(update_fields=["correo_verificado_en"])
+        tarjeta = Tarjeta.objects.create(uid="M19-SIN-CORREO", cuenta=self.cuenta,
+                                         estado=Tarjeta.Estado.BLOQUEADA)
+        self.client.force_login(self.cliente)
+        respuesta = self.client.post("/api/v1/reposiciones/",
+            data=json.dumps({"tarjeta_id": tarjeta.pk}), content_type="application/json")
+        self.assertEqual(respuesta.status_code, 201)
+        solicitud = SolicitudReposicion.objects.get(pk=respuesta.json()["id"])
+        self.client.force_login(self.operador)
+        self.assertEqual(self.client.post(
+            reverse("panel:gestionar_reposicion", args=[solicitud.pk]),
+            {"accion": "lista"}).status_code, 302)
+        solicitud.refresh_from_db()
+        self.assertEqual(solicitud.estado, "lista")
+        self.assertFalse(Notificacion.objects.filter(tipo="reposicion_lista").exists())
 
     def test_reposicion_no_acepta_tarjeta_ajena_ni_duplicados(self):
         propia = Tarjeta.objects.create(uid="M19-PROPIA", cuenta=self.cuenta,

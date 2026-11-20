@@ -3,6 +3,7 @@
 Los módulos conectan estas funciones a sus servicios:
   - M11 (pagos y recargas): al_acreditar(orden)
   - M12 (identidad y seguridad): al_bloquear(tarjeta) y el resto de avisos de cuenta
+  - M19 (panel): al_reposicion_lista(solicitud)
   - M17 (validador): al_registrar_viaje(movimiento)
 
 Reglas que aplican todas:
@@ -11,6 +12,9 @@ Reglas que aplican todas:
   - Cada función devuelve la lista de notificaciones generadas (puede estar vacía).
 """
 
+import logging
+
+from django.db import transaction
 from django.utils import timezone
 
 from transporte.models import Alerta, soles
@@ -21,6 +25,17 @@ from .servicios import notificar
 ALERTA_USO_NO_ACTIVA = "uso de tarjeta no activa"  # tipo que crea transporte.servicios
 SALDO_BAJO_FACTOR = 2                              # saldo bajo: saldo < 2 × tarifa
 TIPO_SALDO_BAJO = "saldo_bajo"
+logger = logging.getLogger(__name__)
+
+
+def intentar_sin_interrumpir(funcion, *args):
+    """Prepara un aviso aislado en un savepoint: si falla, el cobro o el bloqueo siguen intactos."""
+    try:
+        with transaction.atomic():
+            return funcion(*args)
+    except Exception:
+        logger.exception("No se pudo preparar la notificación %s", funcion.__name__)
+        return []
 
 
 def correo_verificado(cuenta):
@@ -41,7 +56,8 @@ def al_acreditar(orden):
     if destino is None:
         return []
     return [notificar(destino, "recarga_acreditada", nombre=cuenta.nombre,
-                      monto=soles(orden.monto), fecha=_fecha())]
+                      monto=soles(orden.monto), fecha=_fecha(),
+                      _clave=f"recarga_acreditada:{orden.pk}")]
 
 
 def al_bloquear(tarjeta):
@@ -51,7 +67,19 @@ def al_bloquear(tarjeta):
     if destino is None:
         return []
     return [notificar(destino, "tarjeta_bloqueada", nombre=cuenta.nombre, tarjeta=tarjeta.id,
-                      fecha=_fecha(tarjeta.bloqueada_en))]
+                      fecha=_fecha(tarjeta.bloqueada_en),
+                      _clave=f"tarjeta_bloqueada:{tarjeta.pk}")]
+
+
+def al_reposicion_lista(solicitud):
+    """Avisa una sola vez cuando la reposición queda lista para recoger."""
+    cuenta = solicitud.tarjeta.cuenta
+    destino = correo_verificado(cuenta)
+    if destino is None:
+        return []
+    return [notificar(destino, "reposicion_lista", nombre=cuenta.nombre,
+                      tarjeta=solicitud.tarjeta_id,
+                      _clave=f"reposicion_lista:{solicitud.pk}")]
 
 
 def al_registrar_viaje(movimiento):
@@ -69,7 +97,8 @@ def al_registrar_viaje(movimiento):
         tipo=ALERTA_USO_NO_ACTIVA, detalle__startswith=f"{movimiento.ref}:").exists()
     if alerta_de_uso:
         enviadas.append(notificar(destino, "uso_tarjeta_bloqueada", nombre=cuenta.nombre,
-                                  tarjeta=movimiento.tarjeta_id, fecha=_fecha(movimiento.fecha)))
+                                  tarjeta=movimiento.tarjeta_id, fecha=_fecha(movimiento.fecha),
+                                  _clave=f"uso_tarjeta_bloqueada:{movimiento.ref}"))
 
     precio = cuenta.tarifa.precio
     saldo_bajo = cuenta.saldo < SALDO_BAJO_FACTOR * precio
@@ -77,5 +106,6 @@ def al_registrar_viaje(movimiento):
         destinatario=destino, tipo=TIPO_SALDO_BAJO, creada__date=timezone.localdate()).exists()
     if saldo_bajo and not ya_avisado_hoy:
         enviadas.append(notificar(destino, TIPO_SALDO_BAJO, nombre=cuenta.nombre,
-                                  saldo=soles(cuenta.saldo), tarifa=soles(precio)))
+                                  saldo=soles(cuenta.saldo), tarifa=soles(precio),
+                                  _clave=f"saldo_bajo:{cuenta.pk}:{timezone.localdate().isoformat()}"))
     return enviadas

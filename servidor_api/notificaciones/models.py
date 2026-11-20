@@ -15,6 +15,8 @@ class Notificacion(models.Model):
 
     destinatario = models.EmailField()
     tipo = models.CharField(max_length=50)
+    clave = models.CharField(max_length=120, unique=True, null=True, blank=True,
+                             help_text="Clave estable para evitar avisos duplicados.")
     asunto = models.CharField(max_length=255)
     texto = models.TextField(help_text="Versión en texto plano.")
     html = models.TextField(help_text="Versión HTML.")
