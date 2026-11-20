@@ -46,14 +46,15 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "0") == "1"
 PORTAL_EN_RUTA_MI = os.environ.get("PORTAL_EN_RUTA_MI", "1" if DEBUG else "0") == "1"
 
 ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost").split(",")]
-
 # Portal de clientes (mi.subepe.app; en local, mi.localhost). Sus rutas son portal.urls.
 # SESSION_COOKIE_DOMAIN queda sin definir a propósito: cada cookie de sesión vale solo
 # para su host, así que entrar en el panel no da acceso al portal ni al revés.
-DOMINIO_CLIENTE = os.environ.get("DOMINIO_CLIENTE", "").strip()
+DOMINIO_CLIENTE = os.environ.get("DOMINIO_CLIENTE", "mi.localhost").strip().lower()
+DOMINIOS_PRINCIPALES = {h.strip().lower() for h in os.environ.get("DOMINIO", "").split(",") if h.strip()}
 if DOMINIO_CLIENTE and DOMINIO_CLIENTE not in ALLOWED_HOSTS and "*" not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(DOMINIO_CLIENTE)
 URLCONF_PORTAL = "portal.urls"
+URLCONF_PRINCIPAL = "config.urls_main"
 
 # Despliegue con HTTPS detrás de Caddy (docker-compose.prod.yml): Caddy recibe
 # HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original.
@@ -151,6 +152,7 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+PASSWORD_RESET_TIMEOUT = 1800
 
 
 # Internationalization

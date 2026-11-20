@@ -118,6 +118,8 @@ class CodigoOTP(CodigoHasheado):
                                 related_name="codigos_otp")
     token_activacion = models.CharField(max_length=64, null=True, blank=True, db_index=True,
                                         help_text="SHA-256 del token de activación")
+    correo_destino = models.EmailField(blank=True)
+    creado = models.DateTimeField(default=timezone.now, editable=False)
     proposito = models.CharField(max_length=10, choices=Proposito.choices)
     expira = models.DateTimeField(default=expira_otp)
     intentos = models.PositiveSmallIntegerField(default=0)
@@ -160,6 +162,7 @@ class IntentoAcceso(models.Model):
     exito = models.BooleanField()
     fecha = models.DateTimeField(auto_now_add=True)
     motivo = models.CharField(max_length=60, blank=True)
+    dispositivo = models.CharField(max_length=120, blank=True)
 
     class Meta:
         ordering = ["-fecha", "-id"]

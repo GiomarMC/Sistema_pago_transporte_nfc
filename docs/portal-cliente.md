@@ -4,7 +4,7 @@ Interfaz web de `mi.subepe.app`: HTML con plantillas de Django y JavaScript sin 
 
 ## Cómo se sirve
 
-- **Producción:** solo en el host `mi.<dominio>` (ruteo por host, M12-02). Las rutas son `/ingresar/`, `/activar/`, `/movimientos/`, etc.
+- **Producción:** solo en el host `DOMINIO_CLIENTE` (ruteo por host: `config/middleware.py`). Las rutas son `/ingresar/`, `/activar/`, `/movimientos/`, etc., y ahí mismo viven `/api/v1/` y `/pagos/simulador/`.
 - **Desarrollo:** además bajo `/mi/` del dominio principal, solo si `PORTAL_EN_RUTA_MI=1` (por defecto activo con `DJANGO_DEBUG=1`). En producción esa ruta responde 404 para que la sesión del portal no comparta host con el panel (decisión D7).
 
 ## Capas del JavaScript
@@ -26,7 +26,7 @@ En Recargar, el simulador no usa pasarela: la orden pasa a pagada a los 2 s y a 
 
 ## Con el servidor real
 
-Sin `simulado=1`, `cliente.js` usa `api.js` con la sesión y el CSRF de Django. Hoy responde la parte de recargas (M11); las rutas de sesión, activación, resumen, perfil, seguridad y bloqueo llegan con M12. Falta además la extensión de C4 `POST /api/v1/sesion/otp/reenviar/` (reenviar el código de inicio de sesión), que M12 debe agregar al contrato.
+Sin `simulado=1`, `cliente.js` usa `api.js` con la sesión y el CSRF de Django, y las rutas de activación, sesión, contraseña, resumen, movimientos, perfil, seguridad, bloqueo, reposiciones y recargas están conectadas (M12, M17, M20). Falta en el contrato C4 la extensión `POST /api/v1/sesion/otp/reenviar/` (reenviar el código de inicio de sesión), que el servidor ya atiende. El simulador de M11 devuelve al cliente a `/recargar/resultado/?orden=…` en el host dedicado o a `/mi/recargar/resultado/?orden=…` en desarrollo. El resultado muestra éxito solo con estado `acreditada`. No hay pasarela bancaria real configurada.
 
 ## Verificación
 
