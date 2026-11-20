@@ -33,7 +33,8 @@ class PaginasPortalTests(SimpleTestCase):
                 self.assertIn("csrftoken", respuesta.cookies)
 
     def test_verificacion_sun_sigue_disponible(self):
-        self.assertEqual(self.client.get("/mi/t").status_code, 501)
+        # Sin p ni m el enlace no es válido; los demás casos están en tests_sun.py
+        self.assertEqual(self.client.get("/mi/t").status_code, 400)
 
     def test_identificadores_unicos_en_cada_pagina(self):
         for ruta in self.rutas:
