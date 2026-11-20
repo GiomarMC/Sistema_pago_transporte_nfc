@@ -27,6 +27,9 @@
 #include <LectorPuente.h>
 #include <EnlaceWifi.h>
 #include <PantallaUI.h>
+#include <esp_system.h>
+#include <esp_task_wdt.h>
+#include <rom/ets_sys.h>
 #include <string.h>
 
 #include "almacen.h"
@@ -34,10 +37,23 @@
 #include "raices_tls.h"
 #include "sincronizador.h"
 
+// Último paso en que entró el programa. Si el watchdog salta, dice dónde se quedó atascado
+// (la traza de la pila que imprime el sistema no sirve: es la del propio watchdog).
+static const char *volatile pasoActual = "arranque";
+#define PASO(texto) (pasoActual = (texto))
+extern "C" void esp_task_wdt_isr_user_handler(void) {
+  ets_printf("\n#WATCHDOG: el programa se bloqueó en el paso: %s\n", pasoActual);
+}
+
 namespace {
 
 constexpr uint32_t MARGEN_DOBLE_TOQUE = 60;            // s: otro toque aquí no se cobra
 constexpr uint8_t PIN_BOOT = 0;                        // botón BOOT de la placa
+// Si el bucle principal no avisa en este tiempo, la placa se reinicia sola e imprime
+// dónde estaba atascada. Lo más largo que hace el validador sin dar una vuelta es una
+// sincronización HTTPS (conexión 5 s + TLS hasta 10 s + respuesta 8 s, unos 25 s en el
+// peor caso), así que 45 s deja margen sin ocultar un bloqueo de minutos.
+constexpr uint32_t WATCHDOG_S = 45;
 constexpr uint32_t PULSACION_PORTAL = 3000;            // ms pulsado para abrir el portal WiFi
 
 // PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32
@@ -277,25 +293,68 @@ void comprobarModoSync() {
   else if (pedido.length() && pedido != "v1") log("sync desconocido; se mantiene v1");
 }
 
+// Por qué arrancó la placa; un reinicio del watchdog o por caída de tensión se ve aquí
+void registrarMotivoReinicio() {
+  const char *motivo = "desconocido";
+  switch (esp_reset_reason()) {
+    case ESP_RST_POWERON: motivo = "encendido"; break;
+    case ESP_RST_SW: motivo = "reinicio por programa"; break;
+    case ESP_RST_PANIC: motivo = "error del programa (panic)"; break;
+    case ESP_RST_INT_WDT: motivo = "WATCHDOG de interrupciones"; break;
+    case ESP_RST_TASK_WDT: motivo = "WATCHDOG: el programa se bloqueó"; break;
+    case ESP_RST_WDT: motivo = "WATCHDOG de hardware"; break;
+    case ESP_RST_BROWNOUT: motivo = "CAÍDA DE TENSIÓN (brownout)"; break;
+    case ESP_RST_DEEPSLEEP: motivo = "salida de sueño profundo"; break;
+    case ESP_RST_EXT: motivo = "pin EN (botón o puerto serie)"; break;
+    default: break;
+  }
+  log(String("Arranque: ") + motivo);
+}
+
+void activarWatchdog() {
+  // El framework ya lo trae encendido con 5 s y solo vigila la tarea ociosa de la CPU 0;
+  // se reconfigura y se suscribe el bucle principal (esta tarea) para vigilarlo a él
+  if (esp_task_wdt_init(WATCHDOG_S, true) != ESP_OK) log("AVISO: no se pudo configurar el watchdog");
+  if (esp_task_wdt_add(nullptr) != ESP_OK) log("AVISO: no se pudo suscribir el bucle al watchdog");
+}
+
 }  // namespace
 
 void setup() {
   Serial.begin(115200);
+  activarWatchdog();  // desde el principio: también vigila un cuelgue durante setup()
+  registrarMotivoReinicio();
+  PASO("setup: ui::iniciar");
   ui::iniciar();
+  PASO("setup: pantalla Iniciando");
   ui::espera("Validador", "Iniciando...");
   pinMode(PIN_BOOT, INPUT_PULLUP);
+  PASO("setup: microSD");
   almacen.iniciar();
+  PASO("setup: lector PN532");
   iniciarLector();
+  PASO("setup: modo sync");
   comprobarModoSync();
+  PASO("setup: pantalla de espera");
   pantallaEspera();
+  PASO("setup: portal");
   // Sin ninguna red guardada, el portal se abre solo (se cierra a los 10 min sin uso)
   if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) portal.iniciar();
 }
 
 void loop() {
+  esp_task_wdt_reset();  // el bucle sigue vivo
+#ifdef WATCHDOG_PRUEBA
+  // Solo para comprobar el watchdog (-DWATCHDOG_PRUEBA): a los 60 s se bloquea a propósito
+  if (millis() > 60000) {
+    log("PRUEBA: bloqueo a propósito, el watchdog debe reiniciar la placa");
+    while (true) delay(1000);
+  }
+#endif
 #ifdef M15_MEDIR_LOOP
   MedirLoop medirLoop;
 #endif
+  PASO("loop: portal");
   comprobarModoSync();
   if (portal.activo()) {
     // Mientras se configura el WiFi no se cobra
@@ -312,29 +371,37 @@ void loop() {
     delay(2);
     return;
   }
+  PASO("loop: botón BOOT");
   if (botonMantenido() && almacen.listo() && almacen.configurado()) {
     portal.iniciar();
     return;
   }
 
+  PASO("loop: ui::actualizar");
   ui::actualizar();
+  PASO("loop: sincronizador");
   if (sincronizador.atender()) {
     if (sincronizador.horaServidor()) {  // la hora del servidor permite cobrar sin el puente
       baseUnix = sincronizador.horaServidor();
       baseMillis = sincronizador.millisHora();
     }
+    PASO("loop: pantalla tras sincronizar");
     pantallaEspera();  // actualiza "Sin subir"
   }
   if (sincronizador.estado() != estadoMostrado) {
     estadoMostrado = sincronizador.estado();
+    PASO("loop: pantalla por cambio de estado");
     pantallaEspera();
   }
 
+  PASO("loop: puente (ordenador)");
   atenderPuente();
 
   if (!lector.conectado()) {
     if (millis() - ultimoIntentoLector > 3000) {
+      PASO("loop: reintento del lector PN532");
       iniciarLector();
+      PASO("loop: pantalla tras reintentar el lector");
       pantallaEspera();
     }
     delay(10);
@@ -347,6 +414,7 @@ void loop() {
 
   uint8_t uid[10];
   size_t lenUid = 0;
+  PASO("loop: esperar tarjeta");
   if (!lector.esperarTarjeta(300, uid, lenUid)) {
     if (!lector.conectado()) {
       log("ERROR: el PN532 dejó de responder");
@@ -356,6 +424,7 @@ void loop() {
   }
 
   uint32_t inicio = millis();
+  PASO("loop: cobrar");
   Resultado r = cobrar(uid, lenUid);
   lector.terminar();
   ui::resultado(r.tipo, r.l1, r.l2, r.l3);
@@ -364,5 +433,10 @@ void loop() {
       (r.l3.length() ? " | " + r.l3 : "") + " (" + String(millis() - inicio) + " ms)");
   pantallaEspera();
 
-  while (lector.conectado() && !lector.retirada(300)) ui::actualizar();
+  // Con la tarjeta puesta no se vuelve al bucle: se avisa al watchdog aquí
+  PASO("loop: esperando que retiren la tarjeta");
+  while (lector.conectado() && !lector.retirada(300)) {
+    esp_task_wdt_reset();
+    ui::actualizar();
+  }
 }
