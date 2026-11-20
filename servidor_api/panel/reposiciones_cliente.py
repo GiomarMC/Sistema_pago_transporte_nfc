@@ -42,7 +42,8 @@ def api_bloquear_tarjeta(request, tarjeta_id):
         if tarjeta.estado != Tarjeta.Estado.ACTIVA:
             return error("tarjeta_no_activa", "La tarjeta ya no está activa", 409)
         servicios.bloquear(tarjeta, motivo, tipo="bloqueo solicitado por cliente")
-    return JsonResponse({"id": tarjeta.pk, "estado": tarjeta.estado})
+    return JsonResponse({"estado": tarjeta.estado,
+                         "bloqueada_en": tarjeta.bloqueada_en.isoformat()})
 
 
 @api_view(["GET", "POST"])
