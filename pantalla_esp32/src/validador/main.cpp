@@ -25,12 +25,13 @@
 #include <Formato.h>
 #include <LectorPN532.h>
 #include <LectorPuente.h>
+#include <EnlaceWifi.h>
 #include <PantallaUI.h>
-#include <WiFi.h>
 #include <string.h>
 
 #include "almacen.h"
 #include "portal.h"
+#include "raices_tls.h"
 #include "sincronizador.h"
 
 namespace {
@@ -52,7 +53,9 @@ void log(const String &texto) {
   Serial.println(texto);
 }
 
-Sincronizador sincronizador(almacen, log);
+const std::vector<RedWifi> &redesGuardadas() { return almacen.redes(); }
+EnlaceWifi enlaceWifi(redesGuardadas, log, RAICES_TLS);
+Sincronizador sincronizador(almacen, log, enlaceWifi);
 PortalWifi portal(almacen, log);
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
 uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
@@ -206,8 +209,8 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
 }
 
 void pantallaEspera() {
-  const bool wifiLista = WiFi.status() == WL_CONNECTED;
-  ui::estadoCanal(wifiLista ? "W" : "-", wifiLista ? static_cast<int8_t>(WiFi.RSSI() / 2) : 0,
+  const bool wifiLista = enlaceWifi.estado() == EstadoEnlace::Listo;
+  ui::estadoCanal(wifiLista ? "W" : "-", enlaceWifi.senal(),
                   static_cast<uint16_t>(min(almacen.pendientes(), static_cast<uint32_t>(65535))));
   if (!almacen.listo()) {
     ui::espera("Error microSD", "Revise la tarjeta SD");
