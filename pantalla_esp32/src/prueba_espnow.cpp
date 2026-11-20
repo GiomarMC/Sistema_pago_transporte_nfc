@@ -17,8 +17,15 @@
  * entre una y otra se reinicia el encuentro (el límite es de 20 mensajes por encuentro).
  *   Emisor:   "[emisor] RONDA n: 20 aceptados, 20 entregados, 0 abortados, ..."
  *   Receptor: "[receptor] RONDA n: recibidos 20/20, íntegros 20, corruptos 0, ..."
+ * Al terminar cada ronda, el receptor le devuelve su resultado al emisor por la misma radio
+ * (un mensaje corto), y el emisor lo escribe junto al suyo. Así, con las placas separadas
+ * (p. ej. a 10 m), basta con una conectada al ordenador: la del emisor, la de número más
+ * bajo. La otra puede ir con un cargador USB o una batería externa.
+ *   Emisor:   "[emisor] RONDA n: el receptor confirma: recibidos 20/20, íntegros 20, ..."
+ *
  * Esperado: 10 rondas con los 20 mensajes íntegros cada una y 0 abortados. Al final el
- * emisor escribe "PRUEBA M8-02 COMPLETA".
+ * emisor escribe "PRUEBA M8-02 COMPLETA". Los reintentos de fragmentos (en la línea del
+ * emisor) indican cuánto cuesta la distancia; los abortados, que ya no alcanza.
  *
  * El número de validador de prueba sale de la MAC, así que cada placa tiene el suyo.
  */
@@ -34,7 +41,14 @@ constexpr uint32_t RONDAS = 10;
 constexpr uint32_t ESPERA_VECINO_MS = 2000;   // el vecino debe llevar este tiempo en la tabla
 constexpr uint32_t PAUSA_RONDA_MS = 3000;     // para que el receptor escriba su resumen
 constexpr uint32_t REINICIO_ENCUENTRO_MS = 800;
-constexpr uint32_t SILENCIO_RECEPTOR_MS = 4000;
+constexpr uint32_t SILENCIO_RECEPTOR_MS = 1500;  // sin mensajes tanto tiempo: la ronda terminó
+constexpr uint32_t ESPERA_RESULTADO_MS = 5000;   // el emisor espera la respuesta del receptor
+constexpr uint32_t MAGIA_RESULTADO = 0x544C5352;  // "RSLT"
+
+// Lo que el receptor le cuenta al emisor al terminar una ronda (20 B)
+struct Resultado {
+  uint32_t magia, ronda, recibidos, integros, corruptos;
+};
 
 void registro(const String &texto) { Serial.printf("[%8lu ms] %s\n", (unsigned long)millis(), texto.c_str()); }
 
@@ -64,6 +78,8 @@ uint32_t ronda = 0, siguiente = 0, inicioRondaMs = 0;
 uint32_t entregadosAntes = 0, abortadosAntes = 0, reintentosAntes = 0;
 uint32_t totalEntregados = 0, totalAbortados = 0, totalRondasOk = 0;
 uint8_t macVecino[6];
+bool resultadoLlego = false;
+uint32_t totalRecibidosReceptor = 0, totalIntegrosReceptor = 0;
 
 void iniciarRonda() {
   ronda++;
@@ -73,6 +89,7 @@ void iniciarRonda() {
   abortadosAntes = vecinos.mensajesAbortados();
   reintentosAntes = vecinos.fragmentosReintentados();
   memcpy(macVecino, vecinos.vecino(0).mac, 6);
+  resultadoLlego = false;
   registro("[emisor] RONDA " + String(ronda) + " de " + String(RONDAS) + ": envío " + String(MENSAJES_POR_RONDA) +
            " mensajes de " + String(LARGO_MENSAJE) + " B al validador " + String(vecinos.vecino(0).baliza.validador));
   fase = Fase::ENVIANDO;
@@ -115,11 +132,16 @@ void atenderEmisor() {
       break;
     }
     case Fase::PAUSA:
-      if (millis() - faseDesde < PAUSA_RONDA_MS) break;
+      // Se espera lo que cuenta el receptor (o a que pase el plazo) antes de reiniciar el encuentro
+      if (!resultadoLlego && millis() - faseDesde < ESPERA_RESULTADO_MS) break;
+      if (!resultadoLlego) registro("[emisor] RONDA " + String(ronda) + ": SIN respuesta del receptor en " +
+                                    String(ESPERA_RESULTADO_MS / 1000) + " s");
       if (ronda >= RONDAS) {
         registro("PRUEBA M8-02 COMPLETA: " + String(RONDAS) + " rondas, " + String(RONDAS * MENSAJES_POR_RONDA) +
-                 " mensajes: " + String(totalEntregados) + " entregados, " + String(totalAbortados) +
-                 " abortados, rondas perfectas " + String(totalRondasOk) + "/" + String(RONDAS));
+                 " mensajes: el emisor entregó " + String(totalEntregados) + " y abortó " + String(totalAbortados) +
+                 "; el receptor confirma " + String(totalIntegrosReceptor) + " íntegros de " +
+                 String(totalRecibidosReceptor) + " recibidos; rondas perfectas " + String(totalRondasOk) + "/" +
+                 String(RONDAS));
         fase = Fase::FIN;
         break;
       }
@@ -143,6 +165,10 @@ void atenderEmisor() {
 uint32_t rondaRecibida = 0, recibidos = 0, integros = 0, corruptos = 0, duplicados = 0, vistos = 0;
 uint32_t ultimoMensajeMs = 0;
 uint32_t acumRecibidos = 0, acumIntegros = 0;
+uint8_t macEmisor[6] = {};
+bool resultadoPendiente = false;
+Resultado resultadoAEnviar = {};
+uint32_t resultadoDesdeMs = 0;
 
 void resumenReceptor() {
   String faltan;
@@ -154,13 +180,41 @@ void resumenReceptor() {
            ", íntegros " + String(integros) + ", corruptos " + String(corruptos) + ", duplicados " + String(duplicados) +
            (faltan.length() ? ", FALTAN " + faltan : "") + " | acumulado: " + String(acumIntegros) + " íntegros de " +
            String(acumRecibidos) + " recibidos");
+  resultadoAEnviar = {MAGIA_RESULTADO, rondaRecibida, recibidos, integros, corruptos};
+  resultadoPendiente = true;  // se le cuenta al emisor en cuanto la radio lo permita
+  resultadoDesdeMs = millis();
   recibidos = integros = corruptos = duplicados = vistos = 0;
 }
 
+void enviarResultadoPendiente() {
+  if (!resultadoPendiente) return;
+  if (millis() - resultadoDesdeMs > ESPERA_RESULTADO_MS) {  // ya no tiene sentido insistir
+    resultadoPendiente = false;
+    return;
+  }
+  const auto r = vecinos.enviar(macEmisor, reinterpret_cast<const uint8_t *>(&resultadoAEnviar), sizeof(resultadoAEnviar));
+  if (r == VecinosEspNow::Envio::ACEPTADO) resultadoPendiente = false;
+}
+
 void atenderReceptor() {
+  enviarResultadoPendiente();
   uint8_t mac[6];
   const size_t n = vecinos.recibir(bufferMensaje, sizeof(bufferMensaje), mac);
+  if (n == sizeof(Resultado)) {
+    // La respuesta del receptor a una ronda (solo la recibe el emisor)
+    Resultado r;
+    memcpy(&r, bufferMensaje, sizeof(r));
+    if (r.magia == MAGIA_RESULTADO) {
+      resultadoLlego = true;
+      totalRecibidosReceptor += r.recibidos;
+      totalIntegrosReceptor += r.integros;
+      registro("[emisor] RONDA " + String(r.ronda) + ": el receptor confirma: recibidos " + String(r.recibidos) + "/" +
+               String(MENSAJES_POR_RONDA) + ", íntegros " + String(r.integros) + ", corruptos " + String(r.corruptos));
+    }
+    return;
+  }
   if (n > 0) {
+    memcpy(macEmisor, mac, 6);
     uint32_t r = 0, i = 0;
     if (n >= 8) {
       memcpy(&r, bufferMensaje, 4);
@@ -179,6 +233,7 @@ void atenderReceptor() {
       corruptos++;
       registro("[receptor] mensaje " + String(i) + " de la ronda " + String(r) + " CORRUPTO (" + String(n) + " B)");
     }
+    if (recibidos >= MENSAJES_POR_RONDA) resumenReceptor();  // ronda completa: se cuenta enseguida
   }
   if (recibidos > 0 && millis() - ultimoMensajeMs >= SILENCIO_RECEPTOR_MS) resumenReceptor();
 }
