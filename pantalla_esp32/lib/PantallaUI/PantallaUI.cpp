@@ -1,4 +1,7 @@
-// Implementación de las pantallas del validador. Ver PantallaUI.h.
+// Implementación de las pantallas del validador para la LCD SSD1283A (por defecto).
+// Para la OLED de 1,3" ver PantallaUI_OLED.cpp (se activa con -DPANTALLA_OLED).
+// Ver PantallaUI.h.
+#ifndef PANTALLA_OLED
 #include "PantallaUI.h"
 
 #include <Arduino_GFX_Library.h>
@@ -172,3 +175,5 @@ void cerrarInformacion() {
 }
 
 }  // namespace ui
+
+#endif  // PANTALLA_OLED

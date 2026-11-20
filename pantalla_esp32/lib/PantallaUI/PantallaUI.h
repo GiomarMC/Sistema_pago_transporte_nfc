@@ -1,5 +1,7 @@
-// Pantallas del validador en la LCD SSD1283A (130x130): espera, PASE, RECHAZADA
-// y ATENCION. Compartido por el firmware de pantalla y el del validador.
+// Pantallas del validador: espera, PASE, RECHAZADA y ATENCION. Compartido por el
+// firmware de pantalla y el del validador. Dos implementaciones con la misma API:
+//   - LCD SSD1283A 130x130 por SPI (PantallaUI.cpp, la de por defecto)
+//   - OLED 1,3" 128x64 por I2C (PantallaUI_OLED.cpp, con -DPANTALLA_OLED)
 #pragma once
 #include <Arduino.h>
 

@@ -69,7 +69,8 @@ lógica de cobro, la microSD y la pantalla son las mismas.
 | Componente | Detalle |
 |---|---|
 | ESP32 | DevKit de 38 pines con módulo ESP32-WROOM-32, chip USB CP210x |
-| Pantalla | LCD 1.6" SPI, controlador SSD1283A, 130x130 |
+| Pantalla (módulo con LCD) | LCD 1.6" SPI, controlador SSD1283A, 130x130 |
+| Pantalla (módulos con OLED) | OLED 1,3" I2C, módulo JMD1.3A, 128x64 monocroma, 4 pines rotulados GND, VCC, SCL, SDA. Hace lo mismo que la LCD y va **en su lugar** (no junto a ella) |
 | Lector microSD | Módulo de 6 pines rotulados 3V3, CS, MOSI, CLK, MISO, GND (va a 3,3 V) |
 | Tarjeta microSD | 32 GB o menos, en FAT32 (probado con 8 GB) |
 | Protoboard y cables dupont | |
@@ -89,6 +90,20 @@ y la microSD van cada una en su propio bus SPI; el PN532, en el bus I2C.
 | CS | P5 | Derecho, 10.º |
 | RST | P17 | Derecho, 11.º |
 | A0 | P16 | Derecho, 12.º |
+
+| OLED (solo en los módulos sin LCD) | ESP32 | Lado y posición |
+|---|---|---|
+| GND | GND | Derecho, 1.º |
+| VCC | 3V3 | Izquierdo, 1.º |
+| SCL | P22 (el mismo que el SCL del PN532) | Derecho, 3.º |
+| SDA | P21 (el mismo que el SDA del PN532) | Derecho, 6.º |
+
+La OLED comparte el bus I2C con el PN532 (direcciones 0x3C y 0x24, no chocan) y
+no usa pines nuevos. **El orden de sus pines es GND, VCC, SCL, SDA**, distinto
+al de muchos módulos: conecta por el rótulo. Si el escáner I2C (`prueba_oled`)
+ve 0x3D en vez de 0x3C, compila con `-DOLED_DIRECCION=0x3D`. Si la imagen sale
+corrida 2 píxeles o con ruido en un borde, el controlador es el otro: usa los
+entornos `*_ssd1306`.
 
 | microSD | ESP32 | Lado y posición |
 |---|---|---|
@@ -154,7 +169,11 @@ Todos se compilan y cargan desde esta carpeta. El puerto puede indicarse con
 |---|---|---|
 | `esp32dev` | Pantalla del modo A: muestra lo que le envía `validador.py` | `pio run -e esp32dev -t upload` |
 | `prueba` | Prueba de componentes: colores de la pantalla, escritura y lectura de la microSD, eco por USB | `pio run -e prueba -t upload` y después `pio device monitor` |
-| `validador` | Validador autónomo del modo B, con el PN532 | `pio run -e validador -t upload` |
+| `validador` | Validador autónomo del modo B, con el PN532 y la **LCD SSD1283A** | `pio run -e validador -t upload` |
+| `validador_oled` | Lo mismo con la **OLED de 1,3"** (I2C, controlador SH1106) en lugar de la LCD | `pio run -e validador_oled -t upload` |
+| `validador_oled_ssd1306` | Igual que el anterior para módulos OLED con controlador SSD1306 | `pio run -e validador_oled_ssd1306 -t upload` |
+| `prueba_oled` | Prueba de la OLED: escanea el bus I2C y recorre las pantallas (espera, PASE, RECHAZADA, ATENCION, portal WiFi) | `pio run -e prueba_oled -t upload` y después `pio device monitor` |
+| `prueba_oled_ssd1306` | Igual, con controlador SSD1306 | `pio run -e prueba_oled_ssd1306 -t upload` |
 
 Tests que se ejecutan en la propia ESP32 y comparan el C++ con ejemplos
 generados por el código Python:
@@ -381,7 +400,7 @@ hora, o mientras este conteste:
 
 ```
 pantalla_esp32/
-|-- platformio.ini              Entornos: esp32dev, prueba, validador
+|-- platformio.ini              Entornos: esp32dev, prueba, validador, validador_oled, prueba_oled (y *_ssd1306)
 |-- src/
 |   |-- main.cpp                Firmware de pantalla (modo A)
 |   |-- prueba_componentes.cpp  Prueba de pantalla, microSD y USB
