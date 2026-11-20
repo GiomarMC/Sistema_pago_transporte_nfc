@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import include, path
 from django.views.generic import RedirectView
-from panel import reposiciones_cliente
+from portal import views as portal_views
 
 admin.site.site_header = "Sistema de transporte — administración"
 admin.site.site_title = "Transporte"
@@ -16,7 +16,7 @@ urlpatterns = [
     path("api/pagos/", include("pagos.urls")),
     path("api/v1/", include("clientes.api_urls")),
     path("api/v1/", include("pagos.api_urls")),
-    path("mi/reposiciones/", reposiciones_cliente.pagina_reposiciones),
+    path("mi/reposiciones/", portal_views.reposiciones_en_el_portal),
     path("mi/", include("portal.urls")),
     path("pagos/", include("pagos.urls_simulador")),
 ]

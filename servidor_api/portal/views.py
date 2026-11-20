@@ -1,4 +1,5 @@
-from django.http import HttpResponse, JsonResponse
+from django.conf import settings
+from django.http import HttpResponse, HttpResponsePermanentRedirect, JsonResponse
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -76,3 +77,11 @@ def error_interno(request):
         return JsonResponse({"error": {"codigo": "servidor",
                                        "mensaje": "Error interno", "campos": {}}}, status=500)
     return HttpResponse("Error interno", status=500)
+
+
+def reposiciones_en_el_portal(request):
+    """La página /mi/reposiciones/ (M19) se mudó al portal: ahora es "Mi tarjeta". Se redirige
+    al host del cliente, que es el único que sirve páginas de cliente."""
+    puerto = request.get_host().partition(":")[2]
+    host = settings.DOMINIO_CLIENTE + (f":{puerto}" if puerto else "")
+    return HttpResponsePermanentRedirect(f"{request.scheme}://{host}/tarjeta/")
