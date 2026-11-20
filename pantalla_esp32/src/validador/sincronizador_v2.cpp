@@ -143,7 +143,7 @@ void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, u
     almacen_.ajenosAcusados(cab.destino, acuse.hastaEvento);
     return;
   }
-  almacen_.horaDelServidor(acuse.horaServidor, ahoraMs);
+  tomarHora(acuse.horaServidor, ahoraMs);
   const uint32_t hasta = acuse.hastaEvento;
   if (hasta <= almacen_.ultimoAcusado()) return;  // repetido o más viejo que otro ya recibido
 
@@ -154,4 +154,16 @@ void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, u
     if (vuelo_[i].ultimo > hasta) vuelo_[quedan++] = vuelo_[i];
   nVuelo_ = quedan;
   if (siguienteId_ <= hasta) siguienteId_ = hasta + 1;  // el servidor sabe más de lo que se creía
+}
+
+void SincronizadorV2::tomarHora(uint32_t horaServidor, uint32_t ahoraMs) {
+  if (horaServidor == 0) return;
+  // Un ACUSE más viejo que otro ya aceptado no hace retroceder el reloj
+  if (horaCrudaMax_ != 0 && horaServidor + TOLERANCIA_HORA_S < horaCrudaMax_) return;
+  if (horaServidor > horaCrudaMax_) horaCrudaMax_ = horaServidor;
+  // Por BLE o reenviado por otro bus llegó con retraso: se compensa
+  const uint8_t enlace = canalActual_ ? canalActual_->codigoEnlace() : sp::WIFI;
+  const bool relevado = enlace == sp::BLE || enlace == sp::REENVIADO;
+  horaServidor_ = horaServidor + (relevado ? RETRASO_RELE_S : 0);
+  millisHora_ = ahoraMs;
 }
