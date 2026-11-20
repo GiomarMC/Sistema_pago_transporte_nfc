@@ -24,19 +24,27 @@ PASARELAS = {
 _activa: Pasarela | None = None
 
 
-def obtener_pasarela() -> Pasarela:
+def _crear(nombre: str) -> Pasarela:
+    if nombre not in PASARELAS:
+        raise ImproperlyConfigured(
+            f"PAGOS_PASARELA={nombre!r} no es válida; opciones: {', '.join(PASARELAS)}")
+    try:
+        clase = import_string(PASARELAS[nombre])
+    except ImportError as e:
+        raise ImproperlyConfigured(
+            f"La pasarela {nombre!r} todavía no está implementada ({e})") from e
+    return clase()
+
+
+def obtener_pasarela(nombre: str | None = None) -> Pasarela:
+    """La pasarela activa o, si se indica `nombre`, la de esa orden (una orden se cobra y
+    se reembolsa con la pasarela que la creó, aunque después cambie el ajuste)."""
     global _activa
+    activa = getattr(settings, "PAGOS_PASARELA", "")
+    if nombre and nombre != activa:
+        return _crear(nombre)
     if _activa is None:
-        nombre = getattr(settings, "PAGOS_PASARELA", "")
-        if nombre not in PASARELAS:
-            raise ImproperlyConfigured(
-                f"PAGOS_PASARELA={nombre!r} no es válida; opciones: {', '.join(PASARELAS)}")
-        try:
-            clase = import_string(PASARELAS[nombre])
-        except ImportError as e:
-            raise ImproperlyConfigured(
-                f"La pasarela {nombre!r} todavía no está implementada ({e})") from e
-        _activa = clase()
+        _activa = _crear(activa)
     return _activa
 
 
