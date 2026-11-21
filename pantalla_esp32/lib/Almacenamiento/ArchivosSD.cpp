@@ -11,7 +11,17 @@ class ArchivoSD : public Archivo {
   ArchivoSD(File f, bool escribible) : f_(f), escribible_(escribible) {}
   ~ArchivoSD() override { f_.close(); }  // cerrar vacía a la tarjeta, pero el almacenamiento no cuenta con ello
 
-  size_t tamano() override { return f_.size(); }
+  // OJO: File::size() lee la entrada de directorio, que en un archivo recién creado (o con escrituras sin cerrar) trae
+  // datos viejos: medido, 211 y 1073450320 bytes en uno nuevo y vacío. El tamaño de verdad es hasta dónde llega el
+  // archivo abierto: se va al final, se lee la posición y se vuelve donde estaba (en los de escritura, que van en
+  // modo "agregar", el final es donde siguen escribiendo).
+  size_t tamano() override {
+    const size_t antes = f_.position();
+    if (!f_.seek(0, SeekEnd)) return f_.size();
+    const size_t n = f_.position();
+    f_.seek(antes);
+    return n;
+  }
   bool leerEn(size_t posicion, void *destino, size_t n) override {
     if (escribible_ || !f_.seek(posicion)) return false;  // los archivos para escribir van en modo "agregar": solo escriben
     return f_.read(static_cast<uint8_t *>(destino), n) == n;

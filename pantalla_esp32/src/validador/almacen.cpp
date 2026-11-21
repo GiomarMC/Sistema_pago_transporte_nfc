@@ -1,7 +1,9 @@
 #include "almacen.h"
 
+#include <EventosTexto.h>
 #include <SD.h>
 #include <SPI.h>
+#include <esp_task_wdt.h>
 #include <time.h>
 
 namespace {
@@ -38,24 +40,6 @@ void porLinea(const String &texto, F f) {
     if (l.length()) f(l);
     inicio = fin + 1;
   }
-}
-
-String fechaIso(uint32_t unix) {
-  time_t t = unix;
-  struct tm tm;
-  gmtime_r(&t, &tm);
-  char b[32];
-  strftime(b, sizeof(b), "%Y-%m-%dT%H:%M:%S+00:00", &tm);
-  return b;
-}
-
-String jsonTexto(const String &s) {
-  String r = "\"";
-  for (char c : s) {
-    if (c == '"' || c == '\\') r += '\\';
-    if (c >= 32) r += c;
-  }
-  return r + "\"";
 }
 
 bool deHex32(const String &s, uint8_t out[32]) {
@@ -110,12 +94,13 @@ bool Almacen::reintentarMontaje() {
 
 void Almacen::cargarDatos() {
   cargarConfig();
-  String estado = leerArchivo("/estado.txt");
-  porLinea(estado, [&](const String &l) {
-    if (l.startsWith("siguiente_id=")) siguienteId_ = l.substring(13).toInt();
-    if (l.startsWith("ultimo_subido=")) ultimoSubido_ = l.substring(14).toInt();
-  });
-  if (siguienteId_ < 1) siguienteId_ = 1;
+  // Eventos y estado en binario. Si hay un /eventos.txt de una versión anterior, antes de abrir la cola se deja el
+  // estado (siguiente_id, ultimo_subido) como lo tenía, para que los ids sigan donde iban
+  const bool hayTexto = SD.exists("/eventos.txt") || SD.exists("/estado.txt");
+  estado_.cargar();  // sin copia válida (validador nuevo) arranca con el estado inicial
+  if (hayTexto) prepararMigracion();
+  if (!cola_.iniciar()) Serial.println("ERROR: no se pudo abrir /eventos.bin en la microSD");
+  if (hayTexto) migrarEventosDeTexto();
   porLinea(leerArchivo("/ultima_op.txt"), [&](const String &l) {
     int sp = l.indexOf(' ');
     if (sp > 0) ultimaOp_[l.substring(0, sp).toInt()] = l.substring(sp + 1).toInt();
@@ -221,35 +206,17 @@ void Almacen::recargasPendientes(uint32_t idCuenta, uint32_t ultima, int32_t &to
   recargas_.pendientes(idCuenta, ultima, total, hasta);  // solo correlativas: no se salta ninguna
 }
 
+// Un viaje ya registrado aquí: registrarViaje() anota la operación de la tarjeta DESPUÉS de guardar el evento, así
+// que "ya la vi" equivale a "ya está guardado" (con la cola compactada tras el acuse, buscarlo en ella ya no vale)
 bool Almacen::existeViaje(uint32_t idTarjeta, uint16_t operacion) {
-  String a = "\"tarjeta_id\":" + String(idTarjeta) + ",";
-  String b = "\"operacion\":" + String(operacion) + ",";
-  bool hay = false;
-  File f = SD.open("/eventos.txt", FILE_READ);
-  if (!f) return false;
-  while (f.available() && !hay) {
-    String l = f.readStringUntil('\n');
-    hay = l.indexOf("\"tipo\":\"viaje\"") >= 0 && l.indexOf(a) >= 0 && l.indexOf(b) >= 0;
-  }
-  f.close();
-  return hay;
+  auto it = ultimaOp_.find(idTarjeta);
+  return it != ultimaOp_.end() && it->second >= operacion;
 }
 
-bool Almacen::agregarEvento(const String &json) {
-  File f = SD.open("/eventos.txt", FILE_APPEND);
-  if (!f) return false;
-  size_t n = f.println(json);
-  f.close();
-  if (n < json.length()) return false;
-  siguienteId_++;
-  guardarEstado();
-  return true;
-}
+void Almacen::avisarCola(const char *texto) { Serial.printf("AVISO cola de eventos: %s\n", texto); }
 
-void Almacen::guardarEstado() {
-  escribirArchivo("/estado.txt", "siguiente_id=" + String(siguienteId_) + "\nultimo_subido=" +
-                                     String(ultimoSubido_) + "\n");
-}
+// El evento se da por guardado solo cuando ya está vaciado a la microSD (ColaEventos::agregar)
+bool Almacen::guardarEvento(sp::Evento &e) { return cola_.agregar(e); }
 
 void Almacen::guardarUltimasOperaciones() {
   String t;
@@ -260,13 +227,18 @@ void Almacen::guardarUltimasOperaciones() {
 bool Almacen::registrarViaje(uint32_t fecha, uint32_t idTarjeta, const String &uid, int32_t monto,
                              int32_t saldoFinal, uint16_t operacion, uint32_t contador,
                              uint32_t recargaHasta) {
-  String j = "{\"id\":" + String(siguienteId_) + ",\"tipo\":\"viaje\",\"fecha\":\"" +
-             fechaIso(fecha) + "\",\"tarjeta_id\":" + String(idTarjeta) + ",\"uid\":\"" + uid +
-             "\",\"monto\":" + String(monto) + ",\"saldo_final\":" + String(saldoFinal) +
-             ",\"operacion\":" + String(operacion) + ",\"contador\":" + String(contador) +
-             ",\"recarga_hasta\":" + (recargaHasta ? String(recargaHasta) : String("null")) +
-             ",\"detalle\":null}";
-  if (!agregarEvento(j)) return false;
+  sp::Evento e;
+  memset(&e, 0, sizeof(e));
+  e.tipo = sp::VIAJE;
+  e.fecha = fecha;
+  e.idTarjeta = idTarjeta;
+  eventos_texto::uidDeHex(uid.c_str(), e);
+  e.monto = monto;
+  e.saldoFinal = saldoFinal;
+  e.operacion = operacion;
+  e.contador = contador;
+  e.recargaHasta = recargaHasta;
+  if (!guardarEvento(e)) return false;
   if (operacion > ultimaOperacion(idTarjeta)) {
     ultimaOp_[idTarjeta] = operacion;
     guardarUltimasOperaciones();
@@ -276,38 +248,109 @@ bool Almacen::registrarViaje(uint32_t fecha, uint32_t idTarjeta, const String &u
 
 bool Almacen::registrarIncidencia(uint32_t fecha, uint32_t idTarjeta, const String &uid,
                                   const String &detalle, bool fraude) {
-  String j = "{\"id\":" + String(siguienteId_) + ",\"tipo\":\"" +
-             (fraude ? "fraude" : "incidencia") + "\",\"fecha\":\"" + fechaIso(fecha) +
-             "\",\"tarjeta_id\":" + String(idTarjeta) + ",\"uid\":\"" + uid +
-             "\",\"monto\":null,\"saldo_final\":null,\"operacion\":null,\"contador\":null," +
-             "\"recarga_hasta\":null,\"detalle\":" + jsonTexto(detalle) + "}";
-  return agregarEvento(j);
+  sp::Evento e;
+  memset(&e, 0, sizeof(e));
+  e.tipo = fraude ? sp::FRAUDE : sp::INCIDENCIA;
+  e.fecha = fecha;
+  e.idTarjeta = idTarjeta;
+  eventos_texto::uidDeHex(uid.c_str(), e);
+  e.contador = sp::SIN_CONTADOR;
+  eventos_texto::ponerDetalle(e, detalle.c_str());  // C1: 20 caracteres ASCII
+  return guardarEvento(e);
 }
 
+// Los eventos sin confirmar, como el JSON de siempre (sincronizador v1)
 String Almacen::eventosPendientes(size_t max, std::vector<uint32_t> &ids) {
   ids.clear();
   String json = "[";
-  File f = SD.open("/eventos.txt", FILE_READ);
-  if (!f) return "[]";
-  while (f.available() && ids.size() < max) {
-    String l = f.readStringUntil('\n');
-    l.trim();
-    // Una línea cortada (corte de corriente al escribirla) no se envía
-    if (!l.startsWith("{\"id\":") || !l.endsWith("}")) continue;
-    uint32_t id = l.substring(6).toInt();
-    if (id <= ultimoSubido_) continue;
-    if (ids.size()) json += ",";
-    json += l;
-    ids.push_back(id);
+  sp::Evento lote[8];
+  uint32_t desde = cola_.ultimoAcusado();
+  while (ids.size() < max) {
+    const size_t pedir = max - ids.size() < 8 ? max - ids.size() : 8;
+    const size_t n = cola_.leerDesde(desde, lote, pedir);
+    if (n == 0) break;
+    for (size_t i = 0; i < n; i++) {
+      char linea[512];
+      if (eventos_texto::aJson(lote[i], linea, sizeof(linea)) == 0) continue;
+      if (ids.size()) json += ",";
+      json += linea;
+      ids.push_back(lote[i].idEvento);
+    }
+    desde = lote[n - 1].idEvento;
   }
-  f.close();
   return json + "]";
 }
 
+// Solo guarda el acuse (una escritura del estado). Compactar la cola cuesta ~1,5 s en la microSD: lo hace
+// mantenimiento() cuando el lector está libre, no aquí
 void Almacen::marcarSubidos(uint32_t hastaId) {
-  if (hastaId <= ultimoSubido_) return;
-  ultimoSubido_ = hastaId;
-  guardarEstado();
+  fallosCompactar_ = 0;
+  cola_.acusarHasta(hastaId, false);
+}
+
+// Desde loop(), solo con el lector libre (sin tarjeta delante): un paso (una operación en la microSD, ~0,8 s como
+// mucho) de la compactación pendiente de la cola. true si hizo algo.
+bool Almacen::mantenimiento() {
+  if (!listo_ || !cola_.compactacionPendiente() || fallosCompactar_ >= 3) return false;
+  if (!cola_.compactarPaso()) {
+    fallosCompactar_++;
+    Serial.println("AVISO: no se pudo compactar la cola de eventos");
+  }
+  return true;
+}
+
+// Un validador que ya tenía eventos de una versión anterior los conserva. Primero (antes de abrir la cola) el
+// estado: los ids siguen desde ultimo_subido + 1, que es lo que el servidor espera.
+void Almacen::prepararMigracion() {
+  uint32_t subido = 0;
+  porLinea(leerArchivo("/estado.txt"), [&](const String &l) {
+    if (l.startsWith("ultimo_subido=")) subido = l.substring(14).toInt();
+  });
+  if (subido > estado_.estado().hastaAcusado) estado_.fijarHastaAcusado(subido);
+  if (subido + 1 > estado_.estado().siguienteId) estado_.fijarSiguienteId(subido + 1);
+}
+
+// Luego los eventos pendientes (los ya subidos se dejan), uno a uno a la cola. Un corte a mitad se retoma sin duplicar:
+// lo que ya está en la cola se salta. Al terminar el texto pasa a *.migrado (se conserva por si algo salió mal).
+void Almacen::migrarEventosDeTexto() {
+  uint32_t migrados = 0, saltados = 0, malos = 0;
+  bool completo = true;
+  File f = SD.open("/eventos.txt", FILE_READ);
+  if (f) {
+    const uint32_t subido = estado_.estado().hastaAcusado;
+    while (f.available()) {
+      String l = f.readStringUntil('\n');
+      l.trim();
+      if (!l.startsWith("{\"id\":")) continue;
+      const uint32_t id = l.substring(6).toInt();
+      if (id <= subido || id <= cola_.ultimoId()) {
+        saltados++;
+        continue;
+      }
+      sp::Evento e;
+      if (!eventos_texto::deJson(l.c_str(), e)) {  // una línea cortada por un corte de energía
+        malos++;
+        continue;
+      }
+      esp_task_wdt_reset();  // con muchos pendientes tarda: cada agregar() vacía a la microSD
+      if (!cola_.agregar(e)) {
+        completo = false;
+        break;
+      }
+      if (e.idEvento != id) Serial.printf("AVISO migración: el evento %lu quedó con el id %lu\n", (unsigned long)id, (unsigned long)e.idEvento);
+      migrados++;
+    }
+    f.close();
+  }
+  Serial.printf("microSD: eventos.txt -> eventos.bin: %lu migrados, %lu ya subidos o repetidos, %lu líneas dañadas%s\n",
+                (unsigned long)migrados, (unsigned long)saltados, (unsigned long)malos, completo ? "" : " (INCOMPLETO: se reintenta al arrancar)");
+  if (!completo) return;
+  for (const char *r : {"/eventos.txt", "/estado.txt"}) {
+    if (!SD.exists(r)) continue;
+    String destino = String(r).substring(0, String(r).length() - 4) + ".migrado";
+    if (SD.exists(destino.c_str())) SD.remove(destino.c_str());
+    SD.rename(r, destino.c_str());
+  }
 }
 
 // Las tarifas del texto "código nombre precio" (una por línea) a TARIFAS de C1. El servidor no manda
