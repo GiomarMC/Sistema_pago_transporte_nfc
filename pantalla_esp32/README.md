@@ -169,6 +169,7 @@ Todos se compilan y cargan desde esta carpeta. El puerto puede indicarse con
 |---|---|---|
 | `esp32dev` | Pantalla del modo A: muestra lo que le envía `validador.py` | `pio run -e esp32dev -t upload` |
 | `prueba` | Prueba de componentes: colores de la pantalla, escritura y lectura de la microSD, eco por USB | `pio run -e prueba -t upload` y después `pio device monitor` |
+| `prueba_espnow` | Prueba de ESP-NOW entre buses (M8-01 y M8-02). Se carga en **dos** placas, sin pantalla, WiFi ni microSD: se descubren con balizas (`vecino ... detectado` / `perdido`) y la de número más bajo envía 10 rondas de 20 mensajes de 2 KB que la otra comprueba byte a byte. El receptor le devuelve su resultado al emisor, así que basta una placa conectada al ordenador (la de número más bajo) para probar a distancia. Al final escribe `PRUEBA M8-02 COMPLETA`. El LED azul se enciende mientras vea a un vecino | `pio run -e prueba_espnow -t upload` en cada placa y después `pio device monitor` |
 | `validador` | Validador autónomo del modo B, con el PN532 y la **LCD SSD1283A** | `pio run -e validador -t upload` |
 | `validador_oled` | Lo mismo con la **OLED de 1,3"** (I2C, controlador SH1106) en lugar de la LCD | `pio run -e validador_oled -t upload` |
 | `validador_oled_ssd1306` | Igual que el anterior para módulos OLED con controlador SSD1306 | `pio run -e validador_oled_ssd1306 -t upload` |

@@ -3,6 +3,7 @@
 //
 // Trama (<= 240 B, little-endian):
 //   'E' 'N' | clase | reservado | validador emisor(2) | ...según la clase
+//   BALIZA:    version_listas(4) | version_tarifas(4) | pendientes(2) | ajenos(2) | flags
 //   FRAGMENTO: id_mensaje(4) | indice | total (<= 10) | largo | datos (<= 220 B)
 // El índice empieza en 0. Todos los fragmentos menos el último llevan 220 B, así cada
 // uno va en indice × 220 del mensaje.
@@ -20,6 +21,27 @@ constexpr size_t TAM_CABECERA_FRAGMENTO = 13;  // 6 comunes + 7 del fragmento
 constexpr size_t DATOS_POR_FRAGMENTO = 220;
 constexpr size_t MAX_FRAGMENTOS = 10;
 constexpr uint32_t ESPERA_FRAGMENTOS_MS = 3000;
+
+// --- BALIZA (solo ESP-NOW, a difusión cada 2 s ± 500 ms) ------------------------------------
+// Dice a los buses cercanos qué sabe y qué lleva este bus, para decidir si vale la pena
+// intercambiar datos. Va sin firmar: solo anuncia, no es un dato que otro bus deba creer.
+constexpr size_t TAM_BALIZA = 19;  // 6 comunes + 13 propios
+constexpr uint8_t BALIZA_CON_SERVIDOR = 1;   // bit 0: tiene canal con el servidor ahora
+constexpr uint8_t BALIZA_ACEPTA_AJENOS = 2;  // bit 1: acepta paquetes de otros buses
+
+struct Baliza {
+  uint16_t validador = 0;  // quién la envía (1-899)
+  uint32_t versionListas = 0, versionTarifas = 0;
+  uint16_t pendientes = 0;  // eventos propios sin acuse
+  uint16_t ajenos = 0;      // paquetes de otros buses guardados para reenviar
+  uint8_t flags = 0;
+};
+
+// Escribe la baliza en `trama` y devuelve su largo (TAM_BALIZA).
+size_t armarBaliza(const Baliza &baliza, uint8_t trama[TAM_TRAMA_MAXIMO]);
+// Lee una baliza. false si no lo es: otro tipo de trama, muy corta o sin validador. Los
+// bytes de más al final se ignoran, para que una versión futura pueda añadir campos.
+bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &baliza);
 
 // Cuántos fragmentos hacen falta para un mensaje de `largo` B (0 si no cabe en 10)
 uint8_t contarFragmentos(size_t largo);
