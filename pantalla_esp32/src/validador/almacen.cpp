@@ -71,10 +71,44 @@ bool deHex32(const String &s, uint8_t out[32]) {
 
 }  // namespace
 
-bool Almacen::iniciar() {
+bool Almacen::montar() {
+#ifdef MONTAJE_FALLA_PRUEBA
+  // Solo para comprobar los reintentos (-DMONTAJE_FALLA_PRUEBA=N): los N primeros montajes fallan
+  static uint32_t llamadas = 0;
+  if (llamadas++ < MONTAJE_FALLA_PRUEBA) return false;
+#endif
+  // Si un intento anterior falló, se suelta el bus y se vuelve a abrir: la tarjeta puede haber
+  // quedado a mitad de una orden tras un reinicio brusco y solo contesta al volver a empezar
+  SD.end();
+  spiSD.end();
   spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  listo_ = SD.begin(SD_CS, spiSD, 4000000);
+  return SD.begin(SD_CS, spiSD, 4000000);
+}
+
+bool Almacen::iniciar() {
+  for (uint8_t intento = 1; intento <= INTENTOS_MONTAJE; intento++) {
+    listo_ = montar();
+    if (listo_) break;
+    Serial.printf("microSD: intento %u de %u sin respuesta\n", intento, INTENTOS_MONTAJE);
+    if (intento < INTENTOS_MONTAJE) delay(ESPERA_MONTAJE_MS);
+  }
+  ultimoIntentoMontaje_ = millis();
   if (!listo_) return false;
+  cargarDatos();
+  return true;
+}
+
+bool Almacen::reintentarMontaje() {
+  if (listo_ || millis() - ultimoIntentoMontaje_ < REINTENTO_MONTAJE_MS) return false;
+  ultimoIntentoMontaje_ = millis();
+  if (!montar()) return false;
+  listo_ = true;
+  Serial.println("microSD: montada al reintentar");
+  cargarDatos();
+  return true;
+}
+
+void Almacen::cargarDatos() {
   cargarConfig();
   String estado = leerArchivo("/estado.txt");
   porLinea(estado, [&](const String &l) {
@@ -88,7 +122,6 @@ bool Almacen::iniciar() {
   });
   cargarListas();
   cargarRedes();
-  return true;
 }
 
 void Almacen::cargarConfig() {

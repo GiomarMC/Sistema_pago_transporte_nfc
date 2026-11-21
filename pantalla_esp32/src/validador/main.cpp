@@ -394,6 +394,13 @@ void loop() {
     pantallaEspera();
   }
 
+  PASO("loop: reintento de la microSD");
+  if (almacen.reintentarMontaje()) {
+    log("microSD montada tras reintentar");
+    pantallaEspera();
+    if (almacen.configurado() && almacen.redes().empty()) portal.iniciar();  // como en setup()
+  }
+
   PASO("loop: puente (ordenador)");
   atenderPuente();
 
