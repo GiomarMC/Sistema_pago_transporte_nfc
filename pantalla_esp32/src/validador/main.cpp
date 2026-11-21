@@ -22,6 +22,7 @@
  */
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <Formato.h>
 #include <LectorPN532.h>
 #include <LectorPuente.h>
@@ -87,7 +88,39 @@ LectorPuente puente(Serial);  // ordenador opcional: configuración y hora
 Almacen almacen;
 
 uint32_t baseUnix = 0, baseMillis = 0;
+bool horaReal = false;  // true si la hora viene del servidor o del ordenador; false si es la estimada del arranque
 uint32_t ahoraUnix() { return baseUnix ? baseUnix + (millis() - baseMillis) / 1000 : 0; }
+
+// La placa no tiene reloj con batería: al apagarla pierde la hora. Para poder cobrar sin WiFi se guarda en la NVS
+// la última hora conocida (como mucho cada 30 min, para no gastar la flash) y al arrancar se parte de ella. Queda
+// por detrás de la real lo que estuvo apagada, así que es una hora ESTIMADA hasta que llegue la del servidor; los
+// viajes que se cobren en ese tiempo llevan esa fecha. Un validador nuevo, que nunca ha tenido la hora, sí necesita
+// conectarse una vez.
+constexpr uint32_t PERIODO_GUARDAR_HORA_MS = 30UL * 60 * 1000;
+uint32_t horaGuardada() {
+  Preferences p;
+  if (!p.begin("subepe", true)) return 0;
+  const uint32_t h = p.getUInt("t_unix", 0);
+  p.end();
+  return h;
+}
+void guardarHora(uint32_t unix) {
+  static uint32_t ultimoMs = 0;
+  if (ultimoMs && millis() - ultimoMs < PERIODO_GUARDAR_HORA_MS) return;
+  Preferences p;
+  if (p.begin("subepe", false)) {
+    p.putUInt("t_unix", unix);
+    p.end();
+    ultimoMs = millis();
+  }
+}
+// Hora real (del servidor o del ordenador): `unix` era la hora en el instante `ms` (millis())
+void fijarHora(uint32_t unix, uint32_t ms) {
+  baseUnix = unix;
+  baseMillis = ms;
+  horaReal = true;
+  guardarHora(ahoraUnix());
+}
 
 void log(const String &texto) {
   Serial.print('#');
@@ -193,9 +226,9 @@ void grabarBloqueo(tt::Cabecera cab, const uint8_t *uid, size_t lenUid, const ui
 
 Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   const String uidHex = aHex(uid, lenUid);
-  const uint32_t ahora = ahoraUnix();
+  uint32_t ahora = ahoraUnix();
   if (!almacen.listo()) return aviso("Error microSD", "No se puede cobrar");
-  if (!ahora) return aviso("Sin hora", "Conecte el WiFi");
+  if (!ahora) return aviso("Sin hora", "Conecte el WiFi una vez");
 
   uint8_t pwd[4], pack[2], packTarjeta[2];
   tt::contrasena(almacen.claveMaestra(), uid, lenUid, pwd, pack);
@@ -233,6 +266,12 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   String nombre = t.nombre;
   if (nombre.length()) nombre.setCharAt(0, toupper(nombre[0]));
 
+  // Con la hora estimada del arranque (sin WiFi aún) la placa puede ir por detrás de la tarjeta, que lleva la fecha
+  // del último cobro, firmada: el reloj no retrocede respecto a ella, o un doble toque tras un reinicio cobraría dos veces
+  if (!horaReal && reg.fecha > ahora) {
+    baseUnix += reg.fecha - ahora;
+    ahora = reg.fecha;
+  }
   if (reg.validador == almacen.validador() && ahora >= reg.fecha && ahora - reg.fecha < MARGEN_DOBLE_TOQUE) {
     // Ya cobrado aquí hace un momento. Si la verificación de aquel cobro falló
     // (tarjeta retirada justo al final), el viaje se registra ahora.
@@ -345,8 +384,7 @@ void atenderPuente() {
   if (!horaDelServidor()) {  // la del servidor tiene preferencia
     const uint32_t h = puente.horaUnix();
     if (h) {
-      baseUnix = h;
-      baseMillis = millis();
+      fijarHora(h, millis());
     }
   }
   if (!estaba) log("Ordenador conectado. Validador " + String(almacen.validador()) + ", eventos sin subir: " +
@@ -420,8 +458,7 @@ void servicioSyncV2() {
   v2->sinc->atender(canal, ahora);
   if (v2->sinc->horaServidor() && v2->sinc->horaServidor() != v2->horaVista) {
     v2->horaVista = v2->sinc->horaServidor();
-    baseUnix = v2->sinc->horaServidor();
-    baseMillis = v2->sinc->millisHora();
+    fijarHora(v2->sinc->horaServidor(), v2->sinc->millisHora());
     pantallaEspera();
   }
   v2->almacenSync->paso(true);
@@ -483,6 +520,11 @@ void setup() {
   PASO("setup: pantalla Iniciando");
   ui::espera("Validador", "Iniciando...");
   pinMode(PIN_BOOT, INPUT_PULLUP);
+  PASO("setup: hora guardada");
+  if (const uint32_t h = horaGuardada()) {  // hora estimada para cobrar aunque no haya WiFi
+    baseUnix = h;
+    baseMillis = millis();
+  }
   PASO("setup: microSD");
   almacen.iniciar();
   PASO("setup: lector PN532");
@@ -535,8 +577,7 @@ void loop() {
   PASO("loop: sincronizador");
   if (!v2 && sincronizador.atender()) {  // con sync=v2 corre más abajo, con el lector libre
     if (sincronizador.horaServidor()) {  // la hora del servidor permite cobrar sin el puente
-      baseUnix = sincronizador.horaServidor();
-      baseMillis = sincronizador.millisHora();
+      fijarHora(sincronizador.horaServidor(), sincronizador.millisHora());
     }
     PASO("loop: pantalla tras sincronizar");
     pantallaEspera();  // actualiza "Sin subir"
