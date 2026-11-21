@@ -313,8 +313,16 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
               abono ? "Recarga +" + soles(abono) : "");
 }
 
+// wifi=off en config.txt (se lee al arrancar): el validador no enciende el WiFi ni sincroniza. Para probar que cobra
+// sin red (o usarlo así en un bus sin cobertura); se quita con wifi=on y reiniciando.
+bool wifiApagado = false;
+
 // El estado de la sincronización para la pantalla de espera ("WiFi OK", "Sin WiFi"...)
-const String &estadoSync() { return v2 ? v2->estado : sincronizador.estado(); }
+const String &estadoSync() {
+  static const String apagado = "WiFi apagado";
+  if (wifiApagado) return apagado;
+  return v2 ? v2->estado : sincronizador.estado();
+}
 uint32_t horaDelServidor() { return v2 ? v2->sinc->horaServidor() : sincronizador.horaServidor(); }
 
 void pantallaEspera() {
@@ -440,7 +448,7 @@ void iniciarSyncV2() {
   c.versionFirmware = VERSION_FIRMWARE;
   c.ahoraUnix = ahoraUnix;
   nuevo->sinc.reset(new SincronizadorV2(*nuevo->almacenSync, c));
-  nuevo->gestor->iniciar();
+  if (!wifiApagado) nuevo->gestor->iniciar();  // iniciar() enciende el WiFi
   v2 = std::move(nuevo);
   log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()));
 }
@@ -448,7 +456,7 @@ void iniciarSyncV2() {
 // Un turno de la sincronización v2. Solo se llama con el lector libre (sin tarjeta delante): conectar con el broker
 // (TLS) bloquea un par de segundos, y paso() hace una operación en la microSD.
 void servicioSyncV2() {
-  if (!v2) return;
+  if (!v2 || wifiApagado) return;
   const uint32_t ahora = millis();
   v2->gestor->atender(ahora, false);
   CanalPaquetes *canal = v2->gestor->activo();
@@ -530,6 +538,8 @@ void setup() {
   PASO("setup: lector PN532");
   iniciarLector();
   PASO("setup: modo sync");
+  wifiApagado = almacen.config("wifi") == "off";
+  if (wifiApagado) log("wifi=off: el WiFi no se enciende; solo se cobra (se guarda todo para subirlo después)");
   iniciarSyncV2();
   PASO("setup: pantalla de espera");
   pantallaEspera();
@@ -575,7 +585,7 @@ void loop() {
   PASO("loop: ui::actualizar");
   ui::actualizar();
   PASO("loop: sincronizador");
-  if (!v2 && sincronizador.atender()) {  // con sync=v2 corre más abajo, con el lector libre
+  if (!v2 && !wifiApagado && sincronizador.atender()) {  // con sync=v2 corre más abajo, con el lector libre
     if (sincronizador.horaServidor()) {  // la hora del servidor permite cobrar sin el puente
       fijarHora(sincronizador.horaServidor(), sincronizador.millisHora());
     }
