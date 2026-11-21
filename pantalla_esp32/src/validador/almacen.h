@@ -30,7 +30,15 @@ struct Tarifa {
 class Almacen {
  public:
   Almacen() : recargas_(archivos_), tarifasBin_(archivos_), ajenos_(archivos_), firmados_(archivos_) {}
-  bool iniciar();  // monta la microSD y carga lo necesario en memoria
+  // Monta la microSD y carga lo necesario en memoria. Si la tarjeta no contesta (pasa tras un
+  // reinicio brusco en pleno acceso) reintenta INTENTOS_MONTAJE veces, reiniciando el bus SPI.
+  bool iniciar();
+  // Desde loop(): si sigue sin montar, lo intenta cada REINTENTO_MONTAJE_MS. Devuelve true
+  // solo en la llamada en que consigue montarla (para que la pantalla se actualice).
+  bool reintentarMontaje();
+  static constexpr uint8_t INTENTOS_MONTAJE = 4;
+  static constexpr uint32_t ESPERA_MONTAJE_MS = 300;
+  static constexpr uint32_t REINTENTO_MONTAJE_MS = 3000;
   bool listo() const { return listo_; }
 
   // Configuración
@@ -75,6 +83,8 @@ class Almacen {
   size_t numRecargas() const { return recargas_.cantidad(); }
 
  private:
+  bool montar();       // un intento de montar la tarjeta
+  void cargarDatos();  // lee config, estado y listas de la tarjeta ya montada
   bool agregarEvento(const String &json);
   void guardarEstado();
   void guardarUltimasOperaciones();
@@ -86,6 +96,7 @@ class Almacen {
   bool guardarRedes();
 
   bool listo_ = false;
+  uint32_t ultimoIntentoMontaje_ = 0;
   uint16_t validador_ = 0;
   uint8_t clave_[32] = {0};
   bool tieneClave_ = false;
