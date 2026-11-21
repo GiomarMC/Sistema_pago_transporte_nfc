@@ -23,6 +23,7 @@
 
 #include <Arduino.h>
 #include <Preferences.h>
+#include <WiFi.h>
 #include <Formato.h>
 #include <LectorPN532.h>
 #include <LectorPuente.h>
@@ -41,7 +42,9 @@
 #include "almacen_sync_binario.h"
 #include "clave_servidor.h"
 #include "gestor_enlaces.h"
+#include "intercambio_vecinos.h"
 #include "portal.h"
+#include "radio_espnow.h"
 #include "raices_tls.h"
 #include "secretos.h"
 #include "sincronizador.h"
@@ -139,6 +142,9 @@ Secretos secretos;
 constexpr uint32_t VERSION_FIRMWARE = 20261121;  // AAAAMMDD, para el HOLA
 struct SyncV2 {
   uint8_t claveHmac[Secretos::TAM_CLAVE_HMAC];
+  std::unique_ptr<VecinosEspNow> vecinos;       // solo con espnow=on en config.txt
+  std::unique_ptr<RadioEspNow> radio;
+  std::unique_ptr<IntercambioVecinos> intercambio;
   std::unique_ptr<CanalMqtt> canal;
   std::unique_ptr<GestorEnlaces> gestor;
   std::unique_ptr<AlmacenSyncBinario> almacenSync;
@@ -378,7 +384,10 @@ void guardarConfig(const String &configRecibida) {
 // (--configurar) y la hora. Se le saluda mientras falte alguna de las dos o
 // mientras conteste; cada saludo sin respuesta espera 1,5 s.
 void atenderPuente() {
-  const bool falta = !almacen.configurado() || !ahoraUnix();
+  // Los primeros segundos tras arrancar siempre se saluda: con la hora guardada (cobrar sin WiFi) ya no falta nada y,
+  // si no, el puente no podría reconfigurar una placa que ya está configurada
+  const bool ventanaInicial = millis() < 30000;
+  const bool falta = !almacen.configurado() || !ahoraUnix() || ventanaInicial;
   if (!falta && !puente.conectado()) return;
   if (millis() - ultimoSaludo < (puente.conectado() ? 3000 : 10000)) return;
   ultimoSaludo = millis();
@@ -438,9 +447,19 @@ void iniciarSyncV2() {
     return;
   }
   nuevo->canal.reset(new CanalMqtt(enlaceWifi, host.c_str(), almacen.validador(), clave.c_str()));
-  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, *nuevo->canal));
-  nuevo->almacenSync.reset(
-      new AlmacenSyncBinario(almacen.cola(), almacen.estado(), almacen.paquetesAjenos(), almacen.aplicador(), ahoraUnix));
+  // ESP-NOW entre buses (M8): opcional, config.txt espnow=on [espnow_canal=N]. Comparte la radio con el WiFi: con el
+  // WiFi conectado a un AP en otro canal que espnow_canal se pausa (por defecto el canal 1)
+  uint8_t canalEspNow = 1;
+  if (almacen.config("espnow") == "on") {
+    const int c = almacen.config("espnow_canal").toInt();
+    if (c >= 1 && c <= 13) canalEspNow = static_cast<uint8_t>(c);
+    nuevo->vecinos.reset(new VecinosEspNow(log));
+    nuevo->radio.reset(new RadioEspNow(*nuevo->vecinos));
+  }
+  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, *nuevo->canal, nullptr, nuevo->vecinos.get()));
+  nuevo->gestor->canalEspNow(canalEspNow);
+  nuevo->almacenSync.reset(new AlmacenSyncBinario(almacen.cola(), almacen.estado(), almacen.paquetesAjenos(),
+                                                  almacen.aplicador(), ahoraUnix, &almacen.firmados()));
   ConfigSyncV2 c;
   c.validador = almacen.validador();
   c.claveHmac = nuevo->claveHmac;
@@ -448,18 +467,33 @@ void iniciarSyncV2() {
   c.versionFirmware = VERSION_FIRMWARE;
   c.ahoraUnix = ahoraUnix;
   nuevo->sinc.reset(new SincronizadorV2(*nuevo->almacenSync, c));
-  if (!wifiApagado) nuevo->gestor->iniciar();  // iniciar() enciende el WiFi
+  if (nuevo->radio) {
+    nuevo->intercambio.reset(new IntercambioVecinos(*nuevo->radio, *nuevo->sinc, *nuevo->almacenSync, almacen.validador()));
+    sp::Baliza inicial;
+    inicial.validador = almacen.validador();
+    nuevo->vecinos->publicar(inicial);  // hasta que IntercambioVecinos publique la suya
+  }
+  if (!wifiApagado) nuevo->gestor->iniciar();  // enciende el WiFi y, si hay, ESP-NOW
+  else if (nuevo->vecinos) nuevo->vecinos->iniciar(canalEspNow);  // sin WiFi: solo ESP-NOW
   v2 = std::move(nuevo);
-  log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()));
+  log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()) +
+      (v2->vecinos ? ", ESP-NOW en el canal " + String(canalEspNow) : String("")));
 }
 
 // Un turno de la sincronización v2. Solo se llama con el lector libre (sin tarjeta delante): conectar con el broker
 // (TLS) bloquea un par de segundos, y paso() hace una operación en la microSD.
 void servicioSyncV2() {
-  if (!v2 || wifiApagado) return;
+  if (!v2) return;
   const uint32_t ahora = millis();
-  v2->gestor->atender(ahora, false);
-  CanalPaquetes *canal = v2->gestor->activo();
+  CanalPaquetes *canal = nullptr;
+  if (!wifiApagado) {
+    // El canal del AP al que está conectado el WiFi decide si ESP-NOW se pausa (solo anda en su canal)
+    const uint8_t canalWifi = enlaceWifi.estado() == EstadoEnlace::Listo ? WiFi.channel() : v2->gestor->canalEspNow();
+    v2->gestor->atender(ahora, false, canalWifi);
+    canal = v2->gestor->activo();
+  } else if (v2->vecinos) {
+    v2->vecinos->atender();  // sin WiFi el gestor no corre: ESP-NOW se atiende aquí
+  }
   uint32_t tx = 0, rx = 0;
   if (almacen.listo()) almacen.consumo().bytesHoy(tx, rx);
   v2->sinc->telemetria(enlaceWifi.senal(), tx, rx);
@@ -469,6 +503,7 @@ void servicioSyncV2() {
     fijarHora(v2->sinc->horaServidor(), v2->sinc->millisHora());
     pantallaEspera();
   }
+  if (v2->intercambio) v2->intercambio->atender(ahora, canal != nullptr);
   v2->almacenSync->paso(true);
   const String estado = canal ? "WiFi OK" : (enlaceWifi.estado() == EstadoEnlace::Listo ? "Sin servidor" : "Sin WiFi");
   if (estado != v2->estado) {
@@ -483,7 +518,15 @@ void servicioSyncV2() {
     log("Sync v2: " + estado + ", HOLA enviados " + String(v2->sinc->holasEnviados()) + ", paquetes de eventos " +
         String(v2->sinc->paquetesEventos()) + ", pendientes " + String(v2->sinc->pendientes()) + ", rechazados " +
         String(v2->sinc->rechazados()) + " (" + sp::describir(v2->sinc->ultimoRechazo()) + "), hora del servidor " +
-        String(v2->sinc->horaServidor()));
+        String(v2->sinc->horaServidor()) +
+        (enlaceWifi.estado() == EstadoEnlace::Listo ? ", WiFi en el canal " + String(WiFi.channel()) : String("")));
+    if (v2->intercambio) {
+      const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
+      log("ESP-NOW: vecinos " + String(v2->vecinos->cantidad()) + ", pedidos de listas " + String(c.pedidosListas) +
+          ", de acuses " + String(c.pedidosAcuses) + ", atendidos " + String(c.pedidosAtendidos) + ", EVENTOS entregados " +
+          String(c.eventosEntregados) + ", LISTAS " + String(c.listasEntregadas) + ", ACUSES " + String(c.acusesEntregados) +
+          ", recibidos " + String(c.recibidos) + ", ajenos de vecinos " + String(v2->sinc->ajenosRecibidos()));
+    }
   }
 }
 
