@@ -8,7 +8,7 @@ namespace sp {
 
 namespace {
 
-constexpr size_t TAM_EVENTO = 64, TAM_HOLA = 32, TAM_ACUSE = 8;
+constexpr size_t TAM_HOLA = 32, TAM_ACUSE = 8;
 constexpr size_t TAM_LISTAS = 12, TAM_ENTRADA = 16, TAM_TARIFAS = 8, TAM_TARIFA = 24;
 
 // --- Enteros little-endian -----------------------------------------------------------
@@ -374,5 +374,13 @@ size_t medirPaquete(const uint8_t *datos, size_t largo) {
   size_t total = TAM_CABECERA + lee16(datos + 16) + tamFirma(lee16(datos + 4));
   return total <= largo ? total : 0;
 }
+
+size_t eventoABytes(const Evento &e, uint8_t salida[TAM_EVENTO]) {
+  if (e.largoUid > sizeof(e.uid)) return 0;
+  codificarEvento(e, salida);
+  return TAM_EVENTO;
+}
+
+bool eventoDeBytes(const uint8_t entrada[TAM_EVENTO], Evento &e) { return decodificarEvento(entrada, e); }
 
 }  // namespace sp
