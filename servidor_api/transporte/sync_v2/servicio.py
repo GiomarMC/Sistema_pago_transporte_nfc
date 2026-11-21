@@ -21,7 +21,8 @@ from django.db.models import Max
 from django.utils import timezone
 
 from transporte import servicios
-from transporte.models import CambioLista, EventoRecibido, Recarga, Tarifa, Tarjeta, Validador
+from transporte.models import (Alerta, CambioLista, EventoRecibido, Movimiento, Recarga, Tarifa, Tarjeta,
+                               Validador)
 
 from . import claves
 from .paquetes import (ACUSE, AGREGAR, BLOQUEO, EVENTOS, FRAUDE, HOLA, INCIDENCIA, LISTAS,
@@ -126,17 +127,35 @@ def _evento_fallido(validador, e, via, motivo):
                                          defaults={"via": via})
 
 
+def _ids_de_v1(numero, desde):
+    """Ids de eventos del validador que llegaron por la sincronización v1 (JSON), que solo deja su rastro en
+    el movimiento (ref "V<n.º>-<id>") o en la alerta ("V<n.º>-<id>: ..."), no en EventoRecibido. Un validador
+    que pasa de v1 a v2 con ids ya subidos tiene esos viajes; sin contarlos la contigüidad se quedaría
+    en 0 para siempre y el validador reenviaría sus eventos sin recibir nunca el acuse."""
+    prefijo = f"V{numero}-"
+    ids = set()
+    textos = list(Movimiento.objects.filter(ref__startswith=prefijo).values_list("ref", flat=True))
+    textos += [d.split(":", 1)[0] for d in
+               Alerta.objects.filter(detalle__startswith=prefijo).values_list("detalle", flat=True)]
+    for t in textos:
+        resto = t[len(prefijo):]
+        if resto.isdigit() and int(resto) > desde:
+            ids.add(int(resto))
+    return ids
+
+
 @transaction.atomic
 def _avanzar_contiguo(validador) -> int:
-    """Sube ultimo_evento_contiguo mientras estén todos los ids siguientes (C1 5.7)."""
+    """Sube ultimo_evento_contiguo mientras estén todos los ids siguientes (C1 5.7): los recibidos por v2
+    (EventoRecibido) y los que ya se subieron por v1."""
     v = Validador.objects.select_for_update().get(pk=validador.pk)
     contiguo = v.ultimo_evento_contiguo
-    for id_evento in EventoRecibido.objects.filter(
-            validador=v, id_evento__gt=contiguo).order_by("id_evento") \
-            .values_list("id_evento", flat=True).iterator():
-        if id_evento != contiguo + 1:
-            break
-        contiguo = id_evento
+    recibidos = set(EventoRecibido.objects.filter(validador=v, id_evento__gt=contiguo)
+                    .values_list("id_evento", flat=True))
+    if contiguo + 1 not in recibidos:  # solo si falta el siguiente se busca en lo de v1
+        recibidos |= _ids_de_v1(v.numero, contiguo)
+    while contiguo + 1 in recibidos:
+        contiguo += 1
     if contiguo != v.ultimo_evento_contiguo:
         v.ultimo_evento_contiguo = contiguo
         v.save(update_fields=["ultimo_evento_contiguo"])
