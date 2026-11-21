@@ -82,10 +82,15 @@ class ListaNegra {
   bool proximoPasoBloquea() const;
 
   // Vacía la lista (para reconstruirla cuando version_desde = 0) y los urgentes. Síncrono.
-  bool reiniciarListas();
+  // Con conservarUrgentes los bloqueos urgentes siguen en pie: los de una foto completa que aún no
+  // los recoge no deben desbloquearse mientras se reconstruye.
+  bool reiniciarListas(bool conservarUrgentes = false);
 
   bool bloqueoUrgente(uint32_t id);  // false si no se pudo guardar (queda bloqueado igualmente en RAM)
   bool limpiarUrgentes();
+  // Quita un urgente concreto: porque la lista ya lo recoge, o porque un cambio en orden lo desbloquea
+  // (sin esto un urgente no se podría desbloquear nunca). false si no se pudo guardar. No hace nada si no está.
+  bool quitarUrgente(uint32_t id);
   size_t cantidadUrgentes() const { return urgentes_.size(); }
 
  private:

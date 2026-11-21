@@ -332,9 +332,9 @@ ListaNegra::Progreso ListaNegra::avanzar(size_t maxEntradas) {
   return Progreso::TERMINADA;
 }
 
-bool ListaNegra::reiniciarListas() {
+bool ListaNegra::reiniciarListas(bool conservarUrgentes) {
   abortarMezcla();
-  limpiarUrgentes();
+  if (!conservarUrgentes) limpiarUrgentes();
   if (!iniciarMezcla(nullptr, 0, true)) return false;
   Progreso p;
   do {
@@ -399,6 +399,14 @@ bool ListaNegra::bloqueoUrgente(uint32_t id) {
   pon32(r, id);
   pon32(r + 4, id ^ MASCARA_URGENTE);
   return f->agregar(r, TAM_URGENTE) && f->vaciar();
+}
+
+bool ListaNegra::quitarUrgente(uint32_t id) {
+  auto it = std::find(urgentes_.begin(), urgentes_.end(), id);
+  if (it == urgentes_.end()) return true;
+  urgentes_.erase(it);  // en RAM primero, como en bloqueoUrgente()
+  if (urgentes_.empty()) return limpiarUrgentes();
+  return reescribirUrgentes();
 }
 
 bool ListaNegra::limpiarUrgentes() {

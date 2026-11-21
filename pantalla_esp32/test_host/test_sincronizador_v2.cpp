@@ -41,7 +41,7 @@ class AlmacenFalso : public AlmacenSync {
       if (ajenos_[i].origen == origen && ajenos_[i].ultimoId <= hasta) ajenos_.erase(ajenos_.begin() + i);
       else i++;
   }
-  void aplicarListas(const sp::Listas &l) override { listas_ = l; listasRecibidas_++; }
+  void aplicarListas(const sp::Listas &l, const uint8_t *, size_t) override { listas_ = l; listasRecibidas_++; }
   void aplicarTarifas(const sp::Tarifas &t) override { tarifas_ = t; tarifasRecibidas_++; }
 
   static sp::Evento evento(uint32_t id) {

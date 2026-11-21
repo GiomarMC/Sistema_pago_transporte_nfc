@@ -109,7 +109,7 @@ class AlmacenEnMemoria : public AlmacenSync {
   size_t ajenos() const override { return 0; }
   size_t leerAjeno(size_t, uint8_t *, size_t) override { return 0; }
   void ajenosAcusados(uint16_t, uint32_t) override {}
-  void aplicarListas(const sp::Listas &l) override { listas = l; listasRecibidas++; }
+  void aplicarListas(const sp::Listas &l, const uint8_t *, size_t) override { listas = l; listasRecibidas++; }
   void aplicarTarifas(const sp::Tarifas &t) override { tarifas = t; tarifasRecibidas++; }
 
   uint32_t ultimo_ = 0, acusado_ = 0, secuencia_ = 0;

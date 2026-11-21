@@ -11,7 +11,8 @@
 //   - Lo que no recibe acuse en 30 s se reenvía.
 //   - Reenvía tal cual (sin volver a firmar) los paquetes de otros buses que guarda.
 //   - Verifica y procesa lo que llega: ACUSE (confirma eventos y libera paquetes ajenos),
-//     LISTAS y TARIFAS (se entregan al almacén; aplicarlas es M4-02).
+//     LISTAS y TARIFAS (se entregan al almacén, que las aplica: AplicadorListas, M4-02). Un LISTAS
+//     con firma inválida se descarta y se registra como incidencia "lista firma invalida".
 //   - Toma la hora del servidor de cada ACUSE válido (M4-03).
 //
 // Lo que necesita del almacenamiento queda detrás de AlmacenSync, porque hoy los eventos
@@ -49,9 +50,16 @@ class AlmacenSync {
   // El servidor confirmó los eventos de `origen` hasta `hastaEvento`: esos paquetes sobran.
   virtual void ajenosAcusados(uint16_t origen, uint32_t hastaEvento) = 0;
 
-  // --- Respuestas del servidor (aplicarlas es M4-02) ---
-  virtual void aplicarListas(const sp::Listas &listas) { (void)listas; }
+  // --- Respuestas del servidor (las reglas de C1 5.5 las aplica AplicadorListas, M4-02) ---
+  // `paquete`: el LISTAS tal como llegó, con su firma, para guardarlo y pasárselo a otros buses
+  virtual void aplicarListas(const sp::Listas &listas, const uint8_t *paquete, size_t largo) {
+    (void)listas;
+    (void)paquete;
+    (void)largo;
+  }
   virtual void aplicarTarifas(const sp::Tarifas &tarifas) { (void)tarifas; }
+  // Algo anormal que debe quedar en el registro del validador (hasta 20 caracteres, como el detalle de un evento)
+  virtual void incidencia(const char *detalle) { (void)detalle; }
 };
 
 struct ConfigSyncV2 {
@@ -74,6 +82,10 @@ class SincronizadorV2 {
   // Una hora anterior a la ya aceptada en más de esto se descarta: la firma es válida, pero
   // pudo ser un ACUSE viejo reenviado por quien lo transportaba
   static constexpr uint32_t TOLERANCIA_HORA_S = 3;
+  // Un LISTAS con firma inválida se registra como incidencia, pero como mucho una cada minuto: cualquiera
+  // podría inundar el registro con paquetes falsos
+  static constexpr uint32_t INCIDENCIA_MS = 60000;
+  static constexpr const char *DETALLE_LISTA_FALSA = "lista firma invalida";
 
   SincronizadorV2(AlmacenSync &almacen, const ConfigSyncV2 &config) : almacen_(almacen), cfg_(config) {}
 
@@ -109,6 +121,7 @@ class SincronizadorV2 {
   uint32_t paquetesAjenos() const { return paquetesAjenos_; }
   uint32_t reenvios() const { return reenvios_; }
   uint32_t rechazados() const { return rechazados_; }
+  uint32_t listasRechazadasPorFirma() const { return listasFirmaMala_; }
   sp::Motivo ultimoRechazo() const { return ultimoRechazo_; }
 
  private:
@@ -131,6 +144,8 @@ class SincronizadorV2 {
   ConfigSyncV2 cfg_;
   int8_t senal_ = 0;
   uint32_t bytesTx_ = 0, bytesRx_ = 0;
+  uint32_t listasFirmaMala_ = 0, ultimaIncidenciaMs_ = 0;
+  bool hayIncidencia_ = false;
 
   CanalPaquetes *canalActual_ = nullptr;  // el canal listo del que se parte; cambiar de canal es empezar de nuevo
   bool canalListo_ = false, holaPendiente_ = false;
