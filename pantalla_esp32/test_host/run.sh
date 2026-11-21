@@ -49,3 +49,10 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento lib/Almace
     lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/ConsumoDatos.cpp test_host/test_consumo.cpp \
     -o /tmp/subepe-m3-test-consumo
 /tmp/subepe-m3-test-consumo
+# M4-02: las cinco reglas de LISTAS (C1 5.5) y TARIFAS con el SincronizadorV2 y el almacenamiento binario, con cortes de energía
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
+    src/validador/sincronizador_v2.cpp lib/ProtocoloSP/ProtocoloSP.cpp lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp \
+    lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
+    lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
+    /tmp/subepe-uecc.o test_host/test_listas_v2.cpp -lmbedcrypto -o /tmp/subepe-m4-test-listas
+/tmp/subepe-m4-test-listas

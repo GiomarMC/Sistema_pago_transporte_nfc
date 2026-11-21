@@ -113,6 +113,15 @@ void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahor
   if (!sp::desempaquetar(datos, largo, sinClavesDeValidadores, cfg_.clavePublicaServidor, rx_, &motivo)) {
     rechazados_++;
     ultimoRechazo_ = motivo;
+    // Regla 5 de C1 5.5: un LISTAS del servidor con la firma mala se descarta y queda como incidencia
+    if (motivo == sp::Motivo::FIRMA && largo > 5 && datos[3] == sp::LISTAS && datos[4] == 0 && datos[5] == 0) {
+      listasFirmaMala_++;
+      if (!hayIncidencia_ || (uint32_t)(ahoraMs - ultimaIncidenciaMs_) >= INCIDENCIA_MS) {
+        hayIncidencia_ = true;
+        ultimaIncidenciaMs_ = ahoraMs;
+        almacen_.incidencia(DETALLE_LISTA_FALSA);
+      }
+    }
     return;
   }
   const sp::Cabecera &cab = rx_.cabecera;
@@ -127,7 +136,7 @@ void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahor
       // Solo si es para este validador o para todos
       if (cab.destino != cfg_.validador && cab.destino != sp::TODOS) break;
       if (cab.tipo == sp::LISTAS) {
-        almacen_.aplicarListas(rx_.listas);
+        almacen_.aplicarListas(rx_.listas, datos, largo);
       } else {
         almacen_.aplicarTarifas(rx_.tarifas);
       }

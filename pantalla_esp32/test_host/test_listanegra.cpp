@@ -313,6 +313,26 @@ void urgentes() {
   ListaNegra m3(fs2);
   m3.iniciar();
   assert(m3.cantidadUrgentes() == 0);
+
+  // quitar uno solo (M4-02): los demás siguen, y también tras reiniciar; quitar uno que no está no hace nada
+  FsFalso fs3;
+  ListaNegra q(fs3);
+  assert(q.bloqueoUrgente(10) && q.bloqueoUrgente(20) && q.bloqueoUrgente(30));
+  assert(q.quitarUrgente(20) && q.cantidadUrgentes() == 2 && !q.bloqueada(20) && q.bloqueada(10) && q.bloqueada(30));
+  assert(q.quitarUrgente(99) && q.cantidadUrgentes() == 2);
+  ListaNegra q2(fs3);
+  q2.iniciar();
+  assert(q2.cantidadUrgentes() == 2 && q2.bloqueada(10) && q2.bloqueada(30) && !q2.bloqueada(20));
+  assert(q2.quitarUrgente(10) && q2.quitarUrgente(30) && q2.cantidadUrgentes() == 0 && !fs3.existe("/urgentes.bin"));
+  // un urgente que la lista ya recoge sigue bloqueado al quitarlo; si no, deja de estarlo
+  aplicar(q2, {{30, true}});
+  assert(q2.bloqueoUrgente(30) && q2.quitarUrgente(30) && q2.bloqueada(30));
+
+  // reiniciar la lista conservando los urgentes (una foto completa no desbloquea a quien aún no recoge)
+  aplicar(q2, {{1, true}, {2, true}});
+  assert(q2.bloqueoUrgente(555));
+  assert(q2.reiniciarListas(true) && !q2.bloqueada(1) && !q2.bloqueada(30) && q2.bloqueada(555) && q2.cantidadUrgentes() == 1);
+  assert(q2.reiniciarListas() && !q2.bloqueada(555) && q2.cantidadUrgentes() == 0);
 }
 
 // Un corte en cada operación de guardar un urgente: o la llamada no llegó a volver (y puede no estar),
