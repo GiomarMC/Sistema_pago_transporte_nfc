@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 
+#include <AplicadorListas.h>
 #include <ArchivosSD.h>
 #include <ColaEventos.h>
 #include <ConsumoDatos.h>
@@ -35,7 +36,8 @@ class Almacen {
  public:
   Almacen()
       : estado_(archivos_), cola_(archivos_, estado_, avisarCola), recargas_(archivos_), tarifasBin_(archivos_),
-        ajenos_(archivos_), firmados_(archivos_), consumo_(archivos_) {}
+        ajenos_(archivos_), firmados_(archivos_), consumo_(archivos_), listaNegraBin_(archivos_),
+        aplicador_(estado_, listaNegraBin_, recargas_, tarifasBin_, firmados_) {}
   // Monta la microSD y carga lo necesario en memoria. Si la tarjeta no contesta (pasa tras un
   // reinicio brusco en pleno acceso) reintenta INTENTOS_MONTAJE veces, reiniciando el bus SPI.
   bool iniciar();
@@ -61,7 +63,7 @@ class Almacen {
   bool olvidarRed(const String &ssid);
 
   // Consultas para cobrar
-  bool bloqueada(uint32_t idTarjeta) const;
+  bool bloqueada(uint32_t idTarjeta);
   bool tarifa(uint8_t codigo, Tarifa &t) const;
   uint32_t ultimaOperacion(uint32_t idTarjeta) const;
   bool existeViaje(uint32_t idTarjeta, uint16_t operacion);
@@ -83,6 +85,12 @@ class Almacen {
   ColaEventos &cola() { return cola_; }
   EstadoPersistente &estado() { return estado_; }
   uint32_t pendientes() const { return cola_.pendientes(); }
+  // Modo sync=v2 (config.txt): la lista negra es la binaria (la que llena el sincronizador v2 con AplicadorListas); en
+  // v1 sigue siendo el mapa en RAM que llena la sincronización JSON. Se decide al montar la tarjeta.
+  bool modoV2() const { return v2_; }
+  AplicadorListas &aplicador() { return aplicador_; }
+  ListaNegra &listaNegraBinaria() { return listaNegraBin_; }
+  PaquetesAjenos &paquetesAjenos() { return ajenos_; }
 
   // Sincronización con el servidor
   // Eventos aún no subidos (como array JSON), hasta `max`; sus ids en `ids`
@@ -128,5 +136,8 @@ class Almacen {
   PaquetesAjenos ajenos_;
   PaquetesFirmados firmados_;
   ConsumoDatos consumo_;
+  ListaNegra listaNegraBin_;   // modo v2
+  AplicadorListas aplicador_;  // modo v2
+  bool v2_ = false;
   std::vector<RedWifi> redes_;
 };
