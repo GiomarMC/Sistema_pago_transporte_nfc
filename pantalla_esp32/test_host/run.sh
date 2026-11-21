@@ -13,3 +13,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/Prot
     lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o test_host/test_almacenamiento.cpp -lmbedcrypto \
     -o /tmp/subepe-m3-test-almacen
 /tmp/subepe-m3-test-almacen
+# M3-03: lista negra binaria (búsqueda por bloques, mezcla por partes y cortes de energía)
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ListaNegra.cpp test_host/test_listanegra.cpp \
+    -o /tmp/subepe-m3-test-lista
+/tmp/subepe-m3-test-lista
