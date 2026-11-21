@@ -5,4 +5,6 @@
 #include <stddef.h>
 #include <stdint.h>
 
-uint32_t crc32(const void *datos, size_t n);
+// `previo` encadena: crc32(b, nb, crc32(a, na)) == crc32(a ++ b), así se firma un archivo grande
+// por partes. Sin él (0) es el CRC de los datos solos.
+uint32_t crc32(const void *datos, size_t n, uint32_t previo = 0);
