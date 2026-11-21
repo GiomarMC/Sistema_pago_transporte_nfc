@@ -144,4 +144,7 @@ class PaquetesFirmados : public CarpetaPaquetes {
   // Hasta `max` paquetes, del más antiguo al más nuevo. Devuelve cuántos.
   size_t listar(InfoPaquete *salida, size_t max);
   size_t leer(uint32_t desde, uint32_t hasta, uint8_t *destino, size_t capacidad);
+  // El paquete que parte de la versión `desde` (el de mayor hasta si hay varios), con su `hasta`. 0 si no hay
+  // ninguno o no cabe. Para entregar a otro bus la cadena de LISTAS desde su versión (M8-03).
+  size_t leerDesde(uint32_t desde, uint8_t *destino, size_t capacidad, uint32_t &hasta);
 };

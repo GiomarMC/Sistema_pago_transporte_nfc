@@ -52,6 +52,29 @@ bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &b) {
   return true;
 }
 
+size_t armarPedido(const Pedido &p, uint8_t trama[TAM_TRAMA_MAXIMO]) {
+  trama[0] = 'E';
+  trama[1] = 'N';
+  trama[2] = PEDIDO;
+  trama[3] = 0;
+  escribe16(trama + 4, p.validador);
+  trama[6] = p.que;
+  escribe32(trama + 7, p.x);
+  return TAM_PEDIDO;
+}
+
+bool leerPedido(const uint8_t *trama, size_t largo, Pedido &p) {
+  if (largo < TAM_PEDIDO || largo > TAM_TRAMA_MAXIMO || trama[0] != 'E' || trama[1] != 'N' || trama[2] != PEDIDO)
+    return false;
+  const uint16_t validador = lee16(trama + 4);
+  const uint8_t que = trama[6];
+  if (validador == 0 || que < PEDIDO_LISTAS || que > PEDIDO_ACUSES) return false;
+  p.validador = validador;
+  p.que = que;
+  p.x = lee32(trama + 7);
+  return true;
+}
+
 uint8_t contarFragmentos(size_t largo) {
   if (largo == 0) return 0;
   size_t n = (largo + DATOS_POR_FRAGMENTO - 1) / DATOS_POR_FRAGMENTO;
