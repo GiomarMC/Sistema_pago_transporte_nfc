@@ -68,4 +68,24 @@ bool ArchivosSD::renombrar(const char *de, const char *a) {
   return SD.rename(x, y);
 }
 
+bool ArchivosSD::crearCarpeta(const char *carpeta) {
+  char c[96];
+  return completa(carpeta, c, sizeof(c)) && (SD.exists(c) || SD.mkdir(c));
+}
+
+bool ArchivosSD::listar(const char *carpeta, std::vector<std::string> &nombres) {
+  nombres.clear();
+  char c[96];
+  if (!completa(carpeta, c, sizeof(c))) return false;
+  File dir = SD.open(c);
+  if (!dir || !dir.isDirectory()) return false;
+  for (File f = dir.openNextFile(); f; f = dir.openNextFile()) {
+    if (f.isDirectory()) continue;
+    const char *n = f.name();  // según la versión del framework trae o no la ruta
+    const char *barra = strrchr(n, '/');
+    nombres.push_back(barra ? barra + 1 : n);
+  }
+  return true;
+}
+
 #endif  // ARDUINO

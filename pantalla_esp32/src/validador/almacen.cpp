@@ -88,6 +88,9 @@ bool Almacen::iniciar() {
   });
   cargarListas();
   cargarRedes();
+  // Sin ellos el validador sigue cobrando: solo no puede guardar paquetes de otros buses
+  if (!ajenos_.iniciar()) Serial.println("AVISO: no se pudo preparar /ajenos en la microSD");
+  if (!firmados_.iniciar()) Serial.println("AVISO: no se pudo preparar /firmados en la microSD");
   return true;
 }
 

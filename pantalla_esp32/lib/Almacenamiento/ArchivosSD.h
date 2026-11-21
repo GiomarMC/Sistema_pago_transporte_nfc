@@ -22,6 +22,8 @@ class ArchivosSD : public SistemaArchivos {
   bool existe(const char *ruta) override;
   bool borrar(const char *ruta) override;
   bool renombrar(const char *de, const char *a) override;
+  bool crearCarpeta(const char *carpeta) override;
+  bool listar(const char *carpeta, std::vector<std::string> &nombres) override;
 
  private:
   bool completa(const char *ruta, char *salida, size_t n) const;
