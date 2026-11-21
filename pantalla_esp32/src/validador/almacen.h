@@ -1,8 +1,9 @@
 // Datos locales del validador en la microSD (equivalente a validador_local.py).
 // Archivos de texto, para poder leerlos en un ordenador si hace falta:
 //   /config.txt      validador=103 / clave_maestra=<64 hex> wifi_ssid, wifi_clave, servidor, token
-//   /eventos.txt     un JSON por línea: viajes, incidencias y fraudes pendientes de subir
-//   /estado.txt      siguiente_id, ultimo_subido
+//   /eventos.bin     viajes, incidencias y fraudes pendientes de subir (binario, ColaEventos); /estado.bin lleva
+//   /estado.bin      siguiente_id, hasta_acusado, versiones y secuencia (escritura atómica, EstadoPersistente).
+//                    Los /eventos.txt y /estado.txt de versiones anteriores se migran solos (quedan como *.migrado)
 //   /ultima_op.txt   "id_tarjeta operación" por línea (detecta copias restauradas)
 //   /lista_negra.txt un id de tarjeta por línea         } los escribe la sincronización
 //   /tarifas.bin     cuerpo del paquete TARIFAS de C1   } con el servidor; si no existen
@@ -17,7 +18,9 @@
 #include <vector>
 
 #include <ArchivosSD.h>
+#include <ColaEventos.h>
 #include <ConsumoDatos.h>
+#include <EstadoPersistente.h>
 #include <PaquetesGuardados.h>
 #include <RedWifi.h>
 #include <Recargas.h>
@@ -30,7 +33,9 @@ struct Tarifa {
 
 class Almacen {
  public:
-  Almacen() : recargas_(archivos_), tarifasBin_(archivos_), ajenos_(archivos_), firmados_(archivos_), consumo_(archivos_) {}
+  Almacen()
+      : estado_(archivos_), cola_(archivos_, estado_, avisarCola), recargas_(archivos_), tarifasBin_(archivos_),
+        ajenos_(archivos_), firmados_(archivos_), consumo_(archivos_) {}
   // Monta la microSD y carga lo necesario en memoria. Si la tarjeta no contesta (pasa tras un
   // reinicio brusco en pleno acceso) reintenta INTENTOS_MONTAJE veces, reiniciando el bus SPI.
   bool iniciar();
@@ -74,12 +79,18 @@ class Almacen {
   PaquetesFirmados &firmados() { return firmados_; }
   // Consumo de datos por canal y día (M3-06): de ahí salen bytesTxHoy y bytesRxHoy del HOLA
   ConsumoDatos &consumo() { return consumo_; }
-  uint32_t pendientes() const { return siguienteId_ - 1 - ultimoSubido_; }
+  // Los eventos y el estado en binario, para el sincronizador v2 (AlmacenSyncBinario)
+  ColaEventos &cola() { return cola_; }
+  EstadoPersistente &estado() { return estado_; }
+  uint32_t pendientes() const { return cola_.pendientes(); }
 
   // Sincronización con el servidor
   // Eventos aún no subidos (como array JSON), hasta `max`; sus ids en `ids`
   String eventosPendientes(size_t max, std::vector<uint32_t> &ids);
   void marcarSubidos(uint32_t hastaId);  // confirmados por el servidor hasta este id
+  // Trabajo de fondo que cuesta tiempo en la microSD (compactar la cola de eventos): desde loop(), con el lector
+  // libre, un paso por llamada. true si hizo algo.
+  bool mantenimiento();
   // Textos con el formato de cada archivo (ver arriba); se guardan y se cargan
   bool guardarListas(const String &listaNegra, const String &tarifas, const String &recargas);
   size_t tamListaNegra() const { return listaNegra_.size(); }
@@ -88,8 +99,10 @@ class Almacen {
  private:
   bool montar();       // un intento de montar la tarjeta
   void cargarDatos();  // lee config, estado y listas de la tarjeta ya montada
-  bool agregarEvento(const String &json);
-  void guardarEstado();
+  bool guardarEvento(sp::Evento &e);
+  static void avisarCola(const char *texto);
+  void prepararMigracion();
+  void migrarEventosDeTexto();
   void guardarUltimasOperaciones();
   void cargarConfig();
   void cargarListas();
@@ -98,17 +111,18 @@ class Almacen {
   void cargarRedes();
   bool guardarRedes();
 
+  uint8_t fallosCompactar_ = 0;  // la compactación se deja tras 3 fallos seguidos, hasta el siguiente acuse
   bool listo_ = false;
   uint32_t ultimoIntentoMontaje_ = 0;
   uint16_t validador_ = 0;
   uint8_t clave_[32] = {0};
   bool tieneClave_ = false;
   std::map<String, String> config_;
-  uint32_t siguienteId_ = 1;
-  uint32_t ultimoSubido_ = 0;
   std::map<uint32_t, uint32_t> ultimaOp_;
   std::map<uint32_t, bool> listaNegra_;
   ArchivosSD archivos_;  // la microSD ya montada, vista como SistemaArchivos (raíz)
+  EstadoPersistente estado_;
+  ColaEventos cola_;
   Recargas recargas_;
   TarifasGuardadas tarifasBin_;
   PaquetesAjenos ajenos_;

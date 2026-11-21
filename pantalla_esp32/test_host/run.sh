@@ -64,3 +64,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -
     lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
     /tmp/subepe-uecc.o test_host/test_almacen_sync.cpp -lmbedcrypto -o /tmp/subepe-m4-test-almacen-sync
 /tmp/subepe-m4-test-almacen-sync
+# M3-01: eventos binarios <-> línea JSON del sincronizador v1 y de /eventos.txt (formato sin cambios, ida y vuelta)
+g++ -std=c++17 -Wall -Wextra -Werror -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
+    lib/Almacenamiento/EventosTexto.cpp lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o \
+    test_host/test_eventos_texto.cpp -lmbedcrypto -o /tmp/subepe-m3-test-eventos-texto
+/tmp/subepe-m3-test-eventos-texto

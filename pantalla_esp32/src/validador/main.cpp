@@ -110,6 +110,17 @@ String soles(int32_t c) {
   return s + "S/ " + String(c / 100) + "." + dec;
 }
 
+// El detalle de un evento son 20 caracteres ASCII como mucho (C1 5.3)
+const char *detalleAlterada(tt::Error err) {
+  switch (err) {
+    case tt::Error::SIN_MARCA: return "alterada: sin marca";
+    case tt::Error::VERSION_NO_SOPORTADA: return "alterada: version";
+    case tt::Error::FIRMA_CABECERA: return "alterada: firma";
+    case tt::Error::SIN_REGISTRO_VALIDO: return "alterada: sin saldo";
+    default: return "tarjeta alterada";
+  }
+}
+
 String aHex(const uint8_t *d, size_t n) {
   String s;
   char b[3];
@@ -155,7 +166,7 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   tt::EstadoTarjeta e;
   tt::Error err = tt::decodificar(area, uid, lenUid, clave, e);
   if (err != tt::Error::OK) {
-    almacen.registrarIncidencia(ahora, 0, uidHex, String("tarjeta alterada: ") + tt::describir(err), true);
+    almacen.registrarIncidencia(ahora, 0, uidHex, detalleAlterada(err), true);
     return rechazo("Tarjeta no valida", "Datos alterados");
   }
   uint32_t contador = 0;
@@ -167,14 +178,11 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   if (almacen.bloqueada(cab.idTarjeta)) {
     grabarBloqueo(cab, uid, lenUid, clave);
     almacen.registrarIncidencia(ahora, cab.idTarjeta, uidHex,
-                                "intento de uso de tarjeta bloqueada; bloqueo grabado en la tarjeta", false);
+                                "tarjeta bloqueada", false);
     return rechazo("Tarjeta bloqueada", "Acuda a atencion");
   }
   if (reg.operacion < almacen.ultimaOperacion(cab.idTarjeta)) {
-    almacen.registrarIncidencia(ahora, cab.idTarjeta, uidHex,
-                                "operación " + String(reg.operacion) +
-                                    " menor que la ya vista: saldo restaurado de una copia antigua",
-                                true);
+    almacen.registrarIncidencia(ahora, cab.idTarjeta, uidHex, "operacion retrocede", true);  // saldo restaurado de una copia
     return rechazo("Tarjeta no valida", "Acuda a atencion");
   }
 
@@ -441,6 +449,8 @@ void loop() {
       log("ERROR: el PN532 dejó de responder");
       pantallaEspera();
     }
+    PASO("loop: mantenimiento de la microSD");
+    almacen.mantenimiento();  // sin tarjeta delante: un paso de lo que haya pendiente (compactar la cola)
     return;
   }
 
