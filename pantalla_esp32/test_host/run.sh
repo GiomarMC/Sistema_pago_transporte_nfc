@@ -33,3 +33,9 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento \
     lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ListaNegra.cpp test_host/test_listanegra.cpp \
     -o /tmp/subepe-m3-test-lista
 /tmp/subepe-m3-test-lista
+# M3-04: recargas y tarifas binarias (orden, idempotencia, cuerpo de TARIFAS de C1 y cortes de energía)
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/Recargas.cpp \
+    lib/Almacenamiento/TarifasGuardadas.cpp lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o \
+    test_host/test_recargas_tarifas.cpp -lmbedcrypto -o /tmp/subepe-m3-test-recargas
+/tmp/subepe-m3-test-recargas

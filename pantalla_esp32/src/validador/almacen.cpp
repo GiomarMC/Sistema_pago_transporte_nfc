@@ -109,23 +109,33 @@ void Almacen::cargarConfig() {
 
 void Almacen::cargarListas() {
   // Se recargan enteras en cada sincronización: el servidor manda la lista completa
-  tarifas_.clear();
   listaNegra_.clear();
-  recargas_.clear();
-  const String tarifas = leerArchivo("/tarifas.txt");
-  if (tarifas.length() == 0) {  // por defecto, hasta la primera sincronización
-    tarifas_[1] = {"general", 130};
-    tarifas_[2] = {"estudiante", 80};
-  }
-  porLinea(tarifas, [&](const String &l) {
-    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
-    if (a > 0 && b > a) tarifas_[l.substring(0, a).toInt()] = {l.substring(a + 1, b), (int32_t)l.substring(b + 1).toInt()};
-  });
+  const bool hayRecargas = recargas_.iniciar();
+  const bool hayTarifas = tarifasBin_.iniciar();
+  migrarListasDeTexto(hayRecargas, hayTarifas);
   porLinea(leerArchivo("/lista_negra.txt"), [&](const String &l) { listaNegra_[l.toInt()] = true; });
-  porLinea(leerArchivo("/recargas.txt"), [&](const String &l) {
-    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
-    if (a > 0 && b > a) recargas_.push_back({(uint32_t)l.substring(0, a).toInt(), (uint32_t)l.substring(a + 1, b).toInt(), (int32_t)l.substring(b + 1).toInt()});
-  });
+}
+
+// Un validador que ya tenía datos de una versión anterior los conserva: lo que haya en los
+// archivos de texto pasa a los binarios (una sola vez; el texto se borra al conseguirlo).
+void Almacen::migrarListasDeTexto(bool hayRecargas, bool hayTarifas) {
+  if (!hayRecargas && SD.exists("/recargas.txt")) {
+    std::vector<Recarga> r;
+    porLinea(leerArchivo("/recargas.txt"), [&](const String &l) {
+      int a = l.indexOf(' '), b = l.lastIndexOf(' ');
+      if (a > 0 && b > a) r.push_back({(uint32_t)l.substring(0, a).toInt(), (uint32_t)l.substring(a + 1, b).toInt(), (int32_t)l.substring(b + 1).toInt()});
+    });
+    if (recargas_.reemplazar(std::move(r))) {
+      SD.remove("/recargas.txt");
+      Serial.println("microSD: /recargas.txt migrado a /recargas.bin");
+    }
+  }
+  if (!hayTarifas && SD.exists("/tarifas.txt")) {
+    if (guardarTarifasDeTexto(leerArchivo("/tarifas.txt"))) {
+      SD.remove("/tarifas.txt");
+      Serial.println("microSD: /tarifas.txt migrado a /tarifas.bin");
+    }
+  }
 }
 
 String Almacen::config(const String &clave) const {
@@ -152,9 +162,15 @@ bool Almacen::guardarConfig(const String &pares) {
 bool Almacen::bloqueada(uint32_t idTarjeta) const { return listaNegra_.count(idTarjeta) > 0; }
 
 bool Almacen::tarifa(uint8_t codigo, Tarifa &t) const {
-  auto it = tarifas_.find(codigo);
-  if (it == tarifas_.end()) return false;
-  t = it->second;
+  if (tarifasBin_.cantidad() == 0) {  // sin sincronizar todavía: las de siempre
+    if (codigo == 1) t = {"general", 130};
+    else if (codigo == 2) t = {"estudiante", 80};
+    else return false;
+    return true;
+  }
+  sp::Tarifa c;
+  if (!tarifasBin_.tarifa(codigo, c)) return false;
+  t = {String(c.nombre), static_cast<int32_t>(c.precio)};
   return true;
 }
 
@@ -165,19 +181,7 @@ uint32_t Almacen::ultimaOperacion(uint32_t idTarjeta) const {
 
 void Almacen::recargasPendientes(uint32_t idCuenta, uint32_t ultima, int32_t &total,
                                  uint32_t &hasta) const {
-  total = 0;
-  hasta = ultima;
-  bool avanzo = true;
-  while (avanzo) {  // solo correlativas: no se salta ninguna
-    avanzo = false;
-    for (auto &r : recargas_) {
-      if (r.cuenta == idCuenta && r.seq == hasta + 1) {
-        total += r.monto;
-        hasta = r.seq;
-        avanzo = true;
-      }
-    }
-  }
+  recargas_.pendientes(idCuenta, ultima, total, hasta);  // solo correlativas: no se salta ninguna
 }
 
 bool Almacen::existeViaje(uint32_t idTarjeta, uint16_t operacion) {
@@ -269,9 +273,31 @@ void Almacen::marcarSubidos(uint32_t hastaId) {
   guardarEstado();
 }
 
+// Las tarifas del texto "código nombre precio" (una por línea) a TARIFAS de C1. El servidor no manda
+// aquí una versión, así que queda en 0.
+bool Almacen::guardarTarifasDeTexto(const String &texto) {
+  std::unique_ptr<sp::Tarifas> t(new sp::Tarifas());
+  memset(t.get(), 0, sizeof(*t));
+  porLinea(texto, [&](const String &l) {
+    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
+    if (a <= 0 || b <= a || t->n >= sp::MAX_TARIFAS) return;
+    sp::Tarifa &x = t->tarifas[t->n++];
+    x.codigo = l.substring(0, a).toInt();
+    x.precio = max<int32_t>(0, l.substring(b + 1).toInt());
+    strncpy(x.nombre, l.substring(a + 1, b).c_str(), 16);
+    x.nombre[16] = 0;
+  });
+  return tarifasBin_.guardar(*t);
+}
+
 bool Almacen::guardarListas(const String &listaNegra, const String &tarifas, const String &recargas) {
-  bool ok = escribirArchivo("/lista_negra.txt", listaNegra) && escribirArchivo("/tarifas.txt", tarifas) &&
-            escribirArchivo("/recargas.txt", recargas);
+  std::vector<Recarga> r;
+  porLinea(recargas, [&](const String &l) {
+    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
+    if (a > 0 && b > a) r.push_back({(uint32_t)l.substring(0, a).toInt(), (uint32_t)l.substring(a + 1, b).toInt(), (int32_t)l.substring(b + 1).toInt()});
+  });
+  bool ok = escribirArchivo("/lista_negra.txt", listaNegra) && guardarTarifasDeTexto(tarifas) &&
+            recargas_.reemplazar(std::move(r));
   cargarListas();
   return ok;
 }

@@ -5,15 +5,21 @@
 //   /estado.txt      siguiente_id, ultimo_subido
 //   /ultima_op.txt   "id_tarjeta operación" por línea (detecta copias restauradas)
 //   /lista_negra.txt un id de tarjeta por línea         } los escribe la sincronización
-//   /tarifas.txt     "código nombre precio" por línea   } con el servidor; si no existen
-//   /recargas.txt    "cuenta seq monto" por línea       } se usan valores por defecto
+//   /tarifas.bin     cuerpo del paquete TARIFAS de C1   } con el servidor; si no existen
+//   /recargas.bin    registros (cuenta, seq, monto)     } se usan valores por defecto
+//                    (binarios, a prueba de cortes de energía: ver Recargas y TarifasGuardadas;
+//                    los /tarifas.txt y /recargas.txt de versiones anteriores se migran solos)
 //   /redes.txt       "red<TAB>contraseña" por línea: redes WiFi (portal de configuración)
 #pragma once
 #include <Arduino.h>
 #include <map>
+#include <memory>
 #include <vector>
 
+#include <ArchivosSD.h>
 #include <RedWifi.h>
+#include <Recargas.h>
+#include <TarifasGuardadas.h>
 
 struct Tarifa {
   String nombre;
@@ -22,6 +28,7 @@ struct Tarifa {
 
 class Almacen {
  public:
+  Almacen() : recargas_(archivos_), tarifasBin_(archivos_) {}
   bool iniciar();  // monta la microSD y carga lo necesario en memoria
   bool listo() const { return listo_; }
 
@@ -61,7 +68,7 @@ class Almacen {
   // Textos con el formato de cada archivo (ver arriba); se guardan y se cargan
   bool guardarListas(const String &listaNegra, const String &tarifas, const String &recargas);
   size_t tamListaNegra() const { return listaNegra_.size(); }
-  size_t numRecargas() const { return recargas_.size(); }
+  size_t numRecargas() const { return recargas_.cantidad(); }
 
  private:
   bool agregarEvento(const String &json);
@@ -69,6 +76,8 @@ class Almacen {
   void guardarUltimasOperaciones();
   void cargarConfig();
   void cargarListas();
+  void migrarListasDeTexto(bool hayRecargas, bool hayTarifas);
+  bool guardarTarifasDeTexto(const String &texto);  // /tarifas.txt y /recargas.txt de versiones anteriores -> .bin
   void cargarRedes();
   bool guardarRedes();
 
@@ -81,8 +90,8 @@ class Almacen {
   uint32_t ultimoSubido_ = 0;
   std::map<uint32_t, uint32_t> ultimaOp_;
   std::map<uint32_t, bool> listaNegra_;
-  std::map<uint8_t, Tarifa> tarifas_;
-  struct Recarga { uint32_t cuenta, seq; int32_t monto; };
-  std::vector<Recarga> recargas_;
+  ArchivosSD archivos_;  // la microSD ya montada, vista como SistemaArchivos (raíz)
+  Recargas recargas_;
+  TarifasGuardadas tarifasBin_;
   std::vector<RedWifi> redes_;
 };
