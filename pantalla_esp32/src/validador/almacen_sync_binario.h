@@ -25,12 +25,15 @@
 #include <ColaEventos.h>
 #include <EstadoPersistente.h>
 #include <PaquetesGuardados.h>
+#include <ProtocoloSP.h>
 
 #include "sincronizador_v2.h"
 
 class AlmacenSyncBinario : public AlmacenSync {
  public:
   static constexpr size_t COLA_TRABAJOS = 3;  // LISTAS/TARIFAS esperando (cada uno ~4 KB en RAM)
+  static constexpr size_t COLA_AJENOS = 4;    // EVENTOS de vecinos esperando a escribirse (~2 KB cada uno)
+  static constexpr size_t ACUSES_AJENOS = 8;  // ACUSE guardados para entregar a otros buses (en RAM)
 
   struct Cuenta {  // para el diagnóstico
     uint32_t listasAplicadas = 0, tarifasAplicadas = 0, descartados = 0, fallos = 0;
@@ -38,9 +41,10 @@ class AlmacenSyncBinario : public AlmacenSync {
   };
 
   // `ahoraUnix`: la hora para el campo fecha de las incidencias (nullptr = 0)
+  // `firmados`: los LISTAS guardados, para entregárselos a otros buses (nullptr: no se entregan)
   AlmacenSyncBinario(ColaEventos &cola, EstadoPersistente &estado, PaquetesAjenos &ajenos, AplicadorListas &aplicador,
-                     uint32_t (*ahoraUnix)() = nullptr)
-      : cola_(cola), estado_(estado), ajenos_(ajenos), aplicador_(aplicador), ahoraUnix_(ahoraUnix) {}
+                     uint32_t (*ahoraUnix)() = nullptr, PaquetesFirmados *firmados = nullptr)
+      : cola_(cola), estado_(estado), ajenos_(ajenos), aplicador_(aplicador), ahoraUnix_(ahoraUnix), firmados_(firmados) {}
   ~AlmacenSyncBinario() override;
 
   // Una operación pendiente, si hay y `lectorLibre`. false: no había nada que hacer (o el lector estaba ocupado).
@@ -65,6 +69,12 @@ class AlmacenSyncBinario : public AlmacenSync {
   void aplicarListas(const sp::Listas &listas, const uint8_t *paquete, size_t largo) override;
   void aplicarTarifas(const sp::Tarifas &tarifas) override;
   void incidencia(const char *detalle) override;
+  bool guardarAjeno(const uint8_t *paquete, size_t largo) override;
+  void guardarAcuseAjeno(const uint8_t *paquete, size_t largo) override;
+  size_t acusePara(uint16_t validador, uint8_t *buf, size_t max) override;
+  size_t listasDesde(uint32_t desde, uint8_t *buf, size_t max, uint32_t &hasta) override;
+  // Paquetes de otros buses esperando a escribirse en la microSD (paso() escribe uno por llamada)
+  size_t ajenosEnCola() const { return nAjenosCola_; }
 
  private:
   struct Trabajo;  // una entrada de la cola: un LISTAS (con su paquete) o unas TARIFAS
@@ -81,6 +91,7 @@ class AlmacenSyncBinario : public AlmacenSync {
   PaquetesAjenos &ajenos_;
   AplicadorListas &aplicador_;
   uint32_t (*ahoraUnix_)();
+  PaquetesFirmados *firmados_;
 
   uint8_t fallosCompactar_ = 0;
   uint32_t acusePendiente_ = 0;  // lo que el servidor confirmó y aún no está guardado
@@ -89,5 +100,15 @@ class AlmacenSyncBinario : public AlmacenSync {
   Trabajo *cola_t_[COLA_TRABAJOS] = {};
   size_t nTrabajos_ = 0;
   bool enCursoTarifas_ = false;  // el trabajo del aplicador es de TARIFAS (para contarlo al terminar)
+  struct Ajeno;  // un EVENTOS de un vecino
+  struct AcuseGuardado {
+    uint16_t validador = 0;
+    uint8_t largo = 0;
+    uint8_t datos[sp::TAM_CABECERA + 8 + sp::FIRMA_ECDSA] = {};
+  };
+  Ajeno *colaAjenos_[COLA_AJENOS] = {};
+  size_t nAjenosCola_ = 0;
+  AcuseGuardado acuses_[ACUSES_AJENOS];
+  size_t siguienteAcuse_ = 0;  // dónde se escribe el próximo si no hay uno de ese validador
   Cuenta cuenta_;
 };

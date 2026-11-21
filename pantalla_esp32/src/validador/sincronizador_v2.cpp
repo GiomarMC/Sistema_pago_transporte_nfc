@@ -108,7 +108,35 @@ void SincronizadorV2::recibir(CanalPaquetes &canal, uint32_t ahoraMs) {
   while ((n = canal.recibir(bufRx_, sizeof(bufRx_))) > 0) procesar(bufRx_, n, ahoraMs);
 }
 
-void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs) {
+void SincronizadorV2::entregar(const uint8_t *datos, size_t largo, uint32_t ahoraMs) {
+  procesar(datos, largo, ahoraMs, true);
+}
+
+size_t SincronizadorV2::empaquetarEventos(uint32_t desdeId, uint8_t *buf, size_t capacidad, uint32_t &ultimoId,
+                                          uint32_t ahoraMs) {
+  (void)ahoraMs;
+  sp::Eventos &e = tx_.eventos;
+  const size_t n = almacen_.eventosDesde(desdeId, e.eventos, EVENTOS_POR_PAQUETE);
+  if (n == 0) return 0;
+  e.n = n;
+  tx_.cabecera = {sp::EVENTOS, cfg_.validador, sp::SERVIDOR, almacen_.siguienteSecuencia(), creado()};
+  const size_t largo = sp::empaquetar(tx_, cfg_.claveHmac, buf, capacidad);
+  if (largo == 0) return 0;
+  ultimoId = e.eventos[n - 1].idEvento;
+  return largo;
+}
+
+void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado) {
+  // Un EVENTOS de otro bus (solo por un vecino): su firma HMAC es de ese bus y no se puede comprobar aquí; se guarda
+  // para llevarlo al servidor, que sí la comprueba. Solo se mira que tenga la forma de un EVENTOS.
+  if (relevado && largo >= sp::TAM_CABECERA && datos[0] == 'S' && datos[1] == 'P' && datos[3] == sp::EVENTOS) {
+    const uint16_t origen = datos[4] | (datos[5] << 8);
+    if (origen != sp::SERVIDOR && origen != cfg_.validador) {
+      if (almacen_.guardarAjeno(datos, largo)) ajenosRecibidos_++;
+      else rechazados_++;
+      return;
+    }
+  }
   sp::Motivo motivo = sp::Motivo::OK;
   if (!sp::desempaquetar(datos, largo, sinClavesDeValidadores, cfg_.clavePublicaServidor, rx_, &motivo)) {
     rechazados_++;
@@ -129,12 +157,12 @@ void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahor
 
   switch (cab.tipo) {
     case sp::ACUSE:
-      alAcuse(cab, rx_.acuse, ahoraMs);
+      alAcuse(cab, rx_.acuse, datos, largo, ahoraMs, relevado);
       break;
     case sp::LISTAS:
     case sp::TARIFAS:
-      // Solo si es para este validador o para todos
-      if (cab.destino != cfg_.validador && cab.destino != sp::TODOS) break;
+      // Solo si es para este validador o para todos (o, por un vecino, para cualquiera: ver entregar())
+      if (!relevado && cab.destino != cfg_.validador && cab.destino != sp::TODOS) break;
       if (cab.tipo == sp::LISTAS) {
         almacen_.aplicarListas(rx_.listas, datos, largo);
       } else {
@@ -146,13 +174,16 @@ void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahor
   }
 }
 
-void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, uint32_t ahoraMs) {
+void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, const uint8_t *datos, size_t largo,
+                              uint32_t ahoraMs, bool relevado) {
   if (cab.destino != cfg_.validador) {
-    // Acuse de otro bus cuyos paquetes se llevaban: ya no hace falta guardarlos
+    // Acuse de otro bus cuyos paquetes se llevaban: ya no hace falta guardarlos, y se guarda el acuse para
+    // entregárselo cuando lo pida (si no vino por un vecino: el servidor nos lo manda por haber subido sus eventos)
     almacen_.ajenosAcusados(cab.destino, acuse.hastaEvento);
+    if (cab.destino != sp::TODOS) almacen_.guardarAcuseAjeno(datos, largo);
     return;
   }
-  tomarHora(acuse.horaServidor, ahoraMs);
+  tomarHora(acuse.horaServidor, ahoraMs, relevado);
   const uint32_t hasta = acuse.hastaEvento;
   if (hasta <= almacen_.ultimoAcusado()) return;  // repetido o más viejo que otro ya recibido
 
@@ -165,14 +196,14 @@ void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, u
   if (siguienteId_ <= hasta) siguienteId_ = hasta + 1;  // el servidor sabe más de lo que se creía
 }
 
-void SincronizadorV2::tomarHora(uint32_t horaServidor, uint32_t ahoraMs) {
+void SincronizadorV2::tomarHora(uint32_t horaServidor, uint32_t ahoraMs, bool relevadoPorVecino) {
   if (horaServidor == 0) return;
   // Un ACUSE más viejo que otro ya aceptado no hace retroceder el reloj
   if (horaCrudaMax_ != 0 && horaServidor + TOLERANCIA_HORA_S < horaCrudaMax_) return;
   if (horaServidor > horaCrudaMax_) horaCrudaMax_ = horaServidor;
   // Por BLE o reenviado por otro bus llegó con retraso: se compensa
   const uint8_t enlace = canalActual_ ? canalActual_->codigoEnlace() : sp::WIFI;
-  const bool relevado = enlace == sp::BLE || enlace == sp::REENVIADO;
+  const bool relevado = relevadoPorVecino || enlace == sp::BLE || enlace == sp::REENVIADO;
   horaServidor_ = horaServidor + (relevado ? RETRASO_RELE_S : 0);
   millisHora_ = ahoraMs;
 }
