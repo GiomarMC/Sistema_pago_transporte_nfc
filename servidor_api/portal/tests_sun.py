@@ -1,9 +1,12 @@
-"""Página pública /t del enlace SUN (M1-08, parte no criptográfica)."""
+"""Página pública /t del enlace SUN (M1-08, #42)."""
 
 from unittest.mock import patch
 
 from django.http import QueryDict
-from django.test import SimpleTestCase, override_settings
+from django.test import SimpleTestCase, TestCase, override_settings
+
+from transporte.models import Cuenta, Tarifa, Tarjeta
+from transporte.tests import tarjeta_sun
 
 from . import enlace_sun
 
@@ -37,7 +40,7 @@ class LeerEnlaceTests(SimpleTestCase):
             enlace_sun.ResultadoSun("perdida")
 
 
-@override_settings(PORTAL_EN_RUTA_MI=True)
+@override_settings(PORTAL_EN_RUTA_MI=True, SUN_K3="", SUN_K4_MAESTRAS="")
 class PaginaVerificacionTests(SimpleTestCase):
     url = f"/mi/t?p={P_VALIDO}&m={M_VALIDO}"
 
@@ -55,16 +58,18 @@ class PaginaVerificacionTests(SimpleTestCase):
     def test_sin_parametros_es_400(self):
         self.assertEqual(self.client.get("/mi/t").status_code, 400)
 
-    def test_mientras_no_hay_verificacion_responde_501(self):
+    def test_sin_claves_configuradas_responde_501(self):
         respuesta = self.client.get(self.url)
         self.assertEqual(respuesta.status_code, 501)
         self.assertContains(respuesta, "Verificación no disponible", status_code=501)
         self.assertNotContains(respuesta, "auténtica", status_code=501)
         self.assertCabecerasPrivadas(respuesta)
 
-    def test_solo_get_y_head(self):
-        self.assertEqual(self.client.post(self.url).status_code, 405)
-        self.assertEqual(self.client.head(self.url).status_code, 501)
+    def test_solo_get(self):
+        # HEAD tampoco: verificar gasta el contador del enlace
+        for metodo in (self.client.post, self.client.head, self.client.put):
+            with self.subTest(metodo=metodo.__name__):
+                self.assertEqual(metodo(self.url).status_code, 405)
 
     def test_tarjeta_autentica_activa(self):
         with patch.object(enlace_sun, "verificar_enlace",
@@ -99,3 +104,105 @@ class PaginaVerificacionTests(SimpleTestCase):
             respuesta = self.client.get(self.url)
         claves = set().union(*(set(c.flatten()) for c in respuesta.context))
         self.assertFalse(claves & {"saldo", "nombre", "cuenta", "tarjeta", "uid"}, claves)
+
+
+K3 = bytes.fromhex("33" * 16)
+MAESTRA_K4 = bytes.fromhex("44" * 16)
+UID = bytes.fromhex("04B3E121CA2A81")
+
+
+@override_settings(PORTAL_EN_RUTA_MI=True, SUN_K3=K3.hex(), SUN_K4_MAESTRAS="1:" + MAESTRA_K4.hex())
+class VerificacionSunTests(TestCase):
+    """De extremo a extremo: enlaces que generaría la tarjeta (tarjeta_sun, validado
+    con AN12196) contra la página, la base de datos y el contador."""
+
+    def setUp(self):
+        tarifa = Tarifa.objects.get_or_create(codigo=1, defaults={"nombre": "General", "precio": 100})[0]
+        self.cuenta = Cuenta.objects.create(nombre="Ana Pérez", documento="45678912", tarifa=tarifa, saldo=1234)
+        self.tarjeta = Tarjeta.objects.create(uid=UID.hex().upper(), cuenta=self.cuenta,
+                                              estado=Tarjeta.Estado.ACTIVA)
+
+    def url(self, contador, uid=UID, maestra=MAESTRA_K4, version=1, k3=K3):
+        p, m = tarjeta_sun.enlace(k3, tarjeta_sun.k4_de_tarjeta(maestra, uid, version), uid, contador)
+        return f"/mi/t?p={p}&m={m}"
+
+    def assertAutentica(self, respuesta, estado="Activa"):
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Tarjeta SubePe auténtica")
+        self.assertContains(respuesta, estado)
+        self.assertNotContains(respuesta, "Ana")
+        self.assertNotContains(respuesta, "12.34")
+
+    def assertRechazada(self, respuesta):
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertContains(respuesta, "Enlace no válido", status_code=400)
+        self.assertNotContains(respuesta, "auténtica", status_code=400)
+
+    def test_url_valida(self):
+        self.assertAutentica(self.client.get(self.url(5)))
+        self.tarjeta.refresh_from_db()
+        self.assertEqual(self.tarjeta.contador_sdm, 5)
+
+    def test_tarjeta_bloqueada(self):
+        Tarjeta.objects.filter(pk=self.tarjeta.pk).update(estado=Tarjeta.Estado.BLOQUEADA)
+        self.assertAutentica(self.client.get(self.url(1)), estado="Bloqueada")
+
+    def test_cmac_alterado(self):
+        url = self.url(5)
+        ultimo = url[-1]
+        alterada = url[:-1] + ("0" if ultimo != "0" else "1")
+        with self.assertLogs("portal.enlace_sun", "WARNING"):
+            self.assertRechazada(self.client.get(alterada))
+        self.tarjeta.refresh_from_db()
+        self.assertEqual(self.tarjeta.contador_sdm, 0)
+
+    def test_contador_repetido(self):
+        url = self.url(7)
+        self.assertAutentica(self.client.get(url))
+        with self.assertLogs("portal.enlace_sun", "WARNING") as registro:
+            self.assertRechazada(self.client.get(url))
+        self.assertIn("contador repetido", registro.output[0])
+
+    def test_contador_menor_que_el_ultimo_aceptado(self):
+        self.assertAutentica(self.client.get(self.url(9)))
+        with self.assertLogs("portal.enlace_sun", "WARNING"):
+            self.assertRechazada(self.client.get(self.url(8)))
+        self.assertAutentica(self.client.get(self.url(10)))
+
+    def test_tarjeta_inexistente(self):
+        with self.assertLogs("portal.enlace_sun", "WARNING") as registro:
+            self.assertRechazada(self.client.get(self.url(1, uid=bytes.fromhex("04AABBCCDDEEFF"))))
+        self.assertIn("tarjeta inexistente", registro.output[0])
+
+    def test_tarjeta_anulada_o_pendiente_no_es_valida(self):
+        for estado in (Tarjeta.Estado.ANULADA, Tarjeta.Estado.PENDIENTE):
+            with self.subTest(estado=estado):
+                Tarjeta.objects.filter(pk=self.tarjeta.pk).update(estado=estado)
+                with self.assertLogs("portal.enlace_sun", "WARNING"):
+                    self.assertRechazada(self.client.get(self.url(1)))
+
+    def test_reemision_conserva_el_contador_del_uid(self):
+        # Un enlace capturado antes de restablecer la tarjeta no vale en la nueva emisión
+        self.assertAutentica(self.client.get(self.url(20)))
+        Tarjeta.objects.filter(pk=self.tarjeta.pk).update(estado=Tarjeta.Estado.ANULADA)
+        nueva = Tarjeta.objects.create(uid=UID.hex().upper(), cuenta=self.cuenta, estado=Tarjeta.Estado.ACTIVA)
+        with self.assertLogs("portal.enlace_sun", "WARNING"):
+            self.assertRechazada(self.client.get(self.url(15)))
+        self.assertAutentica(self.client.get(self.url(21)))
+        nueva.refresh_from_db()
+        self.assertEqual(nueva.contador_sdm, 21)
+
+    def test_otra_k4_maestra_es_rechazada(self):
+        with self.assertLogs("portal.enlace_sun", "WARNING"):
+            self.assertRechazada(self.client.get(self.url(3, maestra=bytes.fromhex("66" * 16))))
+
+    @override_settings(SUN_K4_MAESTRAS="2:" + "77" * 16 + ",1:" + "44" * 16)
+    def test_rotacion_de_k4(self):
+        self.assertAutentica(self.client.get(self.url(1, version=1)))
+        self.assertAutentica(self.client.get(self.url(2, maestra=bytes.fromhex("77" * 16), version=2)))
+
+    def test_cabeceras_privadas(self):
+        respuesta = self.client.get(self.url(4))
+        self.assertEqual(respuesta["Referrer-Policy"], "no-referrer")
+        self.assertIn("no-store", respuesta["Cache-Control"])
+        self.assertEqual(respuesta["X-Robots-Tag"], "noindex, nofollow")

@@ -3,7 +3,7 @@ from django.http import HttpResponse, HttpResponsePermanentRedirect, JsonRespons
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_safe
+from django.views.decorators.http import require_GET
 
 from . import enlace_sun
 
@@ -62,7 +62,9 @@ def perfil(request):
     return _pagina(request, "perfil", "Mi perfil")
 
 
-@require_safe
+# Solo GET: verificar consume el contador del enlace, y un HEAD (vistas previas de
+# enlaces, comprobadores) no debe gastarlo sin mostrar nada.
+@require_GET
 @never_cache
 def verificar_sun(request):
     """Página pública a la que lleva la tarjeta al acercarla a un celular (C3).

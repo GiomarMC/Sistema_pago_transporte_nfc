@@ -1,18 +1,30 @@
 """
 Enlace SUN de la NTAG 424 DNA: https://mi.<dominio>/t?p=<32 hex>&m=<16 hex> (contrato C3).
 
-Este módulo solo lee y valida el formato del enlace y define lo que la vista
-espera de la verificación. La verificación criptográfica (descifrar PICCData
-con K3, CMAC con K4(UID), contador repetido) va en transporte/sun.py (M1-08b) y
-depende de decisiones aún abiertas: SDMMACInput (D), diversificación AN10922
-(M1-05) y contador_sdm (C'). Mientras tanto verificar_enlace() lanza
-VerificacionNoDisponible y la página lo dice.
+leer_enlace() valida el formato. verificar_enlace() hace el resto:
+  1. Criptografía (transporte/sun.py): descifra PICCData con K3 y comprueba el
+     SDMMAC con K4(UID).
+  2. Busca la tarjeta por UID entre las activas y bloqueadas (la emitida más
+     reciente, si el UID se reutilizó tras un restablecimiento).
+  3. Repetición (decisión C'): el SDMReadCtr debe ser mayor que todos los
+     aceptados para ese UID, en cualquier emisión. Tarjeta.contador_sdm se
+     actualiza con un UPDATE condicional, así que de dos peticiones simultáneas
+     con el mismo enlace solo una pasa.
+Sin claves configuradas (SUN_K3, SUN_K4_MAESTRAS) lanza VerificacionNoDisponible.
 
 Referencias: docs/ntag424-personalizacion.md §8.
 """
 
+import logging
 import re
 from dataclasses import dataclass
+
+from django.db.models import Max
+
+from transporte import sun
+from transporte.models import Tarjeta
+
+log = logging.getLogger(__name__)
 
 TAM_PICC_DATA = 16  # 32 caracteres hexadecimales
 TAM_MAC = 8         # 16 caracteres hexadecimales
@@ -33,7 +45,7 @@ class EnlaceRechazado(Exception):
 
 
 class VerificacionNoDisponible(Exception):
-    """Todavía no se puede verificar (M1-08b sin implementar)."""
+    """El servidor no tiene configuradas las claves SUN."""
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,31 @@ def leer_enlace(parametros) -> EnlaceSun:
     return EnlaceSun(bytes.fromhex(picc_data), bytes.fromhex(mac))
 
 
+def _rechazar(motivo: str, **contexto) -> EnlaceRechazado:
+    # El motivo queda en el registro del servidor, nunca en la página
+    log.warning("Enlace SUN rechazado: %s %s", motivo, contexto)
+    return EnlaceRechazado(motivo)
+
+
 def verificar_enlace(enlace: EnlaceSun) -> ResultadoSun:
-    """Devuelve el estado de la tarjeta o lanza EnlaceRechazado (M1-08b)."""
-    raise VerificacionNoDisponible("verificación SUN pendiente de M1-08b")
+    """Estado de la tarjeta. Lanza EnlaceRechazado o VerificacionNoDisponible."""
+    claves = sun.claves_configuradas()
+    if claves is None:
+        raise VerificacionNoDisponible("faltan SUN_K3 y SUN_K4_MAESTRAS")
+    try:
+        lectura = sun.verificar(claves, enlace.picc_data, enlace.mac)
+    except sun.SunInvalido as error:
+        raise _rechazar(str(error)) from error
+
+    uid = lectura.uid.hex().upper()
+    vigentes = Tarjeta.objects.filter(uid=uid, estado__in=[Tarjeta.Estado.ACTIVA, Tarjeta.Estado.BLOQUEADA])
+    tarjeta = vigentes.order_by("-emitida", "-id").first()
+    if tarjeta is None:
+        raise _rechazar("tarjeta inexistente")
+
+    anterior = Tarjeta.objects.filter(uid=uid).aggregate(maximo=Max("contador_sdm"))["maximo"] or 0
+    aceptado = lectura.contador > anterior and Tarjeta.objects.filter(
+        pk=tarjeta.pk, contador_sdm__lt=lectura.contador).update(contador_sdm=lectura.contador)
+    if not aceptado:
+        raise _rechazar("contador repetido", tarjeta=tarjeta.pk, contador=lectura.contador, anterior=anterior)
+    return ResultadoSun(ACTIVA if tarjeta.estado == Tarjeta.Estado.ACTIVA else BLOQUEADA)
