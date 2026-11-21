@@ -124,6 +124,10 @@ class PaquetesAjenos : public CarpetaPaquetes {
   // El paquete guardado, copiado en `destino`. 0 si no existe o no cabe (si su archivo falta o está
   // cortado, lo quita del índice).
   size_t leer(uint16_t origen, uint32_t secuencia, uint8_t *destino, size_t capacidad);
+  // El paquete que está en la posición `indice` (0 a cantidad() - 1), en el orden en que se guardaron, para
+  // recorrerlos de uno en uno sin ordenar. 0 si no hay tal posición, si el servidor ya lo confirmó (solo falta
+  // borrarlo) o si no cabe / su archivo no está.
+  size_t leerPosicion(size_t indice, uint8_t *destino, size_t capacidad);
 };
 
 class PaquetesFirmados : public CarpetaPaquetes {

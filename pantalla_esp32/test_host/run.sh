@@ -56,3 +56,11 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -
     lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
     /tmp/subepe-uecc.o test_host/test_listas_v2.cpp -lmbedcrypto -o /tmp/subepe-m4-test-listas
 /tmp/subepe-m4-test-listas
+# AlmacenSyncBinario: el sincronizador v2 sobre el almacenamiento binario completo (solo se escribe en paso(), por pasos)
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
+    src/validador/sincronizador_v2.cpp src/validador/almacen_sync_binario.cpp lib/ProtocoloSP/ProtocoloSP.cpp \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/EstadoPersistente.cpp \
+    lib/Almacenamiento/ColaEventos.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
+    lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
+    /tmp/subepe-uecc.o test_host/test_almacen_sync.cpp -lmbedcrypto -o /tmp/subepe-m4-test-almacen-sync
+/tmp/subepe-m4-test-almacen-sync

@@ -53,14 +53,23 @@ class ColaEventos {
   // Copia hasta `max` eventos con id MAYOR que `desdeId`, en orden. Devuelve cuántos.
   size_t leerDesde(uint32_t desdeId, sp::Evento *salida, size_t max);
 
-  // El servidor confirmó hasta este id: se guarda y, si ya sobra la mitad, se compacta
-  bool acusarHasta(uint32_t id);
+  // El servidor confirmó hasta este id: se guarda y, si ya sobra la mitad, se compacta. Con compactarAhora = false
+  // solo se guarda el acuse (una escritura del estado) y la compactación queda pendiente (compactacionPendiente()):
+  // se hace luego, en dos pasos, con compactarPaso(). Compactar todo junto cuesta ~2 s en la microSD real.
+  bool acusarHasta(uint32_t id, bool compactarAhora = true);
   bool compactar();
+  bool compactacionPendiente() const { return compactarPendiente_; }
+  // Un paso de la compactación pendiente (una operación sobre la microSD): primero se guarda siguiente_id, luego se
+  // reescribe el archivo sin los registros confirmados. Llamar mientras compactacionPendiente(). false si falló.
+  bool compactarPaso();
 
   size_t registros() const { return cantidad_; }
   uint32_t compactaciones() const { return compactaciones_; }
 
  private:
+  bool compactarAhora();
+  bool alVaciar() const;      // la compactación quitaría todos los registros
+  bool sobraLaMitad() const;  // los confirmados ya son más de la mitad de los registros del archivo
   bool reescribir(size_t desdeIndice, size_t hastaIndice);  // conserva los registros [desde, hasta)
   bool leerRegistro(size_t indice, sp::Evento &e);
   void avisar(const char *texto) const {
@@ -73,4 +82,5 @@ class ColaEventos {
   uint32_t primerId_ = 1, ultimoId_ = 0;  // ids del primer y último registro del archivo
   size_t cantidad_ = 0;
   uint32_t compactaciones_ = 0;
+  bool compactarPendiente_ = false;
 };
