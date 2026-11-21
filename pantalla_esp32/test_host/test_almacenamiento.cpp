@@ -181,6 +181,107 @@ void colaBasica() {
   assert(cola2.agregar(f) && f.idEvento == 102);
 }
 
+void compactacionPorPasos() {
+  FsFalso fs;
+  EstadoPersistente est(fs);
+  est.cargar();
+  ColaEventos cola(fs, est, alIncidencia);
+  cola.iniciar();
+  for (uint32_t i = 1; i <= 100; i++) {
+    sp::Evento e = evento(i);
+    assert(cola.agregar(e));
+  }
+  // Solo se guarda el acuse: el archivo sigue entero y la compactación queda pendiente
+  assert(cola.acusarHasta(60, false) && cola.ultimoAcusado() == 60 && cola.registros() == 100);
+  assert(cola.compactacionPendiente() && cola.compactaciones() == 0);
+  // quedan registros (61 a 100): un solo paso, sin escribir el estado (el último registro dice por dónde van los ids)
+  const uint32_t generacion = est.generacion();
+  assert(cola.compactarPaso() && cola.registros() == 40 && !cola.compactacionPendiente() && cola.compactaciones() == 1);
+  assert(est.generacion() == generacion);
+  sp::Evento nuevo = evento(0);
+  assert(cola.agregar(nuevo) && nuevo.idEvento == 101);
+  sp::Evento sal[50];
+  assert(cola.leerDesde(60, sal, 50) == 41 && sal[0].idEvento == 61 && sal[40].idEvento == 101);
+  assert(cola.compactarPaso());  // sin nada pendiente no hace nada
+  // un acuse que no llega a la mitad no deja nada pendiente
+  assert(cola.acusarHasta(70, false) && !cola.compactacionPendiente());
+  // un acuse mayor que lo que hay: los ids siguen desde ahí (con el archivo vacío) y se guarda en el paso 1
+  assert(cola.acusarHasta(130, false) && cola.compactacionPendiente() && cola.ultimoId() == 130);
+  assert(cola.compactarPaso() && est.estado().siguienteId == 131 && cola.registros() == 41);  // se vaciará: paso 1
+  assert(cola.compactarPaso() && cola.registros() == 0 && !cola.compactacionPendiente());
+  sp::Evento despues = evento(0);
+  assert(cola.agregar(despues) && despues.idEvento == 131);
+
+  // Con un corte entre el acuse y la compactación, al arrancar sigue pendiente y se completa
+  FsFalso fs2;
+  {
+    EstadoPersistente e2(fs2);
+    e2.cargar();
+    ColaEventos c2(fs2, e2, alIncidencia);
+    c2.iniciar();
+    for (uint32_t i = 1; i <= 10; i++) {
+      sp::Evento e = evento(i);
+      assert(c2.agregar(e));
+    }
+    assert(c2.acusarHasta(8, false) && c2.compactacionPendiente());
+  }
+  EstadoPersistente e3(fs2);
+  e3.cargar();
+  ColaEventos c3(fs2, e3, alIncidencia);
+  assert(c3.iniciar() && c3.compactacionPendiente() && c3.registros() == 10);
+  assert(c3.compactarPaso() && c3.registros() == 2 && !c3.compactacionPendiente() && c3.siguienteId() == 11);
+
+  // Un corte de energía en cada operación de los dos pasos
+  int cortes = 0;
+  for (long k = 0;; k++) {
+    FsFalso fs3;
+    {
+      EstadoPersistente e(fs3);
+      e.cargar();
+      ColaEventos c(fs3, e, alIncidencia);
+      c.iniciar();
+      for (uint32_t i = 1; i <= 100; i++) {
+        sp::Evento ev = evento(i);
+        assert(c.agregar(ev));
+      }
+    }
+    bool cortado = false;
+    {
+      EstadoPersistente e(fs3);
+      e.cargar();
+      ColaEventos c(fs3, e, alIncidencia);
+      c.iniciar();
+      fs3.programarCorte(k);
+      try {
+        c.acusarHasta(60, false);
+        c.compactarPaso();
+        c.compactarPaso();
+      } catch (CorteDeEnergia &) {
+        cortado = true;
+      }
+    }
+    fs3.sinCorte();
+    if (!cortado) break;
+    cortes++;
+    fs3.aplicarCorte();
+    EstadoPersistente e(fs3);
+    e.cargar();
+    ColaEventos c(fs3, e, alIncidencia);
+    assert(c.iniciar() && c.ultimoId() == 100 && c.siguienteId() == 101);
+    const uint32_t acusado = e.estado().hastaAcusado;
+    assert(acusado == 0 || acusado == 60);
+    sp::Evento s[100];
+    const size_t n = c.leerDesde(acusado, s, 100);
+    assert(n == 100 - acusado);  // los eventos sin acuse están todos
+    for (size_t i = 0; i < n; i++) assert(s[i].idEvento == acusado + 1 + i);
+    // se completa lo que falte
+    c.acusarHasta(60, false);
+    while (c.compactacionPendiente()) assert(c.compactarPaso());
+    assert(c.registros() == 40 && c.leerDesde(60, s, 100) == 40);
+  }
+  assert(cortes >= 8);
+}
+
 void servidorConfirmaMasDeLoQueHay() {
   // Se perdió la tarjeta y el validador empieza de cero, pero el servidor ya tiene hasta el evento 130
   FsFalso fs;
@@ -363,6 +464,8 @@ int main() {
   estadoCaeEnLaCopiaAnterior();
   secuenciaNuncaSeRepite50Cortes();
   colaBasica();
+  compactacionPorPasos();
+  printf("  compactación por pasos: acuse aparte, siguiente_id y reescritura en dos pasos, pendiente tras reiniciar y cortes de energía OK\n");
   servidorConfirmaMasDeLoQueHay();
   registroIncompletoSeDescarta();
   escrituraFallidaNoDesalinea();

@@ -26,8 +26,15 @@
 // uno a uno (ListaNegra::quitarUrgente). Los LISTAS aplicados se guardan en /firmados para pasárselos a
 // otros buses (M8).
 //
-// OJO: aplicar bloquea (síncrono): cada paquete cuesta lo que cueste cambiar archivos en la microSD
-// (la lista negra cierra con renombrados de decenas a cientos de ms).
+// POR PASOS: aplicar un LISTAS cuesta 1,7-2,6 s en la microSD real si se hace de una vez (medido), y un cobro no
+// puede esperar tanto. Por eso el trabajo se parte en pasos (empezarListas()/empezarTarifas() y luego avanzar()
+// hasta que deje de devolver EN_CURSO): cada paso hace una sola operación (mezclar un bloque de la lista negra,
+// aplicar las recargas, guardar la versión...), que cuesta como mucho unos cientos de ms. Entre paso y paso quien
+// llama puede atender una tarjeta. listas() y tarifas() hacen todos los pasos seguidos (para las pruebas y para
+// quien no tenga prisa). Solo hay un trabajo a la vez: mientras dura, empezar otro devuelve OCUPADO.
+//
+// Mientras un trabajo está a medias, la lista negra vieja sigue respondiendo (ListaNegra) y la versión guardada es
+// la de antes: un corte de energía en cualquier punto deja el estado anterior y el servidor repite el paquete.
 #pragma once
 
 #include <stddef.h>
@@ -53,11 +60,17 @@ class AplicadorListas {
     SALTO,      // falta un paquete anterior: no se aplica
     INVALIDA,   // no es coherente (una versión normal que retrocede)
     FALLO,      // no se pudo escribir: nada cambió de la versión, se repetirá
+    EN_CURSO,   // (solo por pasos) queda trabajo: volver a llamar a avanzar()
+    OCUPADO,    // (solo por pasos) hay otro trabajo a medias: no se empezó este
   };
+  // Lo que procesa la mezcla de la lista negra en cada paso: un sector (128 identificadores)
+  static constexpr size_t IDS_POR_PASO = ListaNegra::BLOQUE;
 
   AplicadorListas(EstadoPersistente &estado, ListaNegra &listaNegra, Recargas &recargas, TarifasGuardadas &tarifas,
                   PaquetesFirmados &firmados)
       : estado_(estado), listaNegra_(listaNegra), recargas_(recargas), tarifas_(tarifas), firmados_(firmados) {}
+
+  ~AplicadorListas();
 
   // `paquete` y `largo`: el LISTAS tal como llegó (con su firma), para guardarlo en /firmados; puede ser nullptr
   Resultado listas(const sp::Listas &listas, const uint8_t *paquete, size_t largo);
@@ -65,12 +78,26 @@ class AplicadorListas {
   // paquete viejo reenviado por otro bus.
   Resultado tarifas(const sp::Tarifas &tarifas);
 
+  // Por pasos. empezar...() comprueba las reglas y copia lo que necesita (no guarda referencias a lo que se le
+  // pasa); devuelve EN_CURSO si hay trabajo, o el resultado final (REPETIDA, SALTO, INVALIDA, FALLO) si no lo hay.
+  Resultado empezarListas(const sp::Listas &listas, const uint8_t *paquete, size_t largo);
+  Resultado empezarTarifas(const sp::Tarifas &tarifas);
+  // Un paso del trabajo en curso. EN_CURSO mientras quede; luego APLICADA, URGENTE o FALLO (y ya no hay trabajo).
+  Resultado avanzar();
+  bool ocupado() const { return trabajo_ != nullptr; }
+  // Qué hará el siguiente avanzar() (para el diagnóstico); "" si no hay trabajo
+  const char *fase() const;
+
  private:
-  Resultado urgente(const sp::Listas &listas, const uint8_t *paquete, size_t largo);
+  struct Trabajo;
+  Resultado terminar(Resultado r);
+  Resultado pasoListas();
+  Resultado pasoTarifas();
 
   EstadoPersistente &estado_;
   ListaNegra &listaNegra_;
   Recargas &recargas_;
   TarifasGuardadas &tarifas_;
   PaquetesFirmados &firmados_;
+  Trabajo *trabajo_ = nullptr;
 };

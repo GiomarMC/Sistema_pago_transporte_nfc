@@ -15,6 +15,9 @@
 //     con firma inválida se descarta y se registra como incidencia "lista firma invalida".
 //   - Toma la hora del servidor de cada ACUSE válido (M4-03).
 //
+// OJO con la memoria: el objeto lleva dentro sus búferes de paquete (unos 10 KB) y la pila de loop() en la ESP32 es de
+// 8 KB: se crea como variable global o en el montón, nunca como local (medido: en la pila se reinicia por desbordamiento).
+//
 // Lo que necesita del almacenamiento queda detrás de AlmacenSync, porque hoy los eventos
 // están en texto y pasarán a una cola binaria (M3).
 #pragma once

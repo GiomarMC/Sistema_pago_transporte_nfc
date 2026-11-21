@@ -42,7 +42,17 @@ bool ColaEventos::iniciar() {
   ultimoId_ = ultimoEnArchivo;
   if (siguienteGuardado > 0 && siguienteGuardado - 1 > ultimoId_) ultimoId_ = siguienteGuardado - 1;
   if (cantidad_ == 0) primerId_ = ultimoId_ + 1;
+  // Si se cortó la luz tras guardar un acuse y antes de compactar, la compactación sigue pendiente
+  compactarPendiente_ = sobraLaMitad();
   return true;
+}
+
+bool ColaEventos::alVaciar() const { return estado_.estado().hastaAcusado >= ultimoId_; }
+
+bool ColaEventos::sobraLaMitad() const {
+  const uint32_t acusado = estado_.estado().hastaAcusado;
+  const uint32_t confirmados = acusado >= ultimoId_ ? cantidad_ : (acusado >= primerId_ ? acusado - primerId_ + 1 : 0);
+  return cantidad_ > 0 && confirmados * 2 > cantidad_;
 }
 
 bool ColaEventos::leerRegistro(size_t indice, sp::Evento &e) {
@@ -89,25 +99,45 @@ size_t ColaEventos::leerDesde(uint32_t desdeId, sp::Evento *salida, size_t max) 
   return n;
 }
 
-bool ColaEventos::acusarHasta(uint32_t id) {
+bool ColaEventos::acusarHasta(uint32_t id, bool compactarAhora) {
   if (id <= estado_.estado().hastaAcusado) return true;
   if (!estado_.fijarHastaAcusado(id)) return false;
-  // El servidor confirma más de lo que hay aquí (p. ej. se perdió la tarjeta y se empezó de cero):
-  // los ids nuevos siguen desde ahí, o el servidor los tomaría por repetidos y los descartaría
+  bool hayQueCompactar = false;
   if (id > ultimoId_) {
+    // El servidor confirma más de lo que hay aquí (p. ej. se perdió la tarjeta y se empezó de cero):
+    // los ids nuevos siguen desde ahí, o el servidor los tomaría por repetidos y los descartaría
     ultimoId_ = id;
-    return compactar();
+    hayQueCompactar = true;
+  } else {
+    hayQueCompactar = sobraLaMitad();  // registros ya confirmados que siguen ocupando sitio en el archivo
   }
-  // Registros ya confirmados que siguen ocupando sitio en el archivo
-  const uint32_t confirmados = id >= ultimoId_ ? cantidad_ : (id >= primerId_ ? id - primerId_ + 1 : 0);
-  if (cantidad_ > 0 && confirmados * 2 > cantidad_) return compactar();
-  return true;
+  if (!hayQueCompactar) return true;
+  if (!compactarAhora) {
+    compactarPendiente_ = true;
+    return true;
+  }
+  return compactar();
 }
 
 bool ColaEventos::compactar() {
+  if (!compactarAhora()) return false;
+  compactarPendiente_ = false;
+  return true;
+}
+
+bool ColaEventos::compactarPaso() {
+  if (!compactarPendiente_) return true;
+  // Si la compactación va a dejar el archivo vacío, el siguiente id se guarda ANTES (paso 1) y luego se reescribe
+  // (paso 2; guardar el id otra vez no escribe nada porque no cambió). Si quedan registros, un solo paso.
+  if (alVaciar() && estado_.estado().siguienteId != ultimoId_ + 1) return estado_.fijarSiguienteId(ultimoId_ + 1);
+  return compactar();
+}
+
+bool ColaEventos::compactarAhora() {
   const uint32_t acusado = estado_.estado().hastaAcusado;
-  // Se guarda el siguiente id ANTES de quitar registros: si se vacía el archivo, los ids siguen
-  if (!estado_.fijarSiguienteId(ultimoId_ + 1)) return false;
+  // Si se vacía el archivo, los ids siguen desde lo guardado: se guarda ANTES de quitar los registros. Si quedan
+  // registros, el último dice por dónde van los ids y no hace falta escribir el estado (~0,7 s en la microSD real)
+  if (alVaciar() && !estado_.fijarSiguienteId(ultimoId_ + 1)) return false;
   size_t desde = 0;
   if (acusado >= ultimoId_) desde = cantidad_;
   else if (acusado >= primerId_) desde = acusado - primerId_ + 1;

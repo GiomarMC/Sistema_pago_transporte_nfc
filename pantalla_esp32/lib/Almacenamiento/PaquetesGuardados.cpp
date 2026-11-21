@@ -353,6 +353,12 @@ size_t PaquetesAjenos::leer(uint16_t origen, uint32_t secuencia, uint8_t *destin
   return leerPaquete(origen, secuencia, destino, capacidad);
 }
 
+size_t PaquetesAjenos::leerPosicion(size_t indice, uint8_t *destino, size_t capacidad) {
+  if (indice >= indice_.size() || yaConfirmado(indice_[indice])) return 0;
+  const Entrada e = indice_[indice];  // copia: leerPaquete() puede quitar la entrada
+  return leerPaquete(e.a, e.b, destino, capacidad);
+}
+
 // --- Firmados ---------------------------------------------------------------------------------
 
 bool PaquetesFirmados::guardar(const uint8_t *paquete, size_t largo) {
