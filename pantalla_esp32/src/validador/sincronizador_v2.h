@@ -12,6 +12,7 @@
 //   - Reenvía tal cual (sin volver a firmar) los paquetes de otros buses que guarda.
 //   - Verifica y procesa lo que llega: ACUSE (confirma eventos y libera paquetes ajenos),
 //     LISTAS y TARIFAS (se entregan al almacén; aplicarlas es M4-02).
+//   - Toma la hora del servidor de cada ACUSE válido (M4-03).
 //
 // Lo que necesita del almacenamiento queda detrás de AlmacenSync, porque hoy los eventos
 // están en texto y pasarán a una cola binaria (M3).
@@ -48,10 +49,9 @@ class AlmacenSync {
   // El servidor confirmó los eventos de `origen` hasta `hastaEvento`: esos paquetes sobran.
   virtual void ajenosAcusados(uint16_t origen, uint32_t hastaEvento) = 0;
 
-  // --- Respuestas del servidor (aplicarlas es M4-02 y M4-03) ---
+  // --- Respuestas del servidor (aplicarlas es M4-02) ---
   virtual void aplicarListas(const sp::Listas &listas) { (void)listas; }
   virtual void aplicarTarifas(const sp::Tarifas &tarifas) { (void)tarifas; }
-  virtual void horaDelServidor(uint32_t unix, uint32_t ahoraMs) { (void)unix; (void)ahoraMs; }
 };
 
 struct ConfigSyncV2 {
@@ -68,6 +68,12 @@ class SincronizadorV2 {
   static constexpr uint8_t PAQUETES_SIN_ACUSE = 3;
   static constexpr uint32_t REENVIO_MS = 30000;   // sin acuse en este tiempo, se reenvía
   static constexpr uint32_t HOLA_MS = 300000;     // un HOLA cada 5 minutos
+  // Un ACUSE que llega por BLE o por otro bus (ESP-NOW) lleva más retraso (C1): el contrato
+  // estima 2 s, que se suman a la hora que trae
+  static constexpr uint32_t RETRASO_RELE_S = 2;
+  // Una hora anterior a la ya aceptada en más de esto se descarta: la firma es válida, pero
+  // pudo ser un ACUSE viejo reenviado por quien lo transportaba
+  static constexpr uint32_t TOLERANCIA_HORA_S = 3;
 
   SincronizadorV2(AlmacenSync &almacen, const ConfigSyncV2 &config) : almacen_(almacen), cfg_(config) {}
 
@@ -87,6 +93,15 @@ class SincronizadorV2 {
     return ultimo > acusado ? ultimo - acusado : 0;
   }
   uint8_t paquetesSinAcuse() const { return nVuelo_; }
+
+  // Hora del servidor (unix, s) al recibir el último ACUSE válido, 0 si aún no hubo, y el
+  // millis() de ese momento. Mismo significado que en el sincronizador v1.
+  uint32_t horaServidor() const { return horaServidor_; }
+  uint32_t millisHora() const { return millisHora_; }
+  // La hora de ahora según el servidor (0 si no hay referencia)
+  uint32_t horaActual(uint32_t ahoraMs) const {
+    return horaServidor_ ? horaServidor_ + (uint32_t)(ahoraMs - millisHora_) / 1000 : 0;
+  }
 
   // Contadores para el diagnóstico
   uint32_t holasEnviados() const { return holas_; }
@@ -109,6 +124,7 @@ class SincronizadorV2 {
   bool enviarEventos(CanalPaquetes &canal, uint32_t ahoraMs);
   void enviarAjenos(CanalPaquetes &canal, uint32_t ahoraMs);
   void alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, uint32_t ahoraMs);
+  void tomarHora(uint32_t horaServidor, uint32_t ahoraMs);
   uint32_t creado() const { return cfg_.ahoraUnix ? cfg_.ahoraUnix() : 0; }
 
   AlmacenSync &almacen_;
@@ -127,6 +143,8 @@ class SincronizadorV2 {
   size_t ajenoSiguiente_ = 0;  // por cuál paquete ajeno va la ronda
   uint32_t rondaAjenosMs_ = 0;
   bool rondaAjenosActiva_ = false, hayRondaPrevia_ = false;
+
+  uint32_t horaServidor_ = 0, millisHora_ = 0, horaCrudaMax_ = 0;
 
   uint32_t holas_ = 0, paqueteEventos_ = 0, paquetesAjenos_ = 0, reenvios_ = 0, rechazados_ = 0;
   sp::Motivo ultimoRechazo_ = sp::Motivo::OK;

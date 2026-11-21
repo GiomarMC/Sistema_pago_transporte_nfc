@@ -46,6 +46,11 @@ for hasta in (30, 60, 90, 100, 130):
     seq += 1
 salida.append(en_c("ACUSE_105_HASTA_12", servidor(P.ACUSE, 105, P.Acuse(12, HORA), seq)))
 seq += 1
+# Mismos eventos, otra hora: uno posterior (el servidor siguió su camino) y uno viejo (un reenvío malicioso)
+salida.append(en_c("ACUSE_107_HASTA_60_100S_DESPUES", servidor(P.ACUSE, 107, P.Acuse(60, HORA + 100), seq)))
+seq += 1
+salida.append(en_c("ACUSE_107_HASTA_60_1H_ANTES", servidor(P.ACUSE, 107, P.Acuse(60, HORA - 3600), seq)))
+seq += 1
 
 listas = P.Listas(0x0A, 0x0C, (P.EntradaLista(P.BLOQUEO, P.AGREGAR, 4242), P.EntradaLista(P.RECARGA, P.PENDIENTE, 77, 3, 500)))
 salida.append(en_c("LISTAS_107", servidor(P.LISTAS, 107, listas, seq)))

@@ -43,7 +43,6 @@ class AlmacenFalso : public AlmacenSync {
   }
   void aplicarListas(const sp::Listas &l) override { listas_ = l; listasRecibidas_++; }
   void aplicarTarifas(const sp::Tarifas &t) override { tarifas_ = t; tarifasRecibidas_++; }
-  void horaDelServidor(uint32_t unix, uint32_t ms) override { hora_ = unix; horaMs_ = ms; }
 
   static sp::Evento evento(uint32_t id) {
     sp::Evento e = {};
@@ -65,7 +64,7 @@ class AlmacenFalso : public AlmacenSync {
   struct Ajeno { uint16_t origen; uint32_t ultimoId; std::vector<uint8_t> bytes; };
 
   uint32_t ultimo_ = 0, acusado_ = 0, secuencia_ = 0, vListas_ = 11, vTarifas_ = 22;
-  uint32_t acusos_ = 0, listasRecibidas_ = 0, tarifasRecibidas_ = 0, hora_ = 0, horaMs_ = 0;
+  uint32_t acusos_ = 0, listasRecibidas_ = 0, tarifasRecibidas_ = 0;
   std::vector<Ajeno> ajenos_;
   std::pair<uint16_t, uint32_t> ultimoAjenoAcusado_{0, 0};
   sp::Listas listas_ = {};
@@ -151,8 +150,7 @@ void acuseHastaSesenta() {
   s.atender(&canal, 500);
   assert(alm.acusado_ == 60);
   assert(s.pendientes() == 40);  // exactamente 40 eventos sin confirmar
-  // La hora del servidor del ACUSE se entrega al almacén (M4-03 la usará)
-  assert(alm.hora_ == HORA_SERVIDOR_PRUEBA && alm.horaMs_ == 500);
+  assert(s.horaServidor() == HORA_SERVIDOR_PRUEBA && s.millisHora() == 500);  // M4-03
 
   // Un acuse más viejo que otro ya recibido no hace retroceder nada
   servidorDice(canal, ACUSE_107_HASTA_30);
@@ -365,6 +363,86 @@ void servidorSabeMasDeLoQueSeCreia() {
   assert(e.p.eventos.eventos[0].idEvento == 131 && e.p.eventos.n == 10);
 }
 
+// --- Hora del servidor (M4-03) -----------------------------------------------------------
+
+// Un sincronizador con el canal dado, que ya mandó su HOLA
+struct Escenario {
+  AlmacenFalso alm;
+  CanalFalso canal;
+  SincronizadorV2 s;
+  Escenario(const char *nombre, uint8_t codigo) : canal(nombre, codigo), s(alm, config()) {
+    s.atender(&canal, 0);
+    canal.vaciar();
+  }
+};
+
+template <size_t N>
+void llega(Escenario &e, const uint8_t (&paquete)[N], uint32_t ahoraMs) {
+  servidorDice(e.canal, paquete);
+  e.s.atender(&e.canal, ahoraMs);
+}
+
+void horaDelAcuse() {
+  Escenario e("mqtt-wifi", 1);
+  assert(e.s.horaServidor() == 0 && e.s.horaActual(1000) == 0);  // sin referencia todavía
+  llega(e, ACUSE_107_HASTA_30, 5000);
+  assert(e.s.horaServidor() == HORA_SERVIDOR_PRUEBA && e.s.millisHora() == 5000);
+  assert(e.s.horaActual(5000) == HORA_SERVIDOR_PRUEBA);
+  assert(e.s.horaActual(5000 + 42999) == HORA_SERVIDOR_PRUEBA + 42);  // avanza con el reloj local
+  assert(e.s.horaActual(5000 + 43000) == HORA_SERVIDOR_PRUEBA + 43);
+
+  // Cada ACUSE válido renueva la referencia (también uno que no confirma nada nuevo)
+  llega(e, ACUSE_107_HASTA_60_100S_DESPUES, 105000);
+  assert(e.s.horaServidor() == HORA_SERVIDOR_PRUEBA + 100 && e.s.millisHora() == 105000);
+}
+
+void horaPorCanalesRetransmitidos() {
+  // Por BLE y reenviado por otro bus el paquete tarda más: el contrato estima 2 s
+  Escenario ble("ble", sp::BLE);
+  llega(ble, ACUSE_107_HASTA_30, 7000);
+  assert(ble.s.horaServidor() == HORA_SERVIDOR_PRUEBA + 2 && ble.s.millisHora() == 7000);
+
+  Escenario rele("espnow", sp::REENVIADO);
+  llega(rele, ACUSE_107_HASTA_30, 9000);
+  assert(rele.s.horaServidor() == HORA_SERVIDOR_PRUEBA + 2);
+
+  Escenario wifi("mqtt-wifi", sp::WIFI);
+  llega(wifi, ACUSE_107_HASTA_30, 9000);
+  assert(wifi.s.horaServidor() == HORA_SERVIDOR_PRUEBA);  // por WiFi no se compensa nada
+}
+
+void horaDentroDeTresSegundos() {
+  // El servidor firma el ACUSE a la hora H y llega con `retrasoMs` de demora. A los 5 minutos
+  // la hora del validador debe estar a ±3 s de la del servidor, sea cual sea el camino.
+  struct Camino { const char *nombre; uint8_t enlace; uint32_t retrasoMs; };
+  const Camino caminos[] = {{"mqtt-wifi", sp::WIFI, 300}, {"ble", sp::BLE, 2000}, {"espnow", sp::REENVIADO, 2000}};
+  for (const Camino &c : caminos) {
+    Escenario e(c.nombre, c.enlace);
+    const uint32_t llegada = 10000 + c.retrasoMs;  // el ACUSE se firmó en el ms 10000
+    llega(e, ACUSE_107_HASTA_30, llegada);
+    for (uint32_t despues : {0u, 1000u, 59999u, 300000u}) {
+      const uint32_t ahora = llegada + despues;
+      const int64_t real = (int64_t)HORA_SERVIDOR_PRUEBA + (ahora - 10000) / 1000;  // la hora del servidor ahora
+      const int64_t dif = (int64_t)e.s.horaActual(ahora) - real;
+      assert(dif >= -3 && dif <= 3);
+    }
+  }
+}
+
+void horaSoloConFirmaValida() {
+  Escenario e("mqtt-wifi", 1);
+  llega(e, ACUSE_107_FIRMA_ROTA, 1000);
+  assert(e.s.rechazados() == 1 && e.s.horaServidor() == 0);  // una firma rota no pone la hora
+
+  llega(e, ACUSE_107_HASTA_30, 2000);
+  assert(e.s.horaServidor() == HORA_SERVIDOR_PRUEBA);
+  // Un ACUSE de una hora antigua, aunque la firma sea buena (reenviado por quien lo transportaba),
+  // no hace retroceder el reloj
+  llega(e, ACUSE_107_HASTA_60_1H_ANTES, 3000);
+  assert(e.s.horaServidor() == HORA_SERVIDOR_PRUEBA && e.s.millisHora() == 2000);
+  assert(e.alm.acusado_ == 60);  // pero sí confirma sus eventos: lo único antiguo es la hora
+}
+
 }  // namespace
 
 int main() {
@@ -378,5 +456,9 @@ int main() {
   listasYTarifasAlAlmacen();
   paquetesAjenosSeReenvianSinTocar();
   servidorSabeMasDeLoQueSeCreia();
-  puts("M4-01 sincronizador v2: 100 eventos en 4 paquetes, acuse a 60 = 40 pendientes, reenvío a 30 s, HOLA, ajenos, firmas OK");
+  horaDelAcuse();
+  horaPorCanalesRetransmitidos();
+  horaDentroDeTresSegundos();
+  horaSoloConFirmaValida();
+  puts("M4-01/03 sincronizador v2: 100 eventos en 4 paquetes, acuse a 60 = 40 pendientes, reenvío a 30 s, HOLA, ajenos, firmas y hora (±3 s) OK");
 }
