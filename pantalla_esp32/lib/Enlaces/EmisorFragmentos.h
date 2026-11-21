@@ -44,8 +44,13 @@ class EmisorFragmentos {
     fin_ = Fin::NINGUNO;
     return f;
   }
+  // Reintentos por fragmento antes de abortar el mensaje (por defecto REINTENTOS). Con un enlace
+  // débil, más reintentos convierten abortos en entregas a costa de tardar más.
+  void fijarReintentos(uint8_t n) { maxReintentos_ = n; }
+  uint8_t maxReintentos() const { return maxReintentos_; }
   uint32_t reintentos() const { return reintentos_; }  // acumulados desde el arranque
   uint8_t indice() const { return indice_; }           // fragmento en curso
+  uint8_t intento() const { return intentos_; }        // 0 en el primer intento del fragmento, 1 en el primer reintento...
   uint8_t total() const { return total_; }
 
  private:
@@ -56,6 +61,7 @@ class EmisorFragmentos {
   uint16_t emisor_ = 0;
   uint32_t id_ = 0;
   uint8_t total_ = 0, indice_ = 0, intentos_ = 0;
+  uint8_t maxReintentos_ = REINTENTOS;
   Estado estado_ = Estado::LIBRE;
   uint32_t envioMs_ = 0;
   Fin fin_ = Fin::NINGUNO;

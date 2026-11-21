@@ -50,7 +50,7 @@ void EmisorFragmentos::resultado(bool llego, uint32_t ahoraMs) {
     }
     return;
   }
-  if (intentos_ >= REINTENTOS) {  // el primer intento y los 3 reintentos fallaron
+  if (intentos_ >= maxReintentos_) {  // el primer intento y todos los reintentos fallaron
     estado_ = Estado::LIBRE;
     fin_ = Fin::ABORTADO;
     return;

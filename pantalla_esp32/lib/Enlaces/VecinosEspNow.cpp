@@ -118,6 +118,7 @@ void VecinosEspNow::programarSiguiente(uint32_t ahoraMs, bool primera) {
 void VecinosEspNow::enviarBaliza() {
   uint8_t trama[sp::TAM_TRAMA_MAXIMO];
   const size_t largo = sp::armarBaliza(propia_, trama);
+  ponerTasa(tasaBalizas_);
   if (esp_now_send(DIFUSION, trama, largo) == ESP_OK) {
     enviadas_++;
   } else {
@@ -195,7 +196,7 @@ void VecinosEspNow::atenderEnvio(uint32_t ahoraMs) {
   } else if (fin == EmisorFragmentos::Fin::ABORTADO) {
     abortados_++;
     anotar("ESP-NOW: mensaje a " + macTexto(destino_) + " ABORTADO: un fragmento no llegó tras " +
-           String(EmisorFragmentos::REINTENTOS) + " reintentos");
+           String(emisor_.maxReintentos()) + " reintentos");
     soltarDestino();
   }
 
@@ -203,6 +204,7 @@ void VecinosEspNow::atenderEnvio(uint32_t ahoraMs) {
     uint8_t trama[sp::TAM_TRAMA_MAXIMO];
     const size_t largo = emisor_.siguienteTrama(trama, ahoraMs);
     if (largo == 0) return;
+    ponerTasa(emisor_.intento() == 0 ? tasaDatos_ : tasaReintentos_);
     if (esp_now_send(destino_, trama, largo) == ESP_OK) {
       esperandoAviso_ = true;
       avisoListo_ = false;
@@ -211,6 +213,28 @@ void VecinosEspNow::atenderEnvio(uint32_t ahoraMs) {
       emisor_.resultado(false, ahoraMs);  // la radio no la aceptó: cuenta como un fallo
     }
   }
+}
+
+// La radio solo transmite con la tasa que se le configuró; se cambia justo antes de cada envío. Es
+// seguro porque los fragmentos salen de uno en uno (se espera el aviso de entrega) y las balizas
+// solo salen cuando no hay un mensaje en curso, así que nunca hay dos tramas en vuelo a la vez.
+void VecinosEspNow::ponerTasa(Tasa t) {
+  if ((int)t == tasaPuesta_) return;
+  const wifi_phy_rate_t tasa = t == Tasa::LR250 ? WIFI_PHY_RATE_LORA_250K : t == Tasa::LR500 ? WIFI_PHY_RATE_LORA_500K : WIFI_PHY_RATE_1M_L;
+  if (esp_wifi_config_espnow_rate(WIFI_IF_STA, tasa) == ESP_OK) {
+    tasaPuesta_ = (int)t;
+  } else {
+    erroresEnvio_++;
+  }
+}
+
+void VecinosEspNow::fijarTasas(Tasa datos, Tasa reintentos, Tasa balizas) {
+  tasaDatos_ = datos;
+  tasaReintentos_ = reintentos;
+  tasaBalizas_ = balizas;
+  // Aceptar largo alcance al recibir, aunque se transmita en ESTANDAR: así un vecino que use LR se oye
+  esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+  tasaPuesta_ = -1;  // la próxima trama vuelve a configurar la radio
 }
 
 void VecinosEspNow::soltarDestino() {

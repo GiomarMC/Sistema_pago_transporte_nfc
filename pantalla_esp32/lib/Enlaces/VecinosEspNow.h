@@ -75,6 +75,18 @@ class VecinosEspNow final : public Vecinos {
   uint32_t mensajesEnviados() const { return enviados_; }      // entregados fragmento a fragmento
   uint32_t mensajesAbortados() const { return abortados_; }    // se agotaron los reintentos
   uint32_t fragmentosReintentados() const { return emisor_.reintentos(); }
+  void fijarReintentos(uint8_t n) { emisor_.fijarReintentos(n); }  // por fragmento, antes de abortar
+
+  // Velocidad de la radio: ESTANDAR es 1 Mbit/s; LR500 y LR250 son el modo de largo alcance de
+  // Espressif (500 y 250 kbit/s), que alcanza más lejos a cambio de tardar 1,5 y 2,4 veces más.
+  // Solo funciona entre ESP32 y exige haberlo activado en los dos extremos (cualquier placa que
+  // llame a esto acepta recibir en largo alcance, sea cual sea su tasa de envío).
+  //   datos      primer intento de cada fragmento
+  //   reintentos segundo intento en adelante (subir a LR da más alcance justo donde falla)
+  //   balizas    las balizas, que son las que detectan al vecino
+  // Llamar después de iniciar(). Por defecto todo va en ESTANDAR.
+  enum class Tasa : uint8_t { ESTANDAR, LR500, LR250 };
+  void fijarTasas(Tasa datos, Tasa reintentos, Tasa balizas);
   uint32_t mensajesRecibidos() const { return recibidosOk_; }  // completos y entregados a recibir()
   uint32_t mensajesDescartados() const { return reens_.descartados() + sinSitio_ + tramasPerdidas_; }
   bool activo() const { return iniciado_ && !pausado_; }
@@ -120,6 +132,9 @@ class VecinosEspNow final : public Vecinos {
   uint32_t proximaMs_ = 0;
   volatile uint32_t recibidas_ = 0, perdidasCola_ = 0;
   uint32_t enviadas_ = 0, erroresEnvio_ = 0;
+  Tasa tasaDatos_ = Tasa::ESTANDAR, tasaReintentos_ = Tasa::ESTANDAR, tasaBalizas_ = Tasa::ESTANDAR;
+  int tasaPuesta_ = -1;  // la última que se le pidió a la radio (-1 = ninguna todavía)
+  void ponerTasa(Tasa t);
 
   // Envío
   EmisorFragmentos emisor_;
