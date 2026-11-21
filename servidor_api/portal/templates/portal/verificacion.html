@@ -1,0 +1,14 @@
+{% extends 'portal/base.html' %}{% block contenido %}
+<div class="limitado"><section class="tarjeta" id="verificacion" data-resultado="{{ resultado }}">
+{% if resultado == "autentica" %}
+<div class="pagina-cabecera"><h1>Tarjeta SubePe auténtica</h1><p>Esta tarjeta fue emitida por SubePe.</p></div>
+<p>Estado: <span class="estado {{ estado }}">{% if estado == "bloqueada" %}Bloqueada{% else %}Activa{% endif %}</span></p>
+<a class="boton primario ancho" href="{{ portal_base }}ingresar/" data-nav>Ver mi saldo</a>
+{% elif resultado == "no_disponible" %}
+<div class="pagina-cabecera"><h1>Verificación no disponible</h1><p>Todavía no podemos comprobar tarjetas desde el celular. Inténtalo más adelante.</p></div>
+<a class="boton secundario ancho" href="{{ portal_base }}ingresar/" data-nav>Ver mi saldo</a>
+{% else %}
+<div class="pagina-cabecera"><h1>Enlace no válido</h1><p>No pudimos comprobar esta tarjeta. Vuelve a acercarla al celular para generar un enlace nuevo.</p></div>
+{% endif %}
+</section></div>
+{% endblock %}
