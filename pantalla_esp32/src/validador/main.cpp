@@ -539,6 +539,9 @@ void setup() {
   iniciarLector();
   PASO("setup: modo sync");
   wifiApagado = almacen.config("wifi") == "off";
+#ifdef WIFI_APAGADO_PRUEBA
+  wifiApagado = true;  // compilación de prueba (-DWIFI_APAGADO_PRUEBA): sin tocar la configuración de la microSD
+#endif
   if (wifiApagado) log("wifi=off: el WiFi no se enciende; solo se cobra (se guarda todo para subirlo después)");
   iniciarSyncV2();
   PASO("setup: pantalla de espera");
