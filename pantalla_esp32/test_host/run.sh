@@ -39,3 +39,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/Prot
     lib/Almacenamiento/TarifasGuardadas.cpp lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o \
     test_host/test_recargas_tarifas.cpp -lmbedcrypto -o /tmp/subepe-m3-test-recargas
 /tmp/subepe-m3-test-recargas
+# M3-05: paquetes ajenos y LISTAS firmados (diario, límites de 500 y 50, acuse, cortes de energía, CanalFalso)
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/Enlaces -Ilib/micro-ecc \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/ProtocoloSP/ProtocoloSP.cpp \
+    /tmp/subepe-uecc.o test_host/test_paquetes_guardados.cpp -lmbedcrypto -o /tmp/subepe-m3-test-paquetes
+/tmp/subepe-m3-test-paquetes

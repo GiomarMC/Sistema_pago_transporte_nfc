@@ -13,6 +13,8 @@
 #include <stdint.h>
 
 #include <memory>
+#include <string>
+#include <vector>
 
 class Archivo {
  public:
@@ -37,4 +39,7 @@ class SistemaArchivos {
   virtual bool existe(const char *ruta) = 0;
   virtual bool borrar(const char *ruta) = 0;
   virtual bool renombrar(const char *de, const char *a) = 0;  // false si `a` ya existe
+  // Carpetas (M3-05): los nombres de los archivos de una carpeta, sin la ruta y sin subcarpetas
+  virtual bool crearCarpeta(const char *carpeta) = 0;  // true si ya existía
+  virtual bool listar(const char *carpeta, std::vector<std::string> &nombres) = 0;
 };

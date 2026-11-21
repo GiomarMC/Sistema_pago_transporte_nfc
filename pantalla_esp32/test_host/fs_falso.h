@@ -28,6 +28,7 @@ class FsFalso : public SistemaArchivos {
 
   std::map<std::string, Entrada> archivos;
   long operaciones = 0;
+  long lecturas = 0;  // cuántas veces se abrió un archivo para leer (cuesta decenas de ms en la microSD)
   long cortarEn = -1;   // -1: sin corte programado
   bool agregarFalla = false;  // agregar() escribe la mitad y devuelve false (como una tarjeta con errores)
   uint32_t azar = 12345;
@@ -74,6 +75,19 @@ class FsFalso : public SistemaArchivos {
     if (!archivos.count(de) || archivos.count(a)) return false;
     archivos[a] = archivos[de];
     archivos.erase(de);
+    return true;
+  }
+
+  // Las carpetas son solo parte del nombre ("/ajenos/1-2.bin"); no hace falta crearlas
+  bool crearCarpeta(const char *) override { return true; }
+  bool listar(const char *carpeta, std::vector<std::string> &nombres) override {
+    nombres.clear();
+    const std::string pref = std::string(carpeta) + "/";
+    for (const auto &par : archivos) {
+      if (par.first.compare(0, pref.size(), pref) != 0) continue;
+      const std::string resto = par.first.substr(pref.size());
+      if (resto.find('/') == std::string::npos) nombres.push_back(resto);
+    }
     return true;
   }
 
@@ -128,6 +142,7 @@ inline std::unique_ptr<Archivo> FsFalso::abrir(const char *ruta, Modo modo) {
   switch (modo) {
     case Modo::LECTURA:
       if (!hay) return nullptr;
+      lecturas++;
       return std::make_unique<ArchivoFalso>(*this, ruta, false);
     case Modo::NUEVO:
       tic();
