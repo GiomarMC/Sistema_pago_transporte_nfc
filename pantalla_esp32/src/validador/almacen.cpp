@@ -125,6 +125,7 @@ void Almacen::cargarDatos() {
   // Sin ellos el validador sigue cobrando: solo no puede guardar paquetes de otros buses
   if (!ajenos_.iniciar()) Serial.println("AVISO: no se pudo preparar /ajenos en la microSD");
   if (!firmados_.iniciar()) Serial.println("AVISO: no se pudo preparar /firmados en la microSD");
+  consumo_.iniciar();  // sin historial todavía la primera vez
 }
 
 void Almacen::cargarConfig() {

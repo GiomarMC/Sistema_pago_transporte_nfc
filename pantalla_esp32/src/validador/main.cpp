@@ -401,6 +401,20 @@ void loop() {
     if (almacen.configurado() && almacen.redes().empty()) portal.iniciar();  // como en setup()
   }
 
+  PASO("loop: consumo de datos");
+  if (almacen.listo()) {
+    ConsumoDatos &consumo = almacen.consumo();
+    const uint32_t hora = ahoraUnix();
+    consumo.fijarFecha(hora ? ConsumoDatos::fechaDeUnix(hora) : 0);
+    consumo.observar(CanalDatos::WIFI, enlaceWifi.bytesTx(), enlaceWifi.bytesRx());
+    if (consumo.atender(millis())) {  // cada 5 minutos, si hubo tráfico
+      uint32_t tx, rx;
+      consumo.bytesHoy(tx, rx);
+      log("Consumo guardado: hoy tx " + String(tx) + " B, rx " + String(rx) + " B (el enlace WiFi lleva " +
+          String(enlaceWifi.bytesTx()) + "/" + String(enlaceWifi.bytesRx()) + " desde el arranque)");
+    }
+  }
+
   PASO("loop: puente (ordenador)");
   atenderPuente();
 
