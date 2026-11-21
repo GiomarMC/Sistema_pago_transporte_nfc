@@ -17,6 +17,7 @@
 #include <vector>
 
 #include <ArchivosSD.h>
+#include <ConsumoDatos.h>
 #include <PaquetesGuardados.h>
 #include <RedWifi.h>
 #include <Recargas.h>
@@ -29,7 +30,7 @@ struct Tarifa {
 
 class Almacen {
  public:
-  Almacen() : recargas_(archivos_), tarifasBin_(archivos_), ajenos_(archivos_), firmados_(archivos_) {}
+  Almacen() : recargas_(archivos_), tarifasBin_(archivos_), ajenos_(archivos_), firmados_(archivos_), consumo_(archivos_) {}
   // Monta la microSD y carga lo necesario en memoria. Si la tarjeta no contesta (pasa tras un
   // reinicio brusco en pleno acceso) reintenta INTENTOS_MONTAJE veces, reiniciando el bus SPI.
   bool iniciar();
@@ -71,6 +72,8 @@ class Almacen {
   // Paquetes de otros buses por reenviar y LISTAS firmados por compartir (M3-05; los usan M8 y M4)
   PaquetesAjenos &ajenos() { return ajenos_; }
   PaquetesFirmados &firmados() { return firmados_; }
+  // Consumo de datos por canal y día (M3-06): de ahí salen bytesTxHoy y bytesRxHoy del HOLA
+  ConsumoDatos &consumo() { return consumo_; }
   uint32_t pendientes() const { return siguienteId_ - 1 - ultimoSubido_; }
 
   // Sincronización con el servidor
@@ -110,5 +113,6 @@ class Almacen {
   TarifasGuardadas tarifasBin_;
   PaquetesAjenos ajenos_;
   PaquetesFirmados firmados_;
+  ConsumoDatos consumo_;
   std::vector<RedWifi> redes_;
 };

@@ -44,3 +44,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/Prot
     lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/ProtocoloSP/ProtocoloSP.cpp \
     /tmp/subepe-uecc.o test_host/test_paquetes_guardados.cpp -lmbedcrypto -o /tmp/subepe-m3-test-paquetes
 /tmp/subepe-m3-test-paquetes
+# M3-06: consumo de datos por canal y día (31 días, guardado cada 5 minutos, cortes de energía, contadores de enlace)
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento lib/Almacenamiento/Crc32.cpp \
+    lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/ConsumoDatos.cpp test_host/test_consumo.cpp \
+    -o /tmp/subepe-m3-test-consumo
+/tmp/subepe-m3-test-consumo
