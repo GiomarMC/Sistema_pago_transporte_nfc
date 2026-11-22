@@ -37,6 +37,9 @@ class RadioVecinos {
   virtual size_t cantidad() const = 0;
   virtual const Vecino &vecino(size_t i) const = 0;  // i < cantidad()
   virtual bool enviando() const = 0;
+  // Mensajes cuya transferencia se abandonó (un fragmento no llegó tras los reintentos). Que enviarMensaje() diga
+  // ACEPTADO solo significa que empezó: cuando enviando() deja de ser true, si este número subió, no llegó.
+  virtual uint32_t abortados() const { return 0; }
   // Un paquete C1 completo a un vecino. OCUPADO: reintentar más tarde; RECHAZADO: no se puede (ya no es vecino,
   // límite del encuentro...), el trabajo se abandona.
   virtual Envio enviarMensaje(const uint8_t mac[6], const uint8_t *mensaje, size_t largo) = 0;
@@ -51,6 +54,7 @@ class IntercambioVecinos {
   static constexpr uint32_t SIN_CANAL_MS = 10 * 60 * 1000;   // desde cuándo vale entregar a un vecino sin canal propio
   static constexpr uint32_t REPETIR_PEDIDO_MS = 10000;       // no repetir el mismo PEDIDO al mismo vecino antes
   static constexpr uint32_t ENTREGA_VIGENTE_MS = 10 * 60 * 1000;  // lo entregado se da por perdido si no llega acuse
+  static constexpr uint32_t REINTENTO_EVENTOS_MS = 5000;  // tras un EVENTOS que la radio abortó, se vuelve a ofrecer
   static constexpr uint8_t PAQUETES_EVENTOS = 10;            // por encuentro
   static constexpr uint8_t CADENA_LISTAS = 10;               // LISTAS encadenados por PEDIDO
   static constexpr size_t MAX_AJENOS_ACEPTADOS = 480;        // de 500: más allá se anuncia que no se aceptan
@@ -60,6 +64,7 @@ class IntercambioVecinos {
   struct Cuenta {
     uint32_t pedidosListas = 0, pedidosAcuses = 0, pedidosAtendidos = 0;
     uint32_t eventosEntregados = 0, listasEntregadas = 0, acusesEntregados = 0, recibidos = 0;
+    uint32_t eventosAbortados = 0;  // EVENTOS que empezaron a salir y la radio abandonó (se reintentan)
   };
 
   IntercambioVecinos(RadioVecinos &radio, SincronizadorV2 &sinc, AlmacenSync &almacen, uint16_t validador)
@@ -84,13 +89,15 @@ class IntercambioVecinos {
     uint8_t mac[6] = {};
     uint32_t pedidoListasMs = 0, pedidoAcusesMs = 0, entregaMs = 0;
     uint32_t entregadoHasta = 0;  // último evento mío entregado
-    uint8_t paquetes = 0;         // EVENTOS entregados en esta racha
+    uint8_t paquetes = 0;         // EVENTOS entregados (o intentados) en esta racha
+    uint32_t reintentoMs = 0;     // tras un aborto, no se ofrecen eventos antes (0: sin espera)
     bool pedidoListas = false, pedidoAcuses = false;
   };
 
   Recuerdo &recuerdo(const uint8_t mac[6], uint32_t ahoraMs);
   void publicarBaliza(uint32_t ahoraMs, bool tengoCanal);
   void recibir(uint32_t ahoraMs);
+  void revisarEntrega(uint32_t ahoraMs);
   void decidir(uint32_t ahoraMs, bool tengoCanal);
   void ejecutarTrabajo(uint32_t ahoraMs);
   bool encolar(const Trabajo &t);
@@ -110,5 +117,10 @@ class IntercambioVecinos {
   sp::Baliza ultimaBaliza_;
   uint32_t ultimaBalizaMs_ = 0;
   Cuenta cuenta_;
+  struct EnVuelo {  // el último EVENTOS que empezó a salir, hasta saber si llegó
+    bool activo = false;
+    uint8_t mac[6] = {};
+    uint32_t entregadoAntes = 0, abortadosAntes = 0;
+  } enVuelo_;
   uint8_t buf_[sp::TAM_MAXIMO], rx_[sp::TAM_MAXIMO];
 };
