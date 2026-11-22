@@ -44,6 +44,10 @@ void PortalWifi::iniciar() {
 
   // Las redes de alrededor se buscan antes de crear la propia (tarda unos 2 s)
   log_("Portal: memoria libre " + String(ESP.getFreeHeap()) + " B (mayor bloque " + String(ESP.getMaxAllocHeap()) + " B)");
+  // Sin la reconexión automática: sin ninguna red guardada al alcance, el núcleo reintenta sin parar (NO_AP_FOUND) y
+  // la radio salta de canal en canal buscándolas, así que la red del portal casi no emite y el celular no la ve.
+  // EnlaceWifi la vuelve a activar al conectarse después del portal.
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect();
   WiFi.mode(WIFI_AP_STA);
   const int n = WiFi.scanNetworks();
@@ -58,6 +62,7 @@ void PortalWifi::iniciar() {
   }
   WiFi.scanDelete();
 
+  WiFi.mode(WIFI_AP);  // ya buscadas las redes, solo la del portal: la radio se queda en su canal
   WiFi.softAPConfig(IP_PORTAL, IP_PORTAL, IPAddress(255, 255, 255, 0));
   bool creada = WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
   if (!creada) {  // no se ve en el celular: se anota y se reintenta una vez
