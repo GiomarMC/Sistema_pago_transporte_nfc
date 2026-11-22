@@ -445,7 +445,95 @@ void horaSoloConFirmaValida() {
 
 }  // namespace
 
+// --- Eventos con la hora estimada (correccion_hora.h) -----------------------------------
+
+void correccionPorTramos() {
+  CorreccionHora c;
+  assert(!c.retenido(1) && c.anotados() == 0);
+  // Arranque con la hora estimada: base 1000 s por detrás de la real, en millis() = 2000
+  const uint32_t real = 1795000000;
+  c.anotar(1, real - 1000, 2000);
+  c.anotar(2, real - 1000, 2000);
+  // cobrar() adelanta el reloj estimado 300 s (la tarjeta llevaba una fecha posterior): tramo nuevo
+  c.anotar(3, real - 700, 2000);
+  assert(c.anotados() == 3 && c.retenido(1) && c.retenido(3) && !c.retenido(4));
+  sp::Evento e = AlmacenFalso::evento(1);
+  assert(!c.corregir(e));  // sin hora real no se toca
+  // Llega la hora real: `real` en millis() = 2000 + 400 ms después de la base
+  c.horaReal(real + 0, 2400);
+  assert(c.hayHoraReal() && !c.retenido(1) && !c.retenido(3));
+  sp::Evento e1 = AlmacenFalso::evento(1), e3 = AlmacenFalso::evento(3), e4 = AlmacenFalso::evento(4);
+  const uint32_t f1 = e1.fecha, f3 = e3.fecha, f4 = e4.fecha;
+  assert(c.corregir(e1) && e1.fecha == f1 + 1000);   // 1000 s - 0,4 s, redondeado al segundo
+  assert(c.corregir(e3) && e3.fecha == f3 + 700);
+  assert(!c.corregir(e4) && e4.fecha == f4);          // no se cobró con hora estimada
+  // Con la hora real ya conocida no se anota más (lo nuevo ya lleva la buena)
+  c.anotar(5, real - 1000, 2000);
+  assert(c.anotados() == 3);
+  // Una hora real POR DETRÁS de la estimada (la estimada se adelantó de más) también corrige, hacia atrás
+  CorreccionHora atras;
+  atras.anotar(1, real + 60, 0);
+  atras.horaReal(real, 0);
+  sp::Evento a = AlmacenFalso::evento(1);
+  const uint32_t fa = a.fecha;
+  assert(atras.corregir(a) && a.fecha == fa - 60);
+  puts("  hora estimada: tramos por salto del reloj, corrección redondeada, hacia atrás y nada antes de la hora real OK");
+}
+
+void retenidosHastaLaHoraReal() {
+  AlmacenFalso alm;
+  CanalFalso canal;
+  CorreccionHora corr;
+  ConfigSyncV2 cfg = config();
+  cfg.correccion = &corr;
+  SincronizadorV2 s(alm, cfg);
+  alm.guardarViajes(3);
+  for (uint32_t id = 1; id <= 3; id++) corr.anotar(id, 1795000000 - 500, 0);
+  s.atender(&canal, 100);
+  assert(sacar(canal).p.cabecera.tipo == sp::HOLA && canal.enviados() == 0);  // solo el HOLA: los 3 esperan
+  assert(s.retenido(1) && s.pendientes() == 3);
+  uint32_t ultimo = 0;
+  uint8_t buf[sp::TAM_MAXIMO];
+  assert(s.empaquetarEventos(0, buf, sizeof(buf), ultimo, 100) == 0);  // tampoco para un vecino
+  s.atender(&canal, 5000);
+  assert(canal.enviados() == 0);  // siguen esperando
+  // Llega la hora real (en la placa, del ACUSE del HOLA: main.cpp llama a fijarHora): desde ahí salen corregidos
+  corr.horaReal(1795000000, 0);
+  s.atender(&canal, 5100);
+  Salida e = sacar(canal);
+  assert(e.p.cabecera.tipo == sp::EVENTOS && e.p.eventos.n == 3);
+  for (uint8_t i = 0; i < 3; i++) {
+    const sp::Evento orig = AlmacenFalso::evento(i + 1);
+    assert(e.p.eventos.eventos[i].fecha == orig.fecha + (uint32_t)corr.delta());
+  }
+  assert(corr.delta() == 500);
+  puts("  hora estimada: los eventos no salen hasta la hora real y salen con la fecha corregida OK");
+}
+
+void ultimoAcuseParaUnVecino() {
+  AlmacenFalso alm;
+  CanalFalso canal;
+  SincronizadorV2 s(alm, config());
+  uint8_t buf[128];
+  uint32_t ms = 0;
+  assert(s.ultimoAcuse(buf, sizeof(buf), ms) == 0);
+  s.atender(&canal, 100);
+  sacar(canal);
+  servidorDice(canal, ACUSE_107_HASTA_30);
+  s.atender(&canal, 700);
+  assert(s.ultimoAcuse(buf, sizeof(buf), ms) == sizeof(ACUSE_107_HASTA_30) && ms == 700);
+  assert(memcmp(buf, ACUSE_107_HASTA_30, sizeof(ACUSE_107_HASTA_30)) == 0);  // tal cual, con su firma
+  // pedirHola: el HOLA sale en la próxima vuelta, sin esperar los 5 minutos
+  s.pedirHola();
+  s.atender(&canal, 800);
+  assert(sacar(canal).p.cabecera.tipo == sp::HOLA);
+  puts("  hora para un vecino: se guarda el último ACUSE propio tal cual y pedirHola() manda un HOLA enseguida OK");
+}
+
 int main() {
+  correccionPorTramos();
+  retenidosHastaLaHoraReal();
+  ultimoAcuseParaUnVecino();
   cienEventosEnCuatroPaquetes();
   acuseHastaSesenta();
   reenvioALos30Segundos();

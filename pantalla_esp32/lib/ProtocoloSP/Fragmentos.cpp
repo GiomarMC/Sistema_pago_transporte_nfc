@@ -68,7 +68,7 @@ bool leerPedido(const uint8_t *trama, size_t largo, Pedido &p) {
     return false;
   const uint16_t validador = lee16(trama + 4);
   const uint8_t que = trama[6];
-  if (validador == 0 || que < PEDIDO_LISTAS || que > PEDIDO_ACUSES) return false;
+  if (validador == 0 || que < PEDIDO_LISTAS || que > PEDIDO_HORA) return false;
   p.validador = validador;
   p.que = que;
   p.x = lee32(trama + 7);

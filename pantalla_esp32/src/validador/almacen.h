@@ -103,8 +103,11 @@ class Almacen {
   bool guardarListas(const String &listaNegra, const String &tarifas, const String &recargas);
   size_t tamListaNegra() const { return listaNegra_.size(); }
   size_t numRecargas() const { return recargas_.cantidad(); }
+  // Se llama con cada evento nuevo ya guardado en la microSD (con su id): main.cpp anota los de hora estimada
+  void alGuardarEvento(void (*aviso)(const sp::Evento &)) { alGuardar_ = aviso; }
 
  private:
+  void (*alGuardar_)(const sp::Evento &) = nullptr;
   bool montar();       // un intento de montar la tarjeta
   void cargarDatos();  // lee config, estado y listas de la tarjeta ya montada
   bool guardarEvento(sp::Evento &e);

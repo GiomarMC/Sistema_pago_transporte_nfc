@@ -159,7 +159,7 @@ void formatoDelPedido() {
   memcpy(mala, trama, sizeof(mala));
   mala[4] = mala[5] = 0;
   assert(!sp::leerPedido(mala, sizeof(mala), leido));
-  for (int que : {0, 4, 255}) {
+  for (int que : {0, sp::PEDIDO_HORA + 1, 255}) {
     memcpy(mala, trama, sizeof(mala));
     mala[6] = static_cast<uint8_t>(que);
     assert(!sp::leerPedido(mala, sizeof(mala), leido));
