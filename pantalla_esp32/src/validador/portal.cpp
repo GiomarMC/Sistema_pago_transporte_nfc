@@ -43,6 +43,7 @@ void PortalWifi::iniciar() {
   claveRed_ = String(10000000 + esp_random() % 90000000);  // 8 cifras: el mínimo de WPA2
 
   // Las redes de alrededor se buscan antes de crear la propia (tarda unos 2 s)
+  log_("Portal: memoria libre " + String(ESP.getFreeHeap()) + " B (mayor bloque " + String(ESP.getMaxAllocHeap()) + " B)");
   WiFi.disconnect();
   WiFi.mode(WIFI_AP_STA);
   const int n = WiFi.scanNetworks();
@@ -58,7 +59,14 @@ void PortalWifi::iniciar() {
   WiFi.scanDelete();
 
   WiFi.softAPConfig(IP_PORTAL, IP_PORTAL, IPAddress(255, 255, 255, 0));
-  WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
+  bool creada = WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
+  if (!creada) {  // no se ve en el celular: se anota y se reintenta una vez
+    log_("Portal: ERROR, softAP falló (memoria libre " + String(ESP.getFreeHeap()) + " B); reintentando");
+    delay(200);
+    creada = WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
+  }
+  log_(String("Portal: softAP ") + (creada ? "creada" : "FALLÓ") + ", canal " + String(WiFi.channel()) + ", memoria libre " +
+       String(ESP.getFreeHeap()) + " B");
   dns.start(53, "*", IP_PORTAL);  // todos los nombres apuntan al portal
 
   static bool rutas = false;  // el servidor web se reutiliza si el portal se abre otra vez
