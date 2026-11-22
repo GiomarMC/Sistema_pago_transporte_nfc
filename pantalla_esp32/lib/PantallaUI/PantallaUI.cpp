@@ -39,6 +39,26 @@ uint16_t pendientesActuales = 0;
 uint32_t volverAEsperaEn = 0;   // 0 = la pantalla de espera ya está dibujada
 bool informacionFija = false;   // pantalla de información: no se sustituye sola
 
+// Indicador de sincronización: circulito de radio 4 al que le falta un cuarto que va girando, en la barra superior
+// entre la señal y "P:n" (x 67-77). Solo se repinta ese cuadrado de 11x11.
+constexpr int GIRO_CX = 72, GIRO_CY = 5, GIRO_R = 4;
+constexpr uint32_t GIRO_PASO_MS = 200;
+bool giroActivo = false;
+uint8_t giroFase = 0;
+uint32_t giroSiguienteMs = 0;
+
+bool enEspera() { return volverAEsperaEn == 0 && !informacionFija; }
+
+void dibujarGiro() {
+  gfx->fillRect(GIRO_CX - GIRO_R - 1, GIRO_CY - GIRO_R - 1, 2 * GIRO_R + 3, 2 * GIRO_R + 3, COLOR_ESPERA);
+  if (!giroActivo) return;
+  gfx->drawCircle(GIRO_CX, GIRO_CY, GIRO_R, BLANCO);
+  // El cuarto que falta: arriba-derecha, abajo-derecha, abajo-izquierda, arriba-izquierda
+  const int dx = (giroFase == 0 || giroFase == 1) ? 1 : -GIRO_R - 1;
+  const int dy = (giroFase == 1 || giroFase == 2) ? 1 : -GIRO_R - 1;
+  gfx->fillRect(GIRO_CX + dx, GIRO_CY + dy, GIRO_R + 1, GIRO_R + 1, COLOR_ESPERA);
+}
+
 // Escribe `texto` centrado en la línea `y`, con el tamaño más grande (hasta
 // `tamMax`) con el que cabe en el ancho. Devuelve la altura usada.
 int textoCentrado(const String &texto, int y, uint8_t tamMax, uint16_t color) {
@@ -117,6 +137,7 @@ void pantallaEspera() {
   textoCentrado(esperaLinea1, 108, 1, BLANCO);
   textoCentrado(esperaLinea2, 118, 1, BLANCO);
   volverAEsperaEn = 0;
+  dibujarGiro();
 }
 
 }  // namespace
@@ -147,9 +168,22 @@ void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
   pendientesActuales = pendientes;
 }
 
+void actividad(bool activa) {
+  if (activa == giroActivo) return;
+  giroActivo = activa;
+  giroFase = 0;
+  giroSiguienteMs = millis() + GIRO_PASO_MS;
+  if (enEspera()) dibujarGiro();
+}
+
 void actualizar() {
   if (!informacionFija && volverAEsperaEn != 0 && (int32_t)(millis() - volverAEsperaEn) >= 0) {
     pantallaEspera();
+  }
+  if (giroActivo && enEspera() && (int32_t)(millis() - giroSiguienteMs) >= 0) {
+    giroFase = (giroFase + 1) % 4;
+    giroSiguienteMs = millis() + GIRO_PASO_MS;
+    dibujarGiro();
   }
 }
 
