@@ -153,6 +153,20 @@ struct SyncV2 {
   uint32_t horaVista = 0;
 };
 std::unique_ptr<SyncV2> v2;
+
+// subida=vecinos en config.txt (prueba de M8): la placa se conecta al WiFi como siempre, y así ESP-NOW queda en el
+// canal del AP, pero no abre MQTT. Al gestor se le da este canal, que nunca está listo, y los eventos solo salen por
+// un vecino de ESP-NOW. Sirve para probar el intercambio entre dos placas que tienen WiFi las dos.
+class CanalSinServidor : public CanalPaquetes {
+ public:
+  const char *nombre() const override { return "ninguno"; }
+  uint8_t codigoEnlace() const override { return 0; }
+  bool listo() const override { return false; }
+  void atender() override {}
+  bool enviar(const uint8_t *, size_t) override { return false; }
+  size_t recibir(uint8_t *, size_t) override { return 0; }
+};
+CanalSinServidor canalSinServidor;
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
 uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
 
@@ -456,7 +470,10 @@ void iniciarSyncV2() {
     nuevo->vecinos.reset(new VecinosEspNow(log));
     nuevo->radio.reset(new RadioEspNow(*nuevo->vecinos));
   }
-  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, *nuevo->canal, nullptr, nuevo->vecinos.get()));
+  const bool soloVecinos = almacen.config("subida") == "vecinos";
+  if (soloVecinos && !nuevo->vecinos) log("subida=vecinos sin espnow=on: no hay por dónde subir los eventos");
+  CanalPaquetes &subida = soloVecinos ? static_cast<CanalPaquetes &>(canalSinServidor) : *nuevo->canal;
+  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, subida, nullptr, nuevo->vecinos.get()));
   nuevo->gestor->canalEspNow(canalEspNow);
   nuevo->almacenSync.reset(new AlmacenSyncBinario(almacen.cola(), almacen.estado(), almacen.paquetesAjenos(),
                                                   almacen.aplicador(), ahoraUnix, &almacen.firmados()));
@@ -477,7 +494,8 @@ void iniciarSyncV2() {
   else if (nuevo->vecinos) nuevo->vecinos->iniciar(canalEspNow);  // sin WiFi: solo ESP-NOW
   v2 = std::move(nuevo);
   log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()) +
-      (v2->vecinos ? ", ESP-NOW en el canal " + String(canalEspNow) : String("")));
+      (v2->vecinos ? ", ESP-NOW en el canal " + String(canalEspNow) : String("")) +
+      (soloVecinos ? ". subida=vecinos: sin MQTT, los eventos solo salen por ESP-NOW" : ""));
 }
 
 // Un turno de la sincronización v2. Solo se llama con el lector libre (sin tarjeta delante): conectar con el broker
@@ -524,7 +542,7 @@ void servicioSyncV2() {
       const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
       log("ESP-NOW: vecinos " + String(v2->vecinos->cantidad()) + ", pedidos de listas " + String(c.pedidosListas) +
           ", de acuses " + String(c.pedidosAcuses) + ", atendidos " + String(c.pedidosAtendidos) + ", EVENTOS entregados " +
-          String(c.eventosEntregados) + ", LISTAS " + String(c.listasEntregadas) + ", ACUSES " + String(c.acusesEntregados) +
+          String(c.eventosEntregados) + " (abortados " + String(c.eventosAbortados) + "), LISTAS " + String(c.listasEntregadas) + ", ACUSES " + String(c.acusesEntregados) +
           ", recibidos " + String(c.recibidos) + ", ajenos de vecinos " + String(v2->sinc->ajenosRecibidos()));
     }
   }
