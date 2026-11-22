@@ -5,6 +5,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_random.h>
+#include <esp_wifi.h>
 
 namespace {
 
@@ -63,6 +64,15 @@ void PortalWifi::iniciar() {
   WiFi.scanDelete();
 
   WiFi.mode(WIFI_AP);  // ya buscadas las redes, solo la del portal: la radio se queda en su canal
+  // La radio guarda su protocolo en la NVS y lo carga al arrancar con cualquier firmware: tras las pruebas de ESP-NOW
+  // de largo alcance quedaba b/g/n+LR (0x0F) también en el AP, y con LR la red no la ve ningún celular ni PC.
+  // Medido en la 105: con 0x0F invisible a 20 cm; con b/g/n (0x07) el PC la ve al 100 %.
+  uint8_t protocolo = 0;
+  esp_wifi_get_protocol(WIFI_IF_AP, &protocolo);
+  if (protocolo != (WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N)) {
+    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+    log_("Portal: el AP tenía el protocolo 0x" + String(protocolo, 16) + " (8 = largo alcance); se pone b/g/n");
+  }
   WiFi.softAPConfig(IP_PORTAL, IP_PORTAL, IPAddress(255, 255, 255, 0));
   bool creada = WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
   if (!creada) {  // no se ve en el celular: se anota y se reintenta una vez
