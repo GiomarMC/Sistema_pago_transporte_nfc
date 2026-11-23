@@ -69,6 +69,12 @@ class VecinosEspNow final : public Vecinos {
   // curso a la vez, el siguiente se acepta cuando enviando() deja de ser true.
   Envio enviar(const uint8_t mac[6], const uint8_t *mensaje, size_t largo);
   bool enviando() const { return emisor_.ocupado(); }
+  // Un PEDIDO (C1 5.10, trama de clase 3) a un vecino: sin fragmentar, sin esperar aviso de entrega (si no llega, quien
+  // pide lo repite). ACEPTADO / OCUPADO (se está enviando un mensaje o falta el aviso del pedido anterior) /
+  // NO_ES_VECINO / PAUSADO / ERROR_RADIO.
+  Envio enviarPedido(const uint8_t mac[6], const sp::Pedido &pedido);
+  // Saca el PEDIDO más antiguo que llegó de un vecino. false si no hay.
+  bool recibirPedido(uint8_t macOrigen[6], sp::Pedido &pedido);
   // Saca el paquete completo más antiguo que llegó (0 si no hay). Copia hasta `max` bytes;
   // si el paquete es mayor, se pierde. macOrigen (6 B) es opcional.
   size_t recibir(uint8_t *buf, size_t max, uint8_t *macOrigen = nullptr);
@@ -87,6 +93,7 @@ class VecinosEspNow final : public Vecinos {
   // Llamar después de iniciar(). Por defecto todo va en ESTANDAR.
   enum class Tasa : uint8_t { ESTANDAR, LR500, LR250 };
   void fijarTasas(Tasa datos, Tasa reintentos, Tasa balizas);
+  uint32_t pedidosDescartados() const { return pedidosPerdidos_; }
   uint32_t mensajesRecibidos() const { return recibidosOk_; }  // completos y entregados a recibir()
   uint32_t mensajesDescartados() const { return reens_.descartados() + sinSitio_ + tramasPerdidas_; }
   bool activo() const { return iniciado_ && !pausado_; }
@@ -104,6 +111,10 @@ class VecinosEspNow final : public Vecinos {
     uint8_t mac[6];
     uint8_t largo;
     uint8_t datos[sp::TAM_TRAMA_MAXIMO];
+  };
+  struct PedidoRecibido {
+    uint8_t mac[6];
+    sp::Pedido pedido;
   };
   struct MensajeRecibido {
     uint8_t mac[6];
@@ -127,6 +138,10 @@ class VecinosEspNow final : public Vecinos {
   sp::Baliza propia_;
   QueueHandle_t cola_ = nullptr;  // balizas de la radio hacia atender(), que corren en tareas distintas
   QueueHandle_t colaTramas_ = nullptr;  // fragmentos, igual
+  QueueHandle_t colaPedidos_ = nullptr;  // PEDIDOs, igual
+  volatile uint32_t pedidosPerdidos_ = 0;
+  bool esperandoAvisoPedido_ = false;    // se mandó un PEDIDO y falta el aviso de la radio (no se mezcla con un fragmento)
+  uint32_t pedidoMs_ = 0;
   uint8_t canal_ = 1;
   bool iniciado_ = false, pausado_ = false;
   uint32_t proximaMs_ = 0;
