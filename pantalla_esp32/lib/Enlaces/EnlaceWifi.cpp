@@ -3,6 +3,39 @@
 #include <ESPmDNS.h>
 #include <WiFi.h>
 
+volatile uint8_t EnlaceWifi::motivos_[EnlaceWifi::MOTIVOS] = {};
+volatile uint16_t EnlaceWifi::desconexiones_ = 0;
+
+namespace {
+const char *textoMotivo(uint8_t m) {
+  switch (m) {
+    case WIFI_REASON_AUTH_EXPIRE: return "autenticación caducada";
+    case WIFI_REASON_AUTH_LEAVE: return "el AP la echó";
+    case WIFI_REASON_ASSOC_LEAVE: return "se desconectó la placa";
+    case WIFI_REASON_4WAY_HANDSHAKE_TIMEOUT: return "sin respuesta en el handshake (¿contraseña?)";
+    case WIFI_REASON_BEACON_TIMEOUT: return "sin balizas del AP";
+    case WIFI_REASON_NO_AP_FOUND: return "no se encontró la red";
+    case WIFI_REASON_AUTH_FAIL: return "autenticación fallida";
+    case WIFI_REASON_ASSOC_FAIL: return "asociación fallida";
+    case WIFI_REASON_HANDSHAKE_TIMEOUT: return "handshake sin terminar";
+    case WIFI_REASON_CONNECTION_FAIL: return "conexión fallida";
+    default: return "";
+  }
+}
+}  // namespace
+
+void EnlaceWifi::anotarFallo(const String &ssid) {
+  // El primer motivo suele ser el 8 del WiFi.disconnect() que hace conectarSiguiente() antes de cada intento
+  String lista;
+  const uint16_t n = desconexiones_;
+  for (uint8_t i = 0; i < n && i < MOTIVOS; i++) {
+    const uint8_t m = motivos_[i];
+    lista += (i ? ", " : "") + String(m) + (textoMotivo(m)[0] ? String(" ") + textoMotivo(m) : "");
+  }
+  log_("WiFi " + ssid + ": no conectó en " + String(ESPERA_RED_MS / 1000) + " s; " + String(n) + " desconexiones (" +
+       lista + (n > MOTIVOS ? ", ..." : "") + "), estado " + String((int)WiFi.status()));
+}
+
 EnlaceWifi::EnlaceWifi(ListaRedes redes, Registro log, const char *raicesPem)
     : redes_(redes), log_(log), raices_(raicesPem) {
   contado_.usar(&plano_, &tx_, &rx_);
@@ -65,10 +98,34 @@ void EnlaceWifi::atender() {
   }
   // WiFi.begin no bloquea: la conexión avanza mientras se sigue cobrando. Si una red
   // no conecta en ESPERA_RED_MS, se prueba la siguiente de las guardadas.
+  if (iniciado_ && WiFi.status() == WL_CONNECT_FAILED && reintentos_ < REINTENTOS_RED && red_ < redes.size() &&
+      millis() - inicioIntento_ > PAUSA_REINTENTO_MS) {
+    reintentos_++;
+    const RedWifi &r = redes[red_];
+    log_("WiFi " + r.ssid + ": rechazó la conexión (motivo " + String(motivos_[0]) + "); reintento " +
+         String(reintentos_) + " de " + String(REINTENTOS_RED));
+    desconexiones_ = 0;
+    WiFi.disconnect();
+    WiFi.begin(r.ssid.c_str(), r.clave.c_str());
+    inicioIntento_ = millis();
+    return;
+  }
   if (!iniciado_ || millis() - inicioIntento_ > ESPERA_RED_MS) conectarSiguiente(redes);
 }
 
 void EnlaceWifi::conectarSiguiente(const std::vector<RedWifi> &redes) {
+  if (!eventosRegistrados_) {
+    eventosRegistrados_ = true;
+    WiFi.onEvent(
+        [](WiFiEvent_t, WiFiEventInfo_t info) {
+          if (desconexiones_ < MOTIVOS) motivos_[desconexiones_] = info.wifi_sta_disconnected.reason;
+          desconexiones_++;
+        },
+        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  }
+  if (iniciado_ && red_ < redes.size()) anotarFallo(redes[red_].ssid);
+  desconexiones_ = 0;
+  reintentos_ = 0;
   if (iniciado_) red_ = (red_ + 1) % redes.size();
   if (red_ >= redes.size()) red_ = 0;
   const RedWifi &r = redes[red_];

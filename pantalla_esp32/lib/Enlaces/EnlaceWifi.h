@@ -37,6 +37,11 @@ class EnlaceWifi final : public Enlace {
   using ListaRedes = const std::vector<RedWifi> &(*)();
 
   static constexpr uint32_t ESPERA_RED_MS = 20000;  // para conectar antes de probar otra red
+  // Una red que rechaza la autenticación (WL_CONNECT_FAILED, p. ej. motivo 202) se reintenta enseguida, hasta
+  // REINTENTOS_RED veces, en vez de esperar ESPERA_RED_MS: medido con el hotspot del celular, el primer intento tras
+  // reiniciar la placa estando conectada se rechaza (el AP aún recuerda la conexión anterior) y el siguiente entra
+  static constexpr uint8_t REINTENTOS_RED = 3;
+  static constexpr uint32_t PAUSA_REINTENTO_MS = 2000;
   static constexpr uint32_t ESPERA_MDNS_MS = 2000;  // para encontrar un "nombre.local"
 
   // raicesPem: raíces de confianza en PEM (raices_tls.h); no puede ser nullptr
@@ -126,6 +131,13 @@ class EnlaceWifi final : public Enlace {
 
   bool encendido_ = false, iniciado_ = false, conectado_ = false, mdnsIniciado_ = false;
   uint32_t inicioIntento_ = 0;
+  uint8_t reintentos_ = 0;  // de la red actual, tras un rechazo
+  // Por qué se cayó o no conectó (reason del driver, WIFI_REASON_*), escrito desde la tarea del WiFi: para el registro
+  static constexpr uint8_t MOTIVOS = 8;
+  static volatile uint8_t motivos_[MOTIVOS];  // los primeros de este intento, en orden
+  static volatile uint16_t desconexiones_;
+  bool eventosRegistrados_ = false;
+  void anotarFallo(const String &ssid);
   size_t red_ = 0;  // red guardada que se está probando
   String miNombre_ = "validador", hostLocal_;
   IPAddress ipLocal_;
