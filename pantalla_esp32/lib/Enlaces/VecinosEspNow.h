@@ -55,6 +55,11 @@ class VecinosEspNow final : public Vecinos {
   ~VecinosEspNow() override;
 
   // --- Vecinos ---------------------------------------------------------------------
+  // ESP-NOW por la interfaz AP (con un AP oculto que no admite a nadie) en vez de la STA. Llamar antes de iniciar().
+  // La velocidad y el protocolo de largo alcance (fijarTasas) se configuran por interfaz y cambian TODAS sus tramas:
+  // en la STA impedían autenticar con el router. En la AP no tocan la conexión WiFi. Con la STA conectada, el AP se
+  // queda en el canal del router (es la misma radio), así que ESP-NOW sigue al WiFi solo.
+  void usarInterfazAp() { interfazAp_ = true; }
   void iniciar(uint8_t canalWifi) override;  // 0 se toma como 1
   // ESP-NOW sigue al WiFi: con `canal` (el del AP al que se conecta o se conectó) se pasa a él; con 0 vuelve al de
   // iniciar() (espnow_canal). Solo cambia la radio si el STA no está conectado (conectado, manda el canal del AP).
@@ -152,7 +157,10 @@ class VecinosEspNow final : public Vecinos {
   bool esperandoAvisoPedido_ = false;    // se mandó un PEDIDO y falta el aviso de la radio (no se mezcla con un fragmento)
   uint32_t pedidoMs_ = 0;
   uint8_t canal_ = 1, canalBase_ = 1;
-  bool iniciado_ = false, pausado_ = false, silencio_ = false;
+  bool iniciado_ = false, pausado_ = false, silencio_ = false, interfazAp_ = false;
+  uint8_t ifz_ = 0;  // wifi_interface_t por la que va ESP-NOW (0 = STA, 1 = AP); aquí sin el tipo del SDK
+  void crearApOculto();
+  void ponerProtocolos();
   uint32_t proximaMs_ = 0;
   volatile uint32_t recibidas_ = 0, perdidasCola_ = 0;
   uint32_t enviadas_ = 0, erroresEnvio_ = 0;

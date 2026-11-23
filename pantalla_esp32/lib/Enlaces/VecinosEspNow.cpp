@@ -33,7 +33,30 @@ String VecinosEspNow::macTexto(const uint8_t mac[6]) {
   return s;
 }
 
+// El AP oculto por el que sale ESP-NOW (usarInterfazAp): sin clientes que valgan (clave al azar, uno como mucho) y
+// en el canal de ESP-NOW. Con la STA conectada, el driver lo deja en el canal del router.
+void VecinosEspNow::crearApOculto() {
+  uint8_t mac[6];
+  WiFi.macAddress(mac);
+  char ssid[20], clave[20];
+  snprintf(ssid, sizeof(ssid), "subepe-%02x%02x%02x", mac[3], mac[4], mac[5]);
+  for (int i = 0; i < 16; i++) clave[i] = 'a' + esp_random() % 26;
+  clave[16] = '\0';
+  WiFi.softAP(ssid, clave, canal_, 1 /* oculto */, 1 /* clientes */);
+}
+
+// Las tramas de ESP-NOW salen y se oyen en largo alcance (LR) por su interfaz; la STA, en b/g/n de siempre
+void VecinosEspNow::ponerProtocolos() {
+  if (!interfazAp_) return;
+  esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+  esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+}
+
 void VecinosEspNow::fijarCanal() {
+  if (interfazAp_) {
+    if (WiFi.status() != WL_CONNECTED) crearApOculto();  // conectada, el canal lo pone el router
+    return;
+  }
   // Con el WiFi sin asociar, el canal de la radio solo se cambia en modo promiscuo
   esp_wifi_set_promiscuous(true);
   esp_wifi_set_channel(canal_, WIFI_SECOND_CHAN_NONE);
@@ -61,7 +84,9 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
     return;
   }
 
-  WiFi.mode(WIFI_STA);
+  WiFi.mode(interfazAp_ ? WIFI_AP_STA : WIFI_STA);
+  ifz_ = static_cast<uint8_t>(interfazAp_ ? WIFI_IF_AP : WIFI_IF_STA);
+  ponerProtocolos();
   // Sin ahorro de energía del WiFi: con el STA conectado a un AP, el modo por defecto (modem sleep) apaga la radio
   // entre balizas del AP y se pierde casi todo lo de ESP-NOW (medido: 1 baliza de cada ~8 entre dos placas con WiFi;
   // el vecino aparecía y se perdía cada 10 s). El framework guarda el valor y lo vuelve a aplicar en cada arranque
@@ -76,7 +101,7 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   esp_now_peer_info_t par = {};
   memcpy(par.peer_addr, DIFUSION, 6);
   par.channel = 0;  // el canal actual de la radio
-  par.ifidx = WIFI_IF_STA;
+  par.ifidx = static_cast<wifi_interface_t>(ifz_);
   par.encrypt = false;
   if (esp_now_add_peer(&par) != ESP_OK) {
     anotar("ESP-NOW: ERROR al registrar la difusión");
@@ -90,8 +115,10 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   iniciado_ = true;
   programarSiguiente(millis(), true);
   uint8_t propiaMac[6];
-  WiFi.macAddress(propiaMac);
-  anotar("ESP-NOW: iniciado en el canal " + String(canal_) + ", MAC " + macTexto(propiaMac));
+  if (interfazAp_) WiFi.softAPmacAddress(propiaMac);
+  else WiFi.macAddress(propiaMac);
+  anotar("ESP-NOW: iniciado en el canal " + String(canal_) + ", MAC " + macTexto(propiaMac) +
+         (interfazAp_ ? " (interfaz AP)" : ""));
 }
 
 // Corre en la tarea del WiFi: solo filtra y encola; la tabla y el reensamblador los toca atender()
@@ -258,7 +285,7 @@ void VecinosEspNow::atenderEnvio(uint32_t ahoraMs) {
 void VecinosEspNow::ponerTasa(Tasa t) {
   if ((int)t == tasaPuesta_) return;
   const wifi_phy_rate_t tasa = t == Tasa::LR250 ? WIFI_PHY_RATE_LORA_250K : t == Tasa::LR500 ? WIFI_PHY_RATE_LORA_500K : WIFI_PHY_RATE_1M_L;
-  if (esp_wifi_config_espnow_rate(WIFI_IF_STA, tasa) == ESP_OK) {
+  if (esp_wifi_config_espnow_rate(static_cast<wifi_interface_t>(ifz_), tasa) == ESP_OK) {
     tasaPuesta_ = (int)t;
   } else {
     erroresEnvio_++;
@@ -270,7 +297,8 @@ void VecinosEspNow::fijarTasas(Tasa datos, Tasa reintentos, Tasa balizas) {
   tasaReintentos_ = reintentos;
   tasaBalizas_ = balizas;
   // Aceptar largo alcance al recibir, aunque se transmita en ESTANDAR: así un vecino que use LR se oye
-  esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
+  if (interfazAp_) ponerProtocolos();
+  else esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
   // La próxima trama vuelve a configurar la radio, salvo que todo siga en ESTANDAR (no se toca la del driver)
   tasaPuesta_ = (datos == Tasa::ESTANDAR && reintentos == Tasa::ESTANDAR && balizas == Tasa::ESTANDAR) ? 0 : -1;
 }
@@ -288,7 +316,7 @@ VecinosEspNow::Envio VecinosEspNow::enviarPedido(const uint8_t mac[6], const sp:
     esp_now_peer_info_t par = {};
     memcpy(par.peer_addr, mac, 6);
     par.channel = 0;
-    par.ifidx = WIFI_IF_STA;
+    par.ifidx = static_cast<wifi_interface_t>(ifz_);
     par.encrypt = false;
     if (esp_now_add_peer(&par) != ESP_OK) return Envio::ERROR_RADIO;
   }
@@ -322,7 +350,7 @@ VecinosEspNow::Envio VecinosEspNow::enviar(const uint8_t mac[6], const uint8_t *
   esp_now_peer_info_t par = {};
   memcpy(par.peer_addr, mac, 6);
   par.channel = 0;  // el canal actual de la radio
-  par.ifidx = WIFI_IF_STA;
+  par.ifidx = static_cast<wifi_interface_t>(ifz_);
   par.encrypt = false;
   const bool existia = esp_now_is_peer_exist(mac);
   if (!existia && esp_now_add_peer(&par) != ESP_OK) return Envio::ERROR_RADIO;
@@ -376,6 +404,27 @@ void VecinosEspNow::pausar(bool si) {
     esperandoAvisoPedido_ = false;
     anotar("ESP-NOW: en pausa (el WiFi usa otro canal)");
   } else {
+    if (interfazAp_) {
+      // El portal deja la radio en solo AP y luego en solo STA: la interfaz AP por la que iba ESP-NOW desaparece y,
+      // medido, rehacer solo el AP oculto no bastaba (el vecino no volvía a oírse). Se reinicia ESP-NOW entero sobre
+      // el AP nuevo: protocolos, velocidad, callbacks y el par de difusión
+      esp_now_deinit();
+      WiFi.mode(WIFI_AP_STA);
+      ponerProtocolos();
+      crearApOculto();
+      bool ok = esp_now_init() == ESP_OK;
+      if (ok) {
+        esp_now_register_recv_cb(&VecinosEspNow::alRecibir);
+        esp_now_register_send_cb(reinterpret_cast<esp_now_send_cb_t>(&VecinosEspNow::alEnviar));
+        esp_now_peer_info_t par = {};
+        memcpy(par.peer_addr, DIFUSION, 6);
+        par.ifidx = static_cast<wifi_interface_t>(ifz_);
+        ok = esp_now_add_peer(&par) == ESP_OK;
+      }
+      if (tasaPuesta_ != 0) tasaPuesta_ = -1;  // la próxima trama vuelve a fijar la velocidad
+      hayDestino_ = false;  // los pares unicast se borraron con el deinit
+      if (!ok) anotar("ESP-NOW: ERROR al reiniciarlo tras el portal");
+    }
     programarSiguiente(millis(), true);
     anotar("ESP-NOW: reanudado");
   }
