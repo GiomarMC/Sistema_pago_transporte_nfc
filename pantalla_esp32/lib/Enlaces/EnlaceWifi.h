@@ -1,8 +1,11 @@
 // Contrato C2: enlace WiFi del validador (M6-01).
 //
 // Reúne lo que antes hacía el Sincronizador v1 con la radio:
-//   - conectarse a las redes guardadas, en orden, sin bloquear (WiFi.begin no
-//     bloquea; si una red no conecta en ESPERA_RED_MS se prueba la siguiente);
+//   - conectarse a las redes guardadas sin bloquear: sin conexión, cada ESCANEO_MS se buscan en segundo plano las
+//     redes a la vista y se conecta a la guardada con más señal, en su canal (si no conecta en ESPERA_RED_MS, se
+//     vuelve a buscar). Antes de conectar avisa del canal (alElegirCanal) para que ESP-NOW se pase a él: con ESP-NOW
+//     transmitiendo en otro canal la autenticación con el AP no termina nunca (medido: motivo 2 en bucle). Una red
+//     oculta (que no sale en la búsqueda) no se encuentra;
 //   - buscar un servidor "nombre.local" en la red local (mDNS);
 //   - mantener los clientes TCP/TLS entre peticiones (keep-alive): con HTTPS cada
 //     conexión nueva cuesta 1-3 s de negociación, durante los que el validador no
@@ -36,11 +39,21 @@ class EnlaceWifi final : public Enlace {
   // que una red nueva del portal se tiene en cuenta sin avisar.
   using ListaRedes = const std::vector<RedWifi> &(*)();
 
-  static constexpr uint32_t ESPERA_RED_MS = 20000;  // para conectar antes de probar otra red
-  // Una red que rechaza la autenticación (WL_CONNECT_FAILED, p. ej. motivo 202) se reintenta enseguida, hasta
-  // REINTENTOS_RED veces, en vez de esperar ESPERA_RED_MS: medido con el hotspot del celular, el primer intento tras
-  // reiniciar la placa estando conectada se rechaza (el AP aún recuerda la conexión anterior) y el siguiente entra
-  static constexpr uint8_t REINTENTOS_RED = 3;
+  static constexpr uint32_t ESPERA_RED_MS = 20000;  // para conectar antes de volver a buscar
+  static constexpr uint32_t ESCANEO_MS = 15000;     // sin conexión, cada cuánto se buscan las redes guardadas
+  static constexpr uint32_t REPETIR_ESCANEO_MS = 5000;  // tras un escaneo fallido (el driver puede seguir con él)
+  static constexpr uint16_t MS_POR_CANAL = 200;
+  static constexpr uint32_t ESPERA_INICIAL_MS = 1500;  // de encender la radio al primer escaneo
+  static constexpr uint32_t CASTIGO_FALLIDA_MS = 60000;  // una red que acaba de fallar cede ante otra a la vista
+  // Canal del AP al que se va a conectar o con el que se conectó (0: ninguno, desconectado)
+  using AvisoCanal = void (*)(uint8_t canal);
+  using PuedeEscanear = bool (*)();  // false mientras no conviene escanear (ESP-NOW a mitad de un mensaje)
+  // Una red a la vista que no deja conectar (motivo 2, 202...) se reintenta a los PAUSA_REINTENTO_MS, hasta
+  // REINTENTOS_RED veces, en vez de esperar ESPERA_RED_MS: sin la reconexión automática del framework, el driver se
+  // rinde tras el primer fallo (medido: dos motivos 2 y nada más en 20 s). Pasa sobre todo al volver a conectar
+  // enseguida tras un reinicio estando conectada (el AP aún recuerda la conexión anterior): medido con el router GUFI y
+  // ESP-NOW apagado, 2-3 rechazos con motivo 2 y al siguiente entra
+  static constexpr uint8_t REINTENTOS_RED = 5;
   static constexpr uint32_t PAUSA_REINTENTO_MS = 2000;
   static constexpr uint32_t ESPERA_MDNS_MS = 2000;  // para encontrar un "nombre.local"
 
@@ -70,8 +83,11 @@ class EnlaceWifi final : public Enlace {
   Client *abrirPlano(const char *host, uint16_t puerto);
   // Cliente sin conectar para HTTPClient (v1). Con tls, ya lleva las raíces puestas.
   WiFiClient &clienteHttp(bool tls);
-  // Empieza otra vez por la primera red guardada (tras cambiar las redes)
+  // Vuelve a buscar las redes enseguida (tras cambiar las redes)
   void reiniciar();
+  void alElegirCanal(AvisoCanal aviso) { avisoCanal_ = aviso; }
+  bool conectando() const { return intentando_; }  // hay un intento de conexión a un AP en curso
+  void permitirEscaneo(PuedeEscanear puede) { puedeEscanear_ = puede; }
   // Nombre con que este validador se anuncia por mDNS (p. ej. "validador-107"); hay que
   // fijarlo antes de la primera búsqueda
   void nombreLocal(const String &nombre) { miNombre_ = nombre; }
@@ -116,7 +132,14 @@ class EnlaceWifi final : public Enlace {
 
   Client *abrirCon(WiFiClient &cliente, bool tls, const char *host, uint16_t puerto);
   void prepararTls();
-  void conectarSiguiente(const std::vector<RedWifi> &redes);
+  void registrarEventos();
+  void empezarEscaneo();
+  void elegirYConectar(const std::vector<RedWifi> &redes, int16_t vistas);
+  void conectarA(const RedWifi &r, int32_t canal, const uint8_t *bssid, int32_t rssi);
+  void empezarIntento();
+  void avisarCanal(uint8_t canal) {
+    if (avisoCanal_) avisoCanal_(canal);
+  }
 
   ListaRedes redes_;
   Registro log_;
@@ -132,13 +155,20 @@ class EnlaceWifi final : public Enlace {
   bool encendido_ = false, iniciado_ = false, conectado_ = false, mdnsIniciado_ = false;
   uint32_t inicioIntento_ = 0;
   uint8_t reintentos_ = 0;  // de la red actual, tras un rechazo
+  bool intentando_ = false, escaneando_ = false, hayEscaneo_ = false;
+  uint32_t ultimoEscaneoMs_ = 0, fallidaMs_ = 0;
+  String intentoSsid_, intentoClave_, fallidaSsid_, vistas_ = "?";
+  int32_t intentoCanal_ = 0;
+  uint8_t intentoBssid_[6] = {};
+  AvisoCanal avisoCanal_ = nullptr;
+  PuedeEscanear puedeEscanear_ = nullptr;
   // Por qué se cayó o no conectó (reason del driver, WIFI_REASON_*), escrito desde la tarea del WiFi: para el registro
   static constexpr uint8_t MOTIVOS = 8;
   static volatile uint8_t motivos_[MOTIVOS];  // los primeros de este intento, en orden
   static volatile uint16_t desconexiones_;
+  static volatile uint16_t fallos_;  // desconexiones que no son la propia (motivo 8, WiFi.disconnect())
   bool eventosRegistrados_ = false;
   void anotarFallo(const String &ssid);
-  size_t red_ = 0;  // red guardada que se está probando
   String miNombre_ = "validador", hostLocal_;
   IPAddress ipLocal_;
   uint32_t tx_ = 0, rx_ = 0;

@@ -5,6 +5,7 @@
 
 volatile uint8_t EnlaceWifi::motivos_[EnlaceWifi::MOTIVOS] = {};
 volatile uint16_t EnlaceWifi::desconexiones_ = 0;
+volatile uint16_t EnlaceWifi::fallos_ = 0;
 
 namespace {
 const char *textoMotivo(uint8_t m) {
@@ -25,7 +26,7 @@ const char *textoMotivo(uint8_t m) {
 }  // namespace
 
 void EnlaceWifi::anotarFallo(const String &ssid) {
-  // El primer motivo suele ser el 8 del WiFi.disconnect() que hace conectarSiguiente() antes de cada intento
+  // El primer motivo suele ser el 8 del WiFi.disconnect() que hace empezarIntento() antes de cada intento
   String lista;
   const uint16_t n = desconexiones_;
   for (uint8_t i = 0; i < n && i < MOTIVOS; i++) {
@@ -43,23 +44,33 @@ EnlaceWifi::EnlaceWifi(ListaRedes redes, Registro log, const char *raicesPem)
 
 void EnlaceWifi::encender() {
   encendido_ = true;
-  iniciado_ = false;  // el siguiente atender() empieza a conectar
+  iniciado_ = false;
+  intentando_ = false;
+  hayEscaneo_ = false;  // el siguiente atender() empieza a buscar
 }
 
 void EnlaceWifi::apagar() {
   encendido_ = false;
   iniciado_ = false;
   conectado_ = false;
+  intentando_ = false;
+  escaneando_ = false;
   cerrar();
   olvidarNombres();
+  WiFi.scanDelete();
   WiFi.disconnect();
   WiFi.mode(WIFI_OFF);
+  avisarCanal(0);
 }
 
 void EnlaceWifi::reiniciar() {
   iniciado_ = false;
   conectado_ = false;
-  red_ = 0;
+  intentando_ = false;
+  escaneando_ = false;
+  hayEscaneo_ = false;
+  vistas_ = "?";  // distinto de cualquier lista: lo primero que se vea se anota
+  WiFi.scanDelete();
   cerrar();
   olvidarNombres();
 }
@@ -76,65 +87,161 @@ int8_t EnlaceWifi::senal() const {
   return static_cast<int8_t>(WiFi.RSSI() / 2);
 }
 
+void EnlaceWifi::registrarEventos() {
+  if (eventosRegistrados_) return;
+  eventosRegistrados_ = true;
+  WiFi.onEvent(
+      [](WiFiEvent_t, WiFiEventInfo_t info) {
+        const uint8_t motivo = info.wifi_sta_disconnected.reason;
+        if (desconexiones_ < MOTIVOS) motivos_[desconexiones_] = motivo;
+        desconexiones_++;
+        if (motivo != WIFI_REASON_ASSOC_LEAVE) fallos_++;
+      },
+      ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+}
+
 void EnlaceWifi::atender() {
   if (!encendido_) return;
   const auto &redes = redes_();
   if (redes.empty()) return;
+  registrarEventos();
 
   if (WiFi.status() == WL_CONNECTED) {
     if (!conectado_) {
       conectado_ = true;
+      intentando_ = false;
       log_("WiFi conectado a " + WiFi.SSID() + ": IP " + WiFi.localIP().toString() + ", señal " +
-           String(WiFi.RSSI()) + " dBm");
+           String(WiFi.RSSI()) + " dBm, canal " + String(WiFi.channel()));
+      avisarCanal(WiFi.channel());
     }
     return;
   }
 
   if (conectado_) {
     conectado_ = false;
+    intentando_ = false;
+    hayEscaneo_ = false;  // se busca enseguida
+    vistas_ = "?";  // distinto de cualquier lista: lo primero que se vea se anota
     cerrar();
     olvidarNombres();  // la IP del servidor local puede ser otra al volver
     log_("WiFi perdido; se sigue cobrando sin conexión");
+    avisarCanal(0);
   }
-  // WiFi.begin no bloquea: la conexión avanza mientras se sigue cobrando. Si una red
-  // no conecta en ESPERA_RED_MS, se prueba la siguiente de las guardadas.
-  if (iniciado_ && WiFi.status() == WL_CONNECT_FAILED && reintentos_ < REINTENTOS_RED && red_ < redes.size() &&
-      millis() - inicioIntento_ > PAUSA_REINTENTO_MS) {
-    reintentos_++;
-    const RedWifi &r = redes[red_];
-    log_("WiFi " + r.ssid + ": rechazó la conexión (motivo " + String(motivos_[0]) + "); reintento " +
-         String(reintentos_) + " de " + String(REINTENTOS_RED));
-    desconexiones_ = 0;
+
+  const uint32_t ahora = millis();
+  if (intentando_) {
+    if (fallos_ > 0 && reintentos_ < REINTENTOS_RED && ahora - inicioIntento_ > PAUSA_REINTENTO_MS) {
+      reintentos_++;
+      uint8_t motivo = 0;
+      for (uint8_t i = 0; i < desconexiones_ && i < MOTIVOS; i++)
+        if (motivos_[i] != WIFI_REASON_ASSOC_LEAVE) motivo = motivos_[i];
+      log_("WiFi " + intentoSsid_ + ": no dejó conectar (motivo " + String(motivo) + "); reintento " +
+           String(reintentos_) + " de " + String(REINTENTOS_RED));
+      empezarIntento();
+      return;
+    }
+    if (ahora - inicioIntento_ <= ESPERA_RED_MS) return;
+    anotarFallo(intentoSsid_);
+    fallidaSsid_ = intentoSsid_;
+    fallidaMs_ = ahora;
+    intentando_ = false;
+    hayEscaneo_ = false;  // se vuelve a buscar enseguida
     WiFi.disconnect();
-    WiFi.begin(r.ssid.c_str(), r.clave.c_str());
-    inicioIntento_ = millis();
+    avisarCanal(0);
     return;
   }
-  if (!iniciado_ || millis() - inicioIntento_ > ESPERA_RED_MS) conectarSiguiente(redes);
+
+  // Sin conexión ni intento en curso: buscar las redes guardadas (en segundo plano: no bloquea el cobro)
+  if (escaneando_) {
+    const int16_t n = WiFi.scanComplete();
+    if (n == WIFI_SCAN_RUNNING) return;
+    escaneando_ = false;
+    // Un escaneo que falla, o que "termina" con 0 redes en menos de 500 ms (uno de verdad tarda ~2-3 s: el driver aún
+    // está con el anterior), se repite en REPETIR_ESCANEO_MS en vez de esperar ESCANEO_MS
+    const bool falso = n < 0 || (n == 0 && ahora - ultimoEscaneoMs_ < 500);
+    if (!falso) elegirYConectar(redes, n);
+    else ultimoEscaneoMs_ = ahora - ESCANEO_MS + REPETIR_ESCANEO_MS;
+    WiFi.scanDelete();
+    return;
+  }
+  if (!iniciado_ && !hayEscaneo_) {
+    // Recién encendido: el primer escaneo con la radio recién iniciada falla siempre (medido: -2 al cabo de 4 s, y
+    // luego hay que esperar a repetirlo). Se le da ESPERA_INICIAL_MS antes
+    WiFi.mode(WIFI_STA);
+    hayEscaneo_ = true;
+    ultimoEscaneoMs_ = ahora - ESCANEO_MS + ESPERA_INICIAL_MS;
+    return;
+  }
+  if (hayEscaneo_ && ahora - ultimoEscaneoMs_ < ESCANEO_MS) return;
+  if (puedeEscanear_ && !puedeEscanear_()) return;
+  empezarEscaneo();
 }
 
-void EnlaceWifi::conectarSiguiente(const std::vector<RedWifi> &redes) {
-  if (!eventosRegistrados_) {
-    eventosRegistrados_ = true;
-    WiFi.onEvent(
-        [](WiFiEvent_t, WiFiEventInfo_t info) {
-          if (desconexiones_ < MOTIVOS) motivos_[desconexiones_] = info.wifi_sta_disconnected.reason;
-          desconexiones_++;
-        },
-        ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
-  }
-  if (iniciado_ && red_ < redes.size()) anotarFallo(redes[red_].ssid);
-  desconexiones_ = 0;
-  reintentos_ = 0;
-  if (iniciado_) red_ = (red_ + 1) % redes.size();
-  if (red_ >= redes.size()) red_ = 0;
-  const RedWifi &r = redes[red_];
-  if (!iniciado_ || redes.size() > 1) log_("Conectando al WiFi " + r.ssid + "...");
+void EnlaceWifi::empezarEscaneo() {
   WiFi.mode(WIFI_STA);
-  WiFi.setAutoReconnect(true);
+  // Sin reconexión automática del framework: reintentaría a ciegas mientras aquí se busca
+  WiFi.setAutoReconnect(false);
+  hayEscaneo_ = true;
+  ultimoEscaneoMs_ = millis();
+  // En segundo plano, sin ocultas, activo, hasta MS_POR_CANAL por canal. Arduino da por fallido el escaneo que pasa de
+  // 20 veces eso: con 120 ms (2,4 s) se cortaban escaneos que tardaban 2,3-2,4 s (medido) y los siguientes salían
+  // vacíos en 13 ms mientras el driver terminaba. Con 200 ms el límite es de 4 s.
+  escaneando_ = WiFi.scanNetworks(true, false, false, MS_POR_CANAL) == WIFI_SCAN_RUNNING;
+  if (!escaneando_) ultimoEscaneoMs_ = millis() - ESCANEO_MS + REPETIR_ESCANEO_MS;  // no arrancó: se repite pronto
+  if (!iniciado_) {
+    iniciado_ = true;
+    log_("WiFi: buscando las redes guardadas");
+  }
+}
+
+void EnlaceWifi::elegirYConectar(const std::vector<RedWifi> &redes, int16_t vistas) {
+  const uint32_t ahora = millis();
+  int mejor = -1, mejorRed = -1;
+  int32_t mejorPuntos = -10000;
+  String lista;
+  for (int16_t i = 0; i < vistas; i++) {
+    const String ssid = WiFi.SSID(i);
+    for (size_t k = 0; k < redes.size(); k++) {
+      if (redes[k].ssid != ssid) continue;
+      const int32_t rssi = WiFi.RSSI(i);
+      if (lista.indexOf(ssid + " (") < 0)
+        lista += (lista.length() ? ", " : "") + ssid + " (canal " + String(WiFi.channel(i)) + ", " + String(rssi) + " dBm)";
+      int32_t puntos = rssi;
+      if (ssid == fallidaSsid_ && ahora - fallidaMs_ < CASTIGO_FALLIDA_MS) puntos -= 40;  // otra, si hay
+      if (puntos > mejorPuntos) {
+        mejorPuntos = puntos;
+        mejor = i;
+        mejorRed = (int)k;
+      }
+      break;
+    }
+  }
+  if (lista != vistas_) {  // solo cuando cambia lo que se ve, para no llenar el registro
+    vistas_ = lista;
+    log_(lista.length() ? "WiFi a la vista: " + lista : String("WiFi: ninguna red guardada a la vista"));
+  }
+  if (mejor < 0) return;
+  conectarA(redes[mejorRed], WiFi.channel(mejor), WiFi.BSSID(mejor), WiFi.RSSI(mejor));
+}
+
+void EnlaceWifi::conectarA(const RedWifi &r, int32_t canal, const uint8_t *bssid, int32_t rssi) {
+  intentoSsid_ = r.ssid;
+  intentoClave_ = r.clave;
+  intentoCanal_ = canal;
+  if (bssid) memcpy(intentoBssid_, bssid, 6);
+  reintentos_ = 0;
+  log_("Conectando al WiFi " + r.ssid + " (canal " + String(canal) + ", " + String(rssi) + " dBm)...");
+  avisarCanal(static_cast<uint8_t>(canal));  // ESP-NOW al canal del AP ANTES de empezar a autenticar
+  empezarIntento();
+}
+
+// WiFi.begin no bloquea: la conexión avanza mientras se sigue cobrando
+void EnlaceWifi::empezarIntento() {
+  desconexiones_ = 0;
+  fallos_ = 0;
   WiFi.disconnect();
-  WiFi.begin(r.ssid.c_str(), r.clave.c_str());
-  iniciado_ = true;
+  WiFi.begin(intentoSsid_.c_str(), intentoClave_.c_str(), intentoCanal_, intentoBssid_);
+  intentando_ = true;
   inicioIntento_ = millis();
 }
 

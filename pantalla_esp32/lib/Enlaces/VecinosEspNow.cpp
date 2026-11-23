@@ -40,9 +40,19 @@ void VecinosEspNow::fijarCanal() {
   esp_wifi_set_promiscuous(false);
 }
 
+void VecinosEspNow::cambiarCanal(uint8_t canal) {
+  const uint8_t nuevo = canal ? canal : canalBase_;
+  if (nuevo == canal_) return;
+  canal_ = nuevo;
+  if (!iniciado_) return;
+  if (WiFi.status() != WL_CONNECTED) fijarCanal();
+  anotar("ESP-NOW: al canal " + String(canal_) + (canal ? " (el del WiFi)" : " (espnow_canal, sin WiFi)"));
+}
+
 void VecinosEspNow::iniciar(uint8_t canalWifi) {
   if (iniciado_) return;
   canal_ = canalWifi ? canalWifi : 1;
+  canalBase_ = canal_;
   if (!cola_) cola_ = xQueueCreate(COLA_BALIZAS, sizeof(Recibida));
   if (!colaTramas_) colaTramas_ = xQueueCreate(COLA_TRAMAS, sizeof(TramaCruda));
   if (!colaPedidos_) colaPedidos_ = xQueueCreate(COLA_PEDIDOS, sizeof(PedidoRecibido));
@@ -167,6 +177,7 @@ void VecinosEspNow::atender() {
   }
 
   atenderRecepcion(ahora);
+  if (silencio_) return;  // el WiFi se está conectando: nada sale (lo pendiente sigue después)
   atenderEnvio(ahora);
 
   // Mientras se transfiere un mensaje la radio se deja para los fragmentos; la baliza espera
@@ -271,7 +282,7 @@ void VecinosEspNow::soltarDestino() {
 
 VecinosEspNow::Envio VecinosEspNow::enviarPedido(const uint8_t mac[6], const sp::Pedido &pedido) {
   if (!activo()) return Envio::PAUSADO;
-  if (emisor_.ocupado() || esperandoAvisoPedido_) return Envio::OCUPADO;
+  if (silencio_ || emisor_.ocupado() || esperandoAvisoPedido_) return Envio::OCUPADO;
   if (!tabla_.esVecino(mac)) return Envio::NO_ES_VECINO;
   if (!esp_now_is_peer_exist(mac)) {
     esp_now_peer_info_t par = {};
