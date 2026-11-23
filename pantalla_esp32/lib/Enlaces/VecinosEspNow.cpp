@@ -405,17 +405,25 @@ void VecinosEspNow::pausar(bool si) {
     anotar("ESP-NOW: en pausa (el WiFi usa otro canal)");
   } else {
     if (interfazAp_) {
-      // El portal deja la radio solo en STA: se rehacen el AP oculto, los protocolos y la velocidad
+      // El portal deja la radio en solo AP y luego en solo STA: la interfaz AP por la que iba ESP-NOW desaparece y,
+      // medido, rehacer solo el AP oculto no bastaba (el vecino no volvía a oírse). Se reinicia ESP-NOW entero sobre
+      // el AP nuevo: protocolos, velocidad, callbacks y el par de difusión
+      esp_now_deinit();
       WiFi.mode(WIFI_AP_STA);
-      crearApOculto();
       ponerProtocolos();
-      if (tasaPuesta_ != 0) tasaPuesta_ = -1;
-      if (!esp_now_is_peer_exist(DIFUSION)) {
+      crearApOculto();
+      bool ok = esp_now_init() == ESP_OK;
+      if (ok) {
+        esp_now_register_recv_cb(&VecinosEspNow::alRecibir);
+        esp_now_register_send_cb(reinterpret_cast<esp_now_send_cb_t>(&VecinosEspNow::alEnviar));
         esp_now_peer_info_t par = {};
         memcpy(par.peer_addr, DIFUSION, 6);
         par.ifidx = static_cast<wifi_interface_t>(ifz_);
-        esp_now_add_peer(&par);
+        ok = esp_now_add_peer(&par) == ESP_OK;
       }
+      if (tasaPuesta_ != 0) tasaPuesta_ = -1;  // la próxima trama vuelve a fijar la velocidad
+      hayDestino_ = false;  // los pares unicast se borraron con el deinit
+      if (!ok) anotar("ESP-NOW: ERROR al reiniciarlo tras el portal");
     }
     programarSiguiente(millis(), true);
     anotar("ESP-NOW: reanudado");
