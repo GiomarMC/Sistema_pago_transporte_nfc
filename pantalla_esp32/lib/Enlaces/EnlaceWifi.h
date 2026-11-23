@@ -42,8 +42,9 @@ class EnlaceWifi final : public Enlace {
   static constexpr uint32_t ESPERA_RED_MS = 20000;  // para conectar antes de volver a buscar
   static constexpr uint32_t ESCANEO_MS = 15000;     // sin conexión, cada cuánto se buscan las redes guardadas
   static constexpr uint32_t REPETIR_ESCANEO_MS = 5000;  // tras un escaneo fallido (el driver puede seguir con él)
-  static constexpr uint16_t MS_POR_CANAL = 200;
+
   static constexpr uint32_t ESPERA_INICIAL_MS = 1500;  // de encender la radio al primer escaneo
+  static constexpr uint32_t LIMITE_ESCANEO_MS = 10000;  // un escaneo sin SCAN_DONE pasado esto se da por colgado
   static constexpr uint32_t CASTIGO_FALLIDA_MS = 60000;  // una red que acaba de fallar cede ante otra a la vista
   // Canal del AP al que se va a conectar o con el que se conectó (0: ninguno, desconectado)
   using AvisoCanal = void (*)(uint8_t canal);
@@ -134,6 +135,8 @@ class EnlaceWifi final : public Enlace {
   void prepararTls();
   void registrarEventos();
   void empezarEscaneo();
+  void falloEscaneo(const String &que);
+  static volatile bool escaneoListo_;  // llegó el SCAN_DONE del driver
   void elegirYConectar(const std::vector<RedWifi> &redes, int16_t vistas);
   void conectarA(const RedWifi &r, int32_t canal, const uint8_t *bssid, int32_t rssi);
   void empezarIntento();
@@ -156,7 +159,8 @@ class EnlaceWifi final : public Enlace {
   uint32_t inicioIntento_ = 0;
   uint8_t reintentos_ = 0;  // de la red actual, tras un rechazo
   bool intentando_ = false, escaneando_ = false, hayEscaneo_ = false;
-  uint32_t ultimoEscaneoMs_ = 0, fallidaMs_ = 0;
+  uint32_t ultimoEscaneoMs_ = 0, fallidaMs_ = 0, avisoEscaneoMs_ = 0;
+  uint16_t escaneosFallidos_ = 0;  // seguidos
   String intentoSsid_, intentoClave_, fallidaSsid_, vistas_ = "?";
   int32_t intentoCanal_ = 0;
   uint8_t intentoBssid_[6] = {};
