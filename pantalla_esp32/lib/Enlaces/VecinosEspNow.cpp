@@ -260,7 +260,8 @@ void VecinosEspNow::fijarTasas(Tasa datos, Tasa reintentos, Tasa balizas) {
   tasaBalizas_ = balizas;
   // Aceptar largo alcance al recibir, aunque se transmita en ESTANDAR: así un vecino que use LR se oye
   esp_wifi_set_protocol(WIFI_IF_STA, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N | WIFI_PROTOCOL_LR);
-  tasaPuesta_ = -1;  // la próxima trama vuelve a configurar la radio
+  // La próxima trama vuelve a configurar la radio, salvo que todo siga en ESTANDAR (no se toca la del driver)
+  tasaPuesta_ = (datos == Tasa::ESTANDAR && reintentos == Tasa::ESTANDAR && balizas == Tasa::ESTANDAR) ? 0 : -1;
 }
 
 void VecinosEspNow::soltarDestino() {

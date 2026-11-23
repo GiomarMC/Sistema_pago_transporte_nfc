@@ -148,7 +148,11 @@ class VecinosEspNow final : public Vecinos {
   volatile uint32_t recibidas_ = 0, perdidasCola_ = 0;
   uint32_t enviadas_ = 0, erroresEnvio_ = 0;
   Tasa tasaDatos_ = Tasa::ESTANDAR, tasaReintentos_ = Tasa::ESTANDAR, tasaBalizas_ = Tasa::ESTANDAR;
-  int tasaPuesta_ = -1;  // la última que se le pidió a la radio (-1 = ninguna todavía)
+  // La última que se le pidió a la radio. Empieza en ESTANDAR sin tocarla: es la del driver (1 Mbit/s), y
+  // esp_wifi_config_espnow_rate cambia la velocidad de TODA la interfaz STA, no solo de ESP-NOW: medido, con ella
+  // puesta el router GUFI no dejaba autenticar a la placa (19 veces motivo 2) y sin ella conecta en 2 s. -1 = hay que
+  // volver a configurarla (tras fijarTasas).
+  int tasaPuesta_ = 0;  // (int)Tasa::ESTANDAR
   void ponerTasa(Tasa t);
 
   // Envío
