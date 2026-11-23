@@ -486,6 +486,9 @@ void iniciarSyncV2() {
     const int c = almacen.config("espnow_canal").toInt();
     if (c >= 1 && c <= 13) canalEspNow = static_cast<uint8_t>(c);
     nuevo->vecinos.reset(new VecinosEspNow(log));
+    // Por la interfaz AP y en largo alcance: balizas y reintentos en LR a 250 kbit/s (llegan más lejos), el primer
+    // intento de cada fragmento a 1 Mbit/s (más rápido de cerca). En la AP no toca la conexión WiFi de la STA
+    nuevo->vecinos->usarInterfazAp();
     nuevo->radio.reset(new RadioEspNow(*nuevo->vecinos));
   }
   const bool soloVecinos = almacen.config("subida") == "vecinos";
@@ -514,6 +517,10 @@ void iniciarSyncV2() {
   }
   if (!wifiApagado) nuevo->gestor->iniciar();  // enciende el WiFi y, si hay, ESP-NOW
   else if (nuevo->vecinos) nuevo->vecinos->iniciar(canalEspNow);  // sin WiFi: solo ESP-NOW
+  if (nuevo->vecinos) {
+    using T = VecinosEspNow::Tasa;
+    nuevo->vecinos->fijarTasas(T::ESTANDAR, T::LR250, T::LR250);
+  }
   v2 = std::move(nuevo);
   log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()) +
       (v2->vecinos ? ", ESP-NOW en el canal " + String(canalEspNow) : String("")) +
@@ -617,6 +624,8 @@ void abrirPortal() {
 
 void reiniciarWifi() {
   if (v2) v2->canal->desconectar();
+  // abrirPortal() pausó ESP-NOW directamente (el gestor no lo sabe y no lo reanudaba: quedaba parado hasta reiniciar)
+  if (v2 && v2->vecinos) v2->vecinos->pausar(false);
   sincronizador.reiniciarWifi();
 }
 
