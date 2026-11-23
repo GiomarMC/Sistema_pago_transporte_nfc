@@ -651,6 +651,10 @@ void setup() {
   Serial.begin(115200);
   activarWatchdog();  // desde el principio: también vigila un cuelgue durante setup()
   registrarMotivoReinicio();
+  // La configuración del WiFi (red, canal, protocolo) no se guarda en la flash: las redes están en la microSD y
+  // WiFi.begin() se llama en cada intento de conexión (con una red inestable, cientos de escrituras por noche); y lo
+  // guardado se cargaba con cualquier firmware (el largo alcance que dejó prueba_espnow escondía el portal)
+  WiFi.persistent(false);
   PASO("setup: ui::iniciar");
   ui::iniciar();
   PASO("setup: pantalla Iniciando");
