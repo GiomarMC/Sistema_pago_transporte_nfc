@@ -30,6 +30,9 @@ U8G2_SSD1306_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 U8G2_SH1106_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #endif
 
+bool oledLista = false;        // false mientras el bus I2C esté bloqueado o la OLED no conteste
+uint32_t ultimoReintentoMs = 0;
+
 constexpr int ANCHO = 128;
 constexpr int ALTO = 64;
 constexpr int ANCHO_UTIL = ANCHO - 2;
@@ -143,25 +146,40 @@ void pantallaEspera() {
   volverAEsperaEn = 0;
 }
 
-}  // namespace
-
-namespace ui {
-
-bool iniciar() {
+// Pone en marcha la OLED si el bus I2C está libre y ella responde. A veces, tras un reinicio de la ESP32 (puerto
+// serie, botón EN, watchdog), un módulo del bus (casi seguro el PN532, que no se reinicia con ella) deja SCL a nivel
+// bajo y ahí se queda hasta quitar la corriente: medido con SCL=0 antes de Wire.begin(), sin soltarse en 20 s ni con
+// pulsos de reloj. Con el bus así, pantalla.begin() de U8g2 no vuelve nunca y el watchdog reinicia la placa en bucle
+// (#200). Por eso se mira antes y, si el bus está bloqueado, se sigue SIN pantalla y se reintenta cada 5 s.
+bool intentarArrancar() {
+  if (digitalRead(PIN_SCL) == 0 || digitalRead(PIN_SDA) == 0) return false;
   Wire.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
   Wire.beginTransmission(OLED_DIRECCION);
-  const bool presente = Wire.endTransmission() == 0;   // ¿responde algo en esa dirección?
+  if (Wire.endTransmission() != 0) return false;   // nadie responde en esa dirección (o el bus se bloqueó)
 
   pantalla.setI2CAddress(OLED_DIRECCION << 1);   // U8g2 pide la dirección en 8 bits
   pantalla.begin();
   pantalla.setBusClock(VELOCIDAD_I2C);
   pantalla.enableUTF8Print();
   pantalla.setFontMode(1);   // texto transparente: así se puede escribir en negativo sobre la barra
+  oledLista = true;
   pantallaEspera();
-  return presente;
+  return true;
+}
+
+}  // namespace
+
+namespace ui {
+
+bool iniciar() {
+  if (intentarArrancar()) return true;
+  Serial.println(String("#AVISO: la OLED no responde (SCL=") + digitalRead(PIN_SCL) + ", SDA=" + digitalRead(PIN_SDA) +
+                 "): se sigue sin pantalla y se reintenta cada 5 s. Si SCL=0, hay que quitar la corriente de la placa");
+  return false;
 }
 
 void resultado(char tipo, const String &l1, const String &l2, const String &l3) {
+  if (!oledLista) return;
   const String lineas[3] = {l1, l2, l3};
   pantallaResultado(tipo, lineas);
 }
@@ -169,7 +187,7 @@ void resultado(char tipo, const String &l1, const String &l2, const String &l3) 
 void espera(const String &l1, const String &l2) {
   esperaLinea1 = l1;
   esperaLinea2 = l2;
-  if (volverAEsperaEn == 0 && !informacionFija) pantallaEspera();
+  if (oledLista && volverAEsperaEn == 0 && !informacionFija) pantallaEspera();
 }
 
 void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
@@ -179,12 +197,20 @@ void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
 }
 
 void actualizar() {
+  if (!oledLista) {
+    if (millis() - ultimoReintentoMs >= 5000) {
+      ultimoReintentoMs = millis();
+      if (intentarArrancar()) Serial.println("#La OLED respondió: pantalla recuperada");
+    }
+    return;
+  }
   if (!informacionFija && volverAEsperaEn != 0 && (int32_t)(millis() - volverAEsperaEn) >= 0) {
     pantallaEspera();
   }
 }
 
 void informacion(const String &titulo, const String lineas[], int n) {
+  if (!oledLista) return;
   informacionFija = true;
   pantalla.clearBuffer();
   pantalla.setFontPosTop();
@@ -210,7 +236,7 @@ void informacion(const String &titulo, const String lineas[], int n) {
 
 void cerrarInformacion() {
   informacionFija = false;
-  pantallaEspera();
+  if (oledLista) pantallaEspera();
 }
 
 }  // namespace ui
