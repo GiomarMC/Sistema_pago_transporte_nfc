@@ -69,7 +69,7 @@ void EnlaceWifi::reiniciar() {
   intentando_ = false;
   escaneando_ = false;
   hayEscaneo_ = false;
-  vistas_ = "";
+  vistas_ = "?";  // distinto de cualquier lista: lo primero que se vea se anota
   WiFi.scanDelete();
   cerrar();
   olvidarNombres();
@@ -121,7 +121,7 @@ void EnlaceWifi::atender() {
     conectado_ = false;
     intentando_ = false;
     hayEscaneo_ = false;  // se busca enseguida
-    vistas_ = "";
+    vistas_ = "?";  // distinto de cualquier lista: lo primero que se vea se anota
     cerrar();
     olvidarNombres();  // la IP del servidor local puede ser otra al volver
     log_("WiFi perdido; se sigue cobrando sin conexión");

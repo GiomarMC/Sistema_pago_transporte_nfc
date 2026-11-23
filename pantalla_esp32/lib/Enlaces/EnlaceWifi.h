@@ -157,7 +157,7 @@ class EnlaceWifi final : public Enlace {
   uint8_t reintentos_ = 0;  // de la red actual, tras un rechazo
   bool intentando_ = false, escaneando_ = false, hayEscaneo_ = false;
   uint32_t ultimoEscaneoMs_ = 0, fallidaMs_ = 0;
-  String intentoSsid_, intentoClave_, fallidaSsid_, vistas_;
+  String intentoSsid_, intentoClave_, fallidaSsid_, vistas_ = "?";
   int32_t intentoCanal_ = 0;
   uint8_t intentoBssid_[6] = {};
   AvisoCanal avisoCanal_ = nullptr;
