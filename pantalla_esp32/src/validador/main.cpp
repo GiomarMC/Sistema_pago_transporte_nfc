@@ -530,6 +530,16 @@ void servicioSyncV2() {
   }
 }
 
+// El portal necesita la radio y memoria libres para crear su red: antes de abrirlo se suelta la conexión MQTT/TLS
+// (sus búferes ocupan decenas de KB) y se pausa ESP-NOW. Al cerrarse, el gestor de enlaces los reanuda solo.
+void abrirPortal() {
+  if (v2) {
+    v2->canal->desconectar();
+    if (v2->vecinos) v2->vecinos->pausar(true);
+  }
+  portal.iniciar();
+}
+
 void reiniciarWifi() {
   if (v2) v2->canal->desconectar();
   sincronizador.reiniciarWifi();
@@ -591,7 +601,7 @@ void setup() {
   pantallaEspera();
   PASO("setup: portal");
   // Sin ninguna red guardada, el portal se abre solo (se cierra a los 10 min sin uso)
-  if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) portal.iniciar();
+  if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) abrirPortal();
 }
 
 void loop() {
@@ -624,7 +634,7 @@ void loop() {
   }
   PASO("loop: botón BOOT");
   if (botonMantenido() && almacen.listo() && almacen.configurado()) {
-    portal.iniciar();
+    abrirPortal();
     return;
   }
 
@@ -648,7 +658,7 @@ void loop() {
   if (almacen.reintentarMontaje()) {
     log("microSD montada tras reintentar");
     pantallaEspera();
-    if (almacen.configurado() && almacen.redes().empty()) portal.iniciar();  // como en setup()
+    if (almacen.configurado() && almacen.redes().empty()) abrirPortal();  // como en setup()
   }
 
   PASO("loop: consumo de datos");

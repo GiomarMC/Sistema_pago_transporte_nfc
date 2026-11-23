@@ -99,7 +99,11 @@ void CanalMqtt::suspender(bool si) {
 }
 
 void CanalMqtt::desconectar() {
-  if (mqtt_.connected()) mqtt_.publish(conexion_, "0", true);
-  mqtt_.disconnect();
+  // PubSubClient::disconnect() usa su cliente sin mirar si lo tiene: si nunca se conectó (sin WiFi desde el
+  // arranque) es NULL y la placa se reinicia. Solo se desconecta si hay conexión; el TLS lo cierra enlace_.cerrar()
+  if (mqtt_.connected()) {
+    mqtt_.publish(conexion_, "0", true);
+    mqtt_.disconnect();
+  }
   enlace_.cerrar();
 }
