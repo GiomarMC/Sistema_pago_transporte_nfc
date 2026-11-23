@@ -43,6 +43,24 @@ size_t armarBaliza(const Baliza &baliza, uint8_t trama[TAM_TRAMA_MAXIMO]);
 // bytes de más al final se ignoran, para que una versión futura pueda añadir campos.
 bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &baliza);
 
+// --- PEDIDO (solo ESP-NOW, unicast): un bus le pide algo a otro (M8-03) ------------------------
+// Va sin firmar y sin fragmentar: solo pide, y lo que se entrega como respuesta son paquetes C1 que ya
+// llevan su propia firma. 'que': 1 = LISTAS desde la versión x, 2 = TARIFAS (x no se usa), 3 = los ACUSE
+// firmados que tengas para mí (x no se usa).
+constexpr size_t TAM_PEDIDO = 11;  // 6 comunes + que(1) + x(4)
+constexpr uint8_t PEDIDO_LISTAS = 1, PEDIDO_TARIFAS = 2, PEDIDO_ACUSES = 3;
+
+struct Pedido {
+  uint16_t validador = 0;  // quién pide (1-899)
+  uint8_t que = 0;
+  uint32_t x = 0;
+};
+
+size_t armarPedido(const Pedido &pedido, uint8_t trama[TAM_TRAMA_MAXIMO]);
+// false si no es un PEDIDO: otra clase, muy corto, sin validador o con un `que` desconocido. Los bytes de más
+// al final se ignoran.
+bool leerPedido(const uint8_t *trama, size_t largo, Pedido &pedido);
+
 // Cuántos fragmentos hacen falta para un mensaje de `largo` B (0 si no cabe en 10)
 uint8_t contarFragmentos(size_t largo);
 
