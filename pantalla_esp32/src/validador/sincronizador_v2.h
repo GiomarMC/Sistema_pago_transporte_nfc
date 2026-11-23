@@ -28,6 +28,8 @@
 #include <CanalPaquetes.h>
 #include <ProtocoloSP.h>
 
+#include "correccion_hora.h"
+
 class AlmacenSync {
  public:
   virtual ~AlmacenSync() = default;
@@ -100,6 +102,9 @@ struct ConfigSyncV2 {
   const uint8_t *clavePublicaServidor = nullptr;   // 65 B: verifica los del servidor
   uint32_t versionFirmware = 0;                    // AAAAMMDD
   uint32_t (*ahoraUnix)() = nullptr;               // hora para el campo "creado"; nullptr = 0
+  // Eventos cobrados con la hora estimada: no salen hasta que se puedan corregir, y salen corregidos. nullptr = no se
+  // retiene ni se corrige nada
+  const CorreccionHora *correccion = nullptr;
 };
 
 class SincronizadorV2 {
@@ -166,6 +171,22 @@ class SincronizadorV2 {
   uint32_t reenvios() const { return reenvios_; }
   uint32_t rechazados() const { return rechazados_; }
   uint32_t paquetesRecibidos() const { return recibidos_; }  // del servidor o de un vecino, válidos o no
+
+  // --- La hora para un vecino que no la tiene (PEDIDO de hora, M8) ---
+  // Manda un HOLA en la próxima vuelta con canal: el servidor contesta con un ACUSE con su hora, fresco
+  void pedirHola() { holaPendiente_ = true; }
+  // El último ACUSE para este validador que llegó del servidor (tal cual, firmado) y el millis() en que llegó. 0 si no
+  // hay o no cabe
+  size_t ultimoAcuse(uint8_t *buf, size_t max, uint32_t &recibidoMs) const;
+  // Se pidió la hora a un vecino: hasta `hastaMs` se acepta la hora de un ACUSE para OTRO validador que llegue por un
+  // vecino (va firmado por el servidor). Fuera de esa ventana, un ACUSE ajeno no cambia la hora: podría ser viejo
+  void esperarHoraDeVecino(uint32_t hastaMs) {
+    esperandoHora_ = true;
+    horaHastaMs_ = hastaMs;
+  }
+  uint32_t horasDeVecino() const { return horasDeVecino_; }
+  // El evento no puede salir todavía: lleva la hora estimada y aún no hay hora real para corregirla
+  bool retenido(uint32_t idEvento) const { return cfg_.correccion && cfg_.correccion->retenido(idEvento); }
   uint32_t listasRechazadasPorFirma() const { return listasFirmaMala_; }
   sp::Motivo ultimoRechazo() const { return ultimoRechazo_; }
 
@@ -184,6 +205,7 @@ class SincronizadorV2 {
   void alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, const uint8_t *datos, size_t largo, uint32_t ahoraMs,
                bool relevado);
   void tomarHora(uint32_t horaServidor, uint32_t ahoraMs, bool relevado);
+  size_t prepararEventos(uint32_t desdeId);  // eventosDesde + retenidos fuera + fechas corregidas, en tx_.eventos
   uint32_t creado() const { return cfg_.ahoraUnix ? cfg_.ahoraUnix() : 0; }
 
   AlmacenSync &almacen_;
@@ -206,6 +228,12 @@ class SincronizadorV2 {
   bool rondaAjenosActiva_ = false, hayRondaPrevia_ = false;
 
   uint32_t horaServidor_ = 0, millisHora_ = 0, horaCrudaMax_ = 0;
+  static constexpr size_t TAM_ACUSE = 128;  // un ACUSE firmado ocupa 92 B
+  uint8_t ultimoAcuse_[TAM_ACUSE];
+  size_t largoUltimoAcuse_ = 0;
+  uint32_t ultimoAcuseMs_ = 0;
+  bool esperandoHora_ = false;
+  uint32_t horaHastaMs_ = 0, horasDeVecino_ = 0;
 
   uint32_t holas_ = 0, paqueteEventos_ = 0, paquetesAjenos_ = 0, reenvios_ = 0, rechazados_ = 0, recibidos_ = 0;
   sp::Motivo ultimoRechazo_ = sp::Motivo::OK;

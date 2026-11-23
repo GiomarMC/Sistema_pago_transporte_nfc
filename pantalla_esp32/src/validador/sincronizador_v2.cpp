@@ -65,12 +65,35 @@ void SincronizadorV2::enviarHola(CanalPaquetes &canal, uint32_t ahoraMs) {
   holas_++;
 }
 
+// Hasta EVENTOS_POR_PAQUETE eventos con id mayor que `desdeId` en tx_.eventos, cortando en el primero que aún lleva
+// la hora estimada sin corregir (el orden importa: el servidor los quiere contiguos) y con las fechas corregidas
+size_t SincronizadorV2::prepararEventos(uint32_t desdeId) {
+  if (retenido(desdeId + 1)) return 0;
+  sp::Eventos &e = tx_.eventos;
+  size_t n = almacen_.eventosDesde(desdeId, e.eventos, EVENTOS_POR_PAQUETE);
+  for (size_t i = 0; i < n; i++) {
+    if (retenido(e.eventos[i].idEvento)) {
+      n = i;
+      break;
+    }
+    if (cfg_.correccion) cfg_.correccion->corregir(e.eventos[i]);
+  }
+  e.n = n;
+  return n;
+}
+
+size_t SincronizadorV2::ultimoAcuse(uint8_t *buf, size_t max, uint32_t &recibidoMs) const {
+  if (largoUltimoAcuse_ == 0 || largoUltimoAcuse_ > max) return 0;
+  memcpy(buf, ultimoAcuse_, largoUltimoAcuse_);
+  recibidoMs = ultimoAcuseMs_;
+  return largoUltimoAcuse_;
+}
+
 bool SincronizadorV2::enviarEventos(CanalPaquetes &canal, uint32_t ahoraMs) {
   if (siguienteId_ > almacen_.ultimoEvento()) return false;  // no hay nada nuevo
   sp::Eventos &e = tx_.eventos;
-  const size_t n = almacen_.eventosDesde(siguienteId_ - 1, e.eventos, EVENTOS_POR_PAQUETE);
+  const size_t n = prepararEventos(siguienteId_ - 1);
   if (n == 0) return false;
-  e.n = n;
   tx_.cabecera = {sp::EVENTOS, cfg_.validador, sp::SERVIDOR, almacen_.siguienteSecuencia(), creado()};
   const size_t largo = sp::empaquetar(tx_, cfg_.claveHmac, bufTx_, sizeof(bufTx_));
   if (largo == 0 || !canal.enviar(bufTx_, largo)) return false;
@@ -116,9 +139,8 @@ size_t SincronizadorV2::empaquetarEventos(uint32_t desdeId, uint8_t *buf, size_t
                                           uint32_t ahoraMs) {
   (void)ahoraMs;
   sp::Eventos &e = tx_.eventos;
-  const size_t n = almacen_.eventosDesde(desdeId, e.eventos, EVENTOS_POR_PAQUETE);
+  const size_t n = prepararEventos(desdeId);
   if (n == 0) return 0;
-  e.n = n;
   tx_.cabecera = {sp::EVENTOS, cfg_.validador, sp::SERVIDOR, almacen_.siguienteSecuencia(), creado()};
   const size_t largo = sp::empaquetar(tx_, cfg_.claveHmac, buf, capacidad);
   if (largo == 0) return 0;
@@ -178,6 +200,13 @@ void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahor
 void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, const uint8_t *datos, size_t largo,
                               uint32_t ahoraMs, bool relevado) {
   if (cab.destino != cfg_.validador) {
+    // Si se le pidió la hora a un vecino, vale la de este ACUSE aunque sea de otro bus: la firma es del servidor y el
+    // vecino lo pidió fresco (mandó un HOLA al recibir el PEDIDO). Fuera de la ventana no se toma: podría ser viejo
+    if (relevado && esperandoHora_ && (int32_t)(ahoraMs - horaHastaMs_) <= 0 && cab.destino != sp::TODOS) {
+      esperandoHora_ = false;
+      tomarHora(acuse.horaServidor, ahoraMs, true);
+      horasDeVecino_++;
+    }
     // Acuse de otro bus cuyos paquetes se llevaban: ya no hace falta guardarlos, y se guarda el acuse para
     // entregárselo cuando lo pida (si no vino por un vecino: el servidor nos lo manda por haber subido sus eventos)
     almacen_.ajenosAcusados(cab.destino, acuse.hastaEvento);
@@ -185,6 +214,11 @@ void SincronizadorV2::alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, c
     return;
   }
   tomarHora(acuse.horaServidor, ahoraMs, relevado);
+  if (!relevado && largo <= TAM_ACUSE) {  // para dárselo a un vecino que pida la hora
+    memcpy(ultimoAcuse_, datos, largo);
+    largoUltimoAcuse_ = largo;
+    ultimoAcuseMs_ = ahoraMs;
+  }
   const uint32_t hasta = acuse.hastaEvento;
   if (hasta <= almacen_.ultimoAcusado()) return;  // repetido o más viejo que otro ya recibido
 

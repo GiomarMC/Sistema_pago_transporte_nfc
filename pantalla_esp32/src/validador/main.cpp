@@ -41,6 +41,7 @@
 #include "almacen.h"
 #include "almacen_sync_binario.h"
 #include "clave_servidor.h"
+#include "correccion_hora.h"
 #include "gestor_enlaces.h"
 #include "intercambio_vecinos.h"
 #include "portal.h"
@@ -117,8 +118,22 @@ void guardarHora(uint32_t unix) {
     ultimoMs = millis();
   }
 }
+// Los eventos guardados con la hora estimada no salen de la placa hasta que llega la real, y salen con la fecha
+// corregida (ver correccion_hora.h). Solo en RAM: si la placa se apaga antes, salen con la estimada.
+CorreccionHora correccionHora;
+void log(const String &texto);
+void anotarEvento(const sp::Evento &e) {
+  if (!horaReal) correccionHora.anotar(e.idEvento, baseUnix, baseMillis);
+}
+
 // Hora real (del servidor o del ordenador): `unix` era la hora en el instante `ms` (millis())
 void fijarHora(uint32_t unix, uint32_t ms) {
+  if (!correccionHora.hayHoraReal()) {
+    correccionHora.horaReal(unix, ms);
+    if (correccionHora.anotados())
+      log("Hora real: " + String(correccionHora.anotados()) + " eventos cobrados con la hora estimada salen corregidos (" +
+          String(correccionHora.delta()) + " s)");
+  }
   baseUnix = unix;
   baseMillis = ms;
   horaReal = true;
@@ -483,6 +498,7 @@ void iniciarSyncV2() {
   c.clavePublicaServidor = CLAVE_SERVIDOR;
   c.versionFirmware = VERSION_FIRMWARE;
   c.ahoraUnix = ahoraUnix;
+  c.correccion = &correccionHora;
   nuevo->sinc.reset(new SincronizadorV2(*nuevo->almacenSync, c));
   if (nuevo->radio) {
     nuevo->intercambio.reset(new IntercambioVecinos(*nuevo->radio, *nuevo->sinc, *nuevo->almacenSync, almacen.validador()));
@@ -521,7 +537,7 @@ void servicioSyncV2() {
     fijarHora(v2->sinc->horaServidor(), v2->sinc->millisHora());
     pantallaEspera();
   }
-  if (v2->intercambio) v2->intercambio->atender(ahora, canal != nullptr);
+  if (v2->intercambio) v2->intercambio->atender(ahora, canal != nullptr, !horaReal);
   v2->almacenSync->paso(true);
   const String estado = canal ? "WiFi OK" : (enlaceWifi.estado() == EstadoEnlace::Listo ? "Sin servidor" : "Sin WiFi");
   if (estado != v2->estado) {
@@ -543,7 +559,8 @@ void servicioSyncV2() {
       log("ESP-NOW: vecinos " + String(v2->vecinos->cantidad()) + ", pedidos de listas " + String(c.pedidosListas) +
           ", de acuses " + String(c.pedidosAcuses) + ", atendidos " + String(c.pedidosAtendidos) + ", EVENTOS entregados " +
           String(c.eventosEntregados) + " (abortados " + String(c.eventosAbortados) + "), LISTAS " + String(c.listasEntregadas) + ", ACUSES " + String(c.acusesEntregados) +
-          ", recibidos " + String(c.recibidos) + ", ajenos de vecinos " + String(v2->sinc->ajenosRecibidos()));
+          ", recibidos " + String(c.recibidos) + ", ajenos de vecinos " + String(v2->sinc->ajenosRecibidos()) + ", pedidos de hora " + String(c.pedidosHora) +
+          ", horas dadas " + String(c.horasEntregadas) + ", horas de vecino " + String(v2->sinc->horasDeVecino()));
     }
   }
 }
@@ -628,6 +645,7 @@ void setup() {
     baseMillis = millis();
   }
   PASO("setup: microSD");
+  almacen.alGuardarEvento(anotarEvento);  // antes de iniciar: así se anota todo evento nuevo
   almacen.iniciar();
   PASO("setup: lector PN532");
   iniciarLector();

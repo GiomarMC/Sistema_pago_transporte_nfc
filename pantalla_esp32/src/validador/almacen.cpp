@@ -221,7 +221,11 @@ bool Almacen::existeViaje(uint32_t idTarjeta, uint16_t operacion) {
 void Almacen::avisarCola(const char *texto) { Serial.printf("AVISO cola de eventos: %s\n", texto); }
 
 // El evento se da por guardado solo cuando ya está vaciado a la microSD (ColaEventos::agregar)
-bool Almacen::guardarEvento(sp::Evento &e) { return cola_.agregar(e); }
+bool Almacen::guardarEvento(sp::Evento &e) {
+  if (!cola_.agregar(e)) return false;
+  if (alGuardar_) alGuardar_(e);
+  return true;
+}
 
 void Almacen::guardarUltimasOperaciones() {
   String t;

@@ -46,9 +46,11 @@ bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &baliza);
 // --- PEDIDO (solo ESP-NOW, unicast): un bus le pide algo a otro (M8-03) ------------------------
 // Va sin firmar y sin fragmentar: solo pide, y lo que se entrega como respuesta son paquetes C1 que ya
 // llevan su propia firma. 'que': 1 = LISTAS desde la versión x, 2 = TARIFAS (x no se usa), 3 = los ACUSE
-// firmados que tengas para mí (x no se usa).
+// firmados que tengas para mí (x no se usa), 4 = la hora: quien tiene servidor manda un HOLA y reenvía el ACUSE
+// (firmado, con la hora del servidor) que le llega como respuesta (x no se usa). Un firmware que no conoce el 4 lo
+// descarta.
 constexpr size_t TAM_PEDIDO = 11;  // 6 comunes + que(1) + x(4)
-constexpr uint8_t PEDIDO_LISTAS = 1, PEDIDO_TARIFAS = 2, PEDIDO_ACUSES = 3;
+constexpr uint8_t PEDIDO_LISTAS = 1, PEDIDO_TARIFAS = 2, PEDIDO_ACUSES = 3, PEDIDO_HORA = 4;
 
 struct Pedido {
   uint16_t validador = 0;  // quién pide (1-899)

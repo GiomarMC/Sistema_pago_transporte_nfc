@@ -131,6 +131,7 @@ struct Bus {
   std::unique_ptr<IntercambioVecinos> iv;
   RadioFalsa radio;
   CanalFalso canal;
+  CorreccionHora correccion;  // vacía: no retiene ni corrige nada mientras no se anote
   uint16_t numero;
   const uint8_t *hmac;
   bool conCanal;
@@ -145,6 +146,7 @@ struct Bus {
     c.clavePublicaServidor = CLAVE_PUBLICA_PRUEBA;
     c.versionFirmware = 20261121;
     c.ahoraUnix = horaFalsa;
+    c.correccion = &correccion;
     sinc.reset(new SincronizadorV2(*alm, c));
     iv.reset(new IntercambioVecinos(radio, *sinc, *alm, n));
     canal.ponerListo(canalListo);
@@ -169,6 +171,8 @@ struct ServidorFalso {
   std::vector<Bytes> recibidos;
   int eventosDe108 = 0;
   bool respondeAcuse = true;
+  bool respondeHola = false;     // al HOLA de A (107) le contesta con un ACUSE para A, con la hora del servidor
+  std::vector<uint32_t> fechasDe108;
   const uint8_t *claveDe(uint16_t v) const { return v == 108 ? CLAVE_108 : nullptr; }
 };
 ServidorFalso *servidorActual = nullptr;
@@ -189,10 +193,16 @@ struct Escena {
     size_t n;
     while ((n = bus.canal.sacarEnviado(buf, sizeof(buf))) > 0) {
       srv.recibidos.emplace_back(buf, buf + n);
+      if (srv.respondeHola && n > 3 && buf[3] == sp::HOLA) {
+        const Bytes a = bytes(ACUSE_107_HASTA_30);
+        bus.canal.inyectar(a.data(), a.size());
+        continue;
+      }
       sp::Motivo m;
       if (sp::desempaquetar(buf, n, claveDeValidador, CLAVE_PUBLICA_PRUEBA, pq, &m) && pq.cabecera.tipo == sp::EVENTOS &&
           pq.cabecera.origen == 108) {  // la firma HMAC de B se comprueba aquí, como lo haría el servidor
         srv.eventosDe108++;
+        for (uint8_t i = 0; i < pq.eventos.n; i++) srv.fechasDe108.push_back(pq.eventos.eventos[i].fecha);
         if (srv.respondeAcuse) {
           const Bytes a = bytes(ACUSE_108_HASTA_30);
           bus.canal.inyectar(a.data(), a.size());
@@ -200,6 +210,7 @@ struct Escena {
       }
     }
   }
+  bool bNecesitaHora = false;  // B solo tiene la hora estimada (en la placa: !horaReal en main.cpp)
   // Un ciclo de unos 100 ms de los dos buses
   void ciclo() {
     ms += 100;
@@ -208,7 +219,12 @@ struct Escena {
     A.sinc->atender(A.conCanal ? &A.canal : nullptr, ms);
     B.sinc->atender(nullptr, ms);
     A.iv->atender(ms, A.conCanal);
-    B.iv->atender(ms, false);
+    B.iv->atender(ms, false, bNecesitaHora);
+    // Lo que hace main.cpp con la hora del servidor que toma el sincronizador (fijarHora)
+    if (bNecesitaHora && B.sinc->horaServidor()) {
+      B.correccion.horaReal(B.sinc->horaServidor(), B.sinc->millisHora());
+      bNecesitaHora = false;
+    }
     A.alm->paso(true);
     B.alm->paso(true);
     servidor(A);
@@ -420,6 +436,54 @@ void aborto_se_reintenta() {
   printf("  aborto: un EVENTOS que la radio abandona se reintenta a los 5 s (no a los 10 min) y con tope OK\n");
 }
 
+void hora_del_vecino() {
+  // B arrancó sin servidor y con la hora estimada 1000 s por detrás: sus 5 viajes llevan esa fecha y se retienen.
+  // B le pide la hora a A, A manda un HOLA, el servidor le contesta con un ACUSE (firmado, con su hora) y A se lo
+  // reenvía a B. B toma la hora, corrige las fechas y entrega los viajes ya corregidos.
+  Escena e;
+  e.srv.respondeHola = true;
+  e.B.viajes(5);  // fecha = HORA_SERVIDOR_PRUEBA
+  const uint32_t estimada = HORA_SERVIDOR_PRUEBA - 1000;  // la base del reloj estimado de B en millis() = 0
+  for (uint32_t id = 1; id <= 5; id++) e.B.correccion.anotar(id, estimada, 0);
+  e.bNecesitaHora = true;
+  e.A.sinc->atender(&e.A.canal, e.ms);  // A ya tiene canal (su HOLA recibe el ACUSE)
+  e.ciclos(20);  // 2 s
+  assert(e.B.iv->cuenta().pedidosHora >= 1 && e.A.iv->cuenta().horasEntregadas >= 1);
+  assert(e.B.sinc->horasDeVecino() == 1 && e.B.correccion.hayHoraReal());
+  // la hora del ACUSE más el retraso del relevo, tomada en el instante en que llegó
+  assert(e.B.sinc->horaServidor() == HORA_SERVIDOR_PRUEBA + SincronizadorV2::RETRASO_RELE_S);
+  e.ciclos(80);
+  vaciar(e);
+  // los 5 viajes llegaron al servidor, con la fecha corregida en lo que iba por detrás el reloj estimado
+  assert(e.srv.fechasDe108.size() >= 5);
+  const int32_t delta = e.B.correccion.delta();
+  assert(delta > 1000 - 20 && delta < 1000 + 20);
+  for (uint32_t f : e.srv.fechasDe108) assert(f == (uint32_t)((int64_t)HORA_SERVIDOR_PRUEBA + delta));
+  printf("  hora: B pide la hora a A, recibe el ACUSE fresco que A le pide al servidor y entrega sus viajes con la "
+         "fecha corregida (+%d s) OK\n", (int)delta);
+}
+
+void retenidos_sin_hora() {
+  // Sin hora real, los viajes con hora estimada no se entregan, ni a un vecino con servidor; un vecino SIN servidor no
+  // da la hora (no tiene una fresca)
+  Escena e(false);
+  e.B.viajes(3);
+  for (uint32_t id = 1; id <= 3; id++) e.B.correccion.anotar(id, HORA_SERVIDOR_PRUEBA - 50, 0);
+  e.bNecesitaHora = true;
+  e.ms += IntercambioVecinos::SIN_CANAL_MS;  // B ya entregaría a un vecino sin canal...
+  e.ciclos(100);
+  assert(e.B.iv->cuenta().eventosEntregados == 0 && e.A.p->ajenos.cantidad() == 0);  // ...pero están retenidos
+  assert(e.B.iv->cuenta().pedidosHora == 0);  // A no anuncia servidor: no se le pide
+  // y aunque llegue un PEDIDO(HORA), quien no tiene canal no contesta
+  sp::Pedido p;
+  p.validador = 107;
+  p.que = sp::PEDIDO_HORA;
+  e.A.radio.pedidos.emplace_back(Bytes(MAC_B, MAC_B + 6), p);
+  e.ciclos(20);
+  assert(e.A.iv->cuenta().horasEntregadas == 0);
+  printf("  hora: sin hora real los viajes se retienen, y sin servidor no se da la hora OK\n");
+}
+
 }  // namespace
 
 int main() {
@@ -434,5 +498,7 @@ int main() {
   sin_firmados_no_se_responde();
   fuera_de_alcance();
   aborto_se_reintenta();
+  hora_del_vecino();
+  retenidos_sin_hora();
   printf("M8-03/04 intercambio entre buses: eventos, acuses y listas con firmas reales, sin verse y alteradas OK\n");
 }

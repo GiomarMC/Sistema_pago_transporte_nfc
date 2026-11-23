@@ -13,6 +13,11 @@
 //      un PEDIDO(ACUSES), se los entrega; el ACUSE sigue firmado por el servidor. Yo los pido cuando entregué
 //      eventos que siguen sin confirmar.
 //
+//   4. HORA. Un bus que solo tiene la hora estimada (y por eso retiene sus eventos: ver CorreccionHora) le manda
+//      PEDIDO(HORA) a un vecino con canal. El vecino manda un HOLA a su servidor y le reenvía el ACUSE que le llega
+//      como respuesta: va firmado por el servidor y trae su hora; quien pidió la toma (SincronizadorV2::
+//      esperarHoraDeVecino) y corrige las fechas de sus eventos antes de entregarlos.
+//
 // Es lógica pura (sin radio ni Arduino): la radio es RadioVecinos (VecinosEspNow la implementa; las pruebas usan una
 // falsa), y lo que sabe del bus lo pregunta a SincronizadorV2 y AlmacenSync.
 //
@@ -55,6 +60,7 @@ class IntercambioVecinos {
   static constexpr uint32_t REPETIR_PEDIDO_MS = 10000;       // no repetir el mismo PEDIDO al mismo vecino antes
   static constexpr uint32_t ENTREGA_VIGENTE_MS = 10 * 60 * 1000;  // lo entregado se da por perdido si no llega acuse
   static constexpr uint32_t REINTENTO_EVENTOS_MS = 5000;  // tras un EVENTOS que la radio abortó, se vuelve a ofrecer
+  static constexpr uint32_t VENTANA_HORA_MS = 10000;  // lo que se espera el ACUSE fresco tras un PEDIDO(HORA)
   static constexpr uint8_t PAQUETES_EVENTOS = 10;            // por encuentro
   static constexpr uint8_t CADENA_LISTAS = 10;               // LISTAS encadenados por PEDIDO
   static constexpr size_t MAX_AJENOS_ACEPTADOS = 480;        // de 500: más allá se anuncia que no se aceptan
@@ -65,40 +71,43 @@ class IntercambioVecinos {
     uint32_t pedidosListas = 0, pedidosAcuses = 0, pedidosAtendidos = 0;
     uint32_t eventosEntregados = 0, listasEntregadas = 0, acusesEntregados = 0, recibidos = 0;
     uint32_t eventosAbortados = 0;  // EVENTOS que empezaron a salir y la radio abandonó (se reintentan)
+    uint32_t pedidosHora = 0, horasEntregadas = 0;
   };
 
   IntercambioVecinos(RadioVecinos &radio, SincronizadorV2 &sinc, AlmacenSync &almacen, uint16_t validador)
       : radio_(radio), sinc_(sinc), almacen_(almacen), validador_(validador) {}
 
   // En cada vuelta de loop() con el lector libre. `tengoCanal`: hay un canal de subida listo ahora mismo.
-  void atender(uint32_t ahoraMs, bool tengoCanal);
+  // `necesitoHora`: este bus solo tiene la hora estimada; se la pide a un vecino con canal.
+  void atender(uint32_t ahoraMs, bool tengoCanal, bool necesitoHora = false);
   const Cuenta &cuenta() const { return cuenta_; }
   size_t trabajosPendientes() const { return nTrabajos_; }
 
  private:
-  enum class Tipo : uint8_t { LISTAS, ACUSE, EVENTOS };
+  enum class Tipo : uint8_t { LISTAS, ACUSE, EVENTOS, HORA };
   struct Trabajo {
     Tipo tipo;
     uint8_t mac[6];
     uint16_t validador;  // ACUSE: de quién
-    uint32_t cursor;     // LISTAS: versión desde la que sigue la cadena; EVENTOS: último id ya entregado
+    uint32_t cursor;     // LISTAS: versión desde la que sigue la cadena; EVENTOS: último id ya entregado;
+                         // HORA: millis() del PEDIDO (vale un ACUSE que llegue después)
     uint8_t restantes;
   };
   struct Recuerdo {  // qué se le ha dado y pedido a un vecino (por MAC)
     bool usado = false;
     uint8_t mac[6] = {};
-    uint32_t pedidoListasMs = 0, pedidoAcusesMs = 0, entregaMs = 0;
+    uint32_t pedidoListasMs = 0, pedidoAcusesMs = 0, pedidoHoraMs = 0, entregaMs = 0;
     uint32_t entregadoHasta = 0;  // último evento mío entregado
     uint8_t paquetes = 0;         // EVENTOS entregados (o intentados) en esta racha
     uint32_t reintentoMs = 0;     // tras un aborto, no se ofrecen eventos antes (0: sin espera)
-    bool pedidoListas = false, pedidoAcuses = false;
+    bool pedidoListas = false, pedidoAcuses = false, pedidoHora = false;
   };
 
   Recuerdo &recuerdo(const uint8_t mac[6], uint32_t ahoraMs);
   void publicarBaliza(uint32_t ahoraMs, bool tengoCanal);
   void recibir(uint32_t ahoraMs);
   void revisarEntrega(uint32_t ahoraMs);
-  void decidir(uint32_t ahoraMs, bool tengoCanal);
+  void decidir(uint32_t ahoraMs, bool tengoCanal, bool necesitoHora);
   void ejecutarTrabajo(uint32_t ahoraMs);
   bool encolar(const Trabajo &t);
   bool hayTrabajo(Tipo tipo, const uint8_t mac[6]) const;
@@ -113,7 +122,7 @@ class IntercambioVecinos {
   Recuerdo recuerdos_[VECINOS_RECORDADOS];
   size_t siguienteRecuerdo_ = 0;
   uint32_t sinCanalDesdeMs_ = 0;
-  bool habiaCanal_ = true, hayBaliza_ = false;
+  bool habiaCanal_ = true, hayBaliza_ = false, tengoCanal_ = false;
   sp::Baliza ultimaBaliza_;
   uint32_t ultimaBalizaMs_ = 0;
   Cuenta cuenta_;

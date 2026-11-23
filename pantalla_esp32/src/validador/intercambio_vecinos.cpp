@@ -37,7 +37,8 @@ void IntercambioVecinos::quitarTrabajo(size_t i) {
   nTrabajos_--;
 }
 
-void IntercambioVecinos::atender(uint32_t ahoraMs, bool tengoCanal) {
+void IntercambioVecinos::atender(uint32_t ahoraMs, bool tengoCanal, bool necesitoHora) {
+  tengoCanal_ = tengoCanal;
   // Cuánto lleva este bus sin canal de subida (para el criterio de los 10 minutos)
   if (tengoCanal) {
     habiaCanal_ = true;
@@ -48,7 +49,7 @@ void IntercambioVecinos::atender(uint32_t ahoraMs, bool tengoCanal) {
   publicarBaliza(ahoraMs, tengoCanal);
   recibir(ahoraMs);
   revisarEntrega(ahoraMs);
-  decidir(ahoraMs, tengoCanal);
+  decidir(ahoraMs, tengoCanal, necesitoHora);
   ejecutarTrabajo(ahoraMs);
 }
 
@@ -93,6 +94,13 @@ void IntercambioVecinos::recibir(uint32_t ahoraMs) {
       if (hayTrabajo(Tipo::ACUSE, mac)) continue;
       t.tipo = Tipo::ACUSE;
       t.restantes = 1;
+    } else if (p.que == sp::PEDIDO_HORA) {
+      // Solo con canal: sin servidor no hay hora fresca que dar (una vieja haría más daño que la estimada)
+      if (!tengoCanal_ || hayTrabajo(Tipo::HORA, mac)) continue;
+      t.tipo = Tipo::HORA;
+      t.cursor = ahoraMs;
+      t.restantes = 1;
+      sinc_.pedirHola();  // el servidor contesta con un ACUSE con su hora
     } else {
       continue;  // TARIFAS: no se guardan paquetes TARIFAS para entregar
     }
@@ -120,7 +128,7 @@ void IntercambioVecinos::revisarEntrega(uint32_t ahoraMs) {
   }
 }
 
-void IntercambioVecinos::decidir(uint32_t ahoraMs, bool tengoCanal) {
+void IntercambioVecinos::decidir(uint32_t ahoraMs, bool tengoCanal, bool necesitoHora) {
   const uint32_t miVersion = almacen_.versionListas();
   const uint32_t pendientes = sinc_.pendientes();
   const bool sinCanalLargo = !tengoCanal && !habiaCanal_ && (uint32_t)(ahoraMs - sinCanalDesdeMs_) >= SIN_CANAL_MS;
@@ -129,6 +137,20 @@ void IntercambioVecinos::decidir(uint32_t ahoraMs, bool tengoCanal) {
     const Vecino &v = radio_.vecino(i);
     const sp::Baliza &b = v.baliza;
     Recuerdo &r = recuerdo(v.mac, ahoraMs);
+
+    // 0. Hora: solo a quien tiene servidor, y como mucho un pedido cada REPETIR_PEDIDO_MS
+    if (necesitoHora && !tengoCanal && (b.flags & sp::BALIZA_CON_SERVIDOR) &&
+        (!r.pedidoHora || (uint32_t)(ahoraMs - r.pedidoHoraMs) >= REPETIR_PEDIDO_MS) && !radio_.enviando()) {
+      sp::Pedido p;
+      p.validador = validador_;
+      p.que = sp::PEDIDO_HORA;
+      if (radio_.enviarPedido(v.mac, p) == RadioVecinos::Envio::ACEPTADO) {
+        r.pedidoHora = true;
+        r.pedidoHoraMs = ahoraMs;
+        cuenta_.pedidosHora++;
+        sinc_.esperarHoraDeVecino(ahoraMs + VENTANA_HORA_MS);
+      }
+    }
 
     // 1. Listas: el vecino sabe más que yo
     if (b.versionListas > miVersion && b.versionListas < VERSION_INTERMEDIA && miVersion < VERSION_INTERMEDIA &&
@@ -156,7 +178,7 @@ void IntercambioVecinos::decidir(uint32_t ahoraMs, bool tengoCanal) {
     if (!tengoCanal && puedeRecibir && leSirve && pendientes > 0 && r.paquetes < PAQUETES_EVENTOS &&
         !r.reintentoMs && !hayTrabajo(Tipo::EVENTOS, v.mac)) {
       const uint32_t desde = r.entregadoHasta > almacen_.ultimoAcusado() ? r.entregadoHasta : almacen_.ultimoAcusado();
-      if (desde < almacen_.ultimoEvento()) {
+      if (desde < almacen_.ultimoEvento() && !sinc_.retenido(desde + 1)) {  // con hora estimada esperan a la real
         Trabajo t = {};
         t.tipo = Tipo::EVENTOS;
         memcpy(t.mac, v.mac, 6);
@@ -188,7 +210,25 @@ void IntercambioVecinos::ejecutarTrabajo(uint32_t ahoraMs) {
   Trabajo &t = trabajos_[0];
   size_t n = 0;
   uint32_t siguiente = t.cursor;
+  if (t.tipo == Tipo::HORA) {
+    // Se espera el ACUSE fresco (llegado después del PEDIDO); mientras, pasan los demás trabajos
+    uint32_t llegoMs = 0;
+    n = sinc_.ultimoAcuse(buf_, sizeof(buf_), llegoMs);
+    const bool fresco = n > 0 && (int32_t)(llegoMs - t.cursor) >= 0;
+    if (!fresco) {
+      if ((uint32_t)(ahoraMs - t.cursor) >= VENTANA_HORA_MS) {
+        quitarTrabajo(0);
+      } else if (nTrabajos_ > 1) {
+        const Trabajo espera = t;
+        quitarTrabajo(0);
+        encolar(espera);
+      }
+      return;
+    }
+  }
   switch (t.tipo) {
+    case Tipo::HORA:
+      break;  // ya está en buf_
     case Tipo::LISTAS:
       n = almacen_.listasDesde(t.cursor, buf_, sizeof(buf_), siguiente);
       break;
@@ -213,6 +253,7 @@ void IntercambioVecinos::ejecutarTrabajo(uint32_t ahoraMs) {
   t.cursor = siguiente;
   if (t.tipo == Tipo::LISTAS) cuenta_.listasEntregadas++;
   if (t.tipo == Tipo::ACUSE) cuenta_.acusesEntregados++;
+  if (t.tipo == Tipo::HORA) cuenta_.horasEntregadas++;
   if (t.tipo == Tipo::EVENTOS) {
     cuenta_.eventosEntregados++;
     Recuerdo &r = recuerdo(t.mac, ahoraMs);
