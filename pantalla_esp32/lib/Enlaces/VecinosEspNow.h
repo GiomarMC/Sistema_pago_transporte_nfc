@@ -56,6 +56,15 @@ class VecinosEspNow final : public Vecinos {
 
   // --- Vecinos ---------------------------------------------------------------------
   void iniciar(uint8_t canalWifi) override;  // 0 se toma como 1
+  // ESP-NOW sigue al WiFi: con `canal` (el del AP al que se conecta o se conectó) se pasa a él; con 0 vuelve al de
+  // iniciar() (espnow_canal). Solo cambia la radio si el STA no está conectado (conectado, manda el canal del AP).
+  void cambiarCanal(uint8_t canal);
+  uint8_t canal() const { return canal_; }
+  // Mientras el WiFi se conecta a un AP no se transmite nada (ni balizas, ni fragmentos, ni PEDIDOs; se sigue
+  // escuchando y no se olvida a los vecinos). Es precaución: dura unos segundos y solo con un AP a la vista. Lo que sí
+  // está medido es que transmitir en OTRO canal impide autenticar; en el mismo canal los rechazos medidos (motivo 2)
+  // salen igual con ESP-NOW apagado
+  void silenciar(bool si) { silencio_ = si; }
   void atender() override;                   // en cada loop(); no bloquea
   void pausar(bool si) override;
   size_t cantidad() const override { return tabla_.cantidad(); }
@@ -142,8 +151,8 @@ class VecinosEspNow final : public Vecinos {
   volatile uint32_t pedidosPerdidos_ = 0;
   bool esperandoAvisoPedido_ = false;    // se mandó un PEDIDO y falta el aviso de la radio (no se mezcla con un fragmento)
   uint32_t pedidoMs_ = 0;
-  uint8_t canal_ = 1;
-  bool iniciado_ = false, pausado_ = false;
+  uint8_t canal_ = 1, canalBase_ = 1;
+  bool iniciado_ = false, pausado_ = false, silencio_ = false;
   uint32_t proximaMs_ = 0;
   volatile uint32_t recibidas_ = 0, perdidasCola_ = 0;
   uint32_t enviadas_ = 0, erroresEnvio_ = 0;

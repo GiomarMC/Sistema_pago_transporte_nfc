@@ -168,6 +168,9 @@ struct SyncV2 {
   uint32_t horaVista = 0;
 };
 std::unique_ptr<SyncV2> v2;
+uint8_t canalEspNowConfigurado = 1;  // espnow_canal: el de ESP-NOW sin WiFi
+void alCanalDelWifi(uint8_t canal);  // más abajo, con el gestor ya creado
+bool puedeEscanearWifi();
 
 // subida=vecinos en config.txt (prueba de M8): la placa se conecta al WiFi como siempre, y así ESP-NOW queda en el
 // canal del AP, pero no abre MQTT. Al gestor se le da este canal, que nunca está listo, y los eventos solo salen por
@@ -490,6 +493,9 @@ void iniciarSyncV2() {
   CanalPaquetes &subida = soloVecinos ? static_cast<CanalPaquetes &>(canalSinServidor) : *nuevo->canal;
   nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, subida, nullptr, nuevo->vecinos.get()));
   nuevo->gestor->canalEspNow(canalEspNow);
+  canalEspNowConfigurado = canalEspNow;
+  enlaceWifi.alElegirCanal(alCanalDelWifi);
+  enlaceWifi.permitirEscaneo(puedeEscanearWifi);
   nuevo->almacenSync.reset(new AlmacenSyncBinario(almacen.cola(), almacen.estado(), almacen.paquetesAjenos(),
                                                   almacen.aplicador(), ahoraUnix, &almacen.firmados()));
   ConfigSyncV2 c;
@@ -523,6 +529,7 @@ void servicioSyncV2() {
   if (!wifiApagado) {
     // El canal del AP al que está conectado el WiFi decide si ESP-NOW se pausa (solo anda en su canal)
     const uint8_t canalWifi = enlaceWifi.estado() == EstadoEnlace::Listo ? WiFi.channel() : v2->gestor->canalEspNow();
+    if (v2->vecinos) v2->vecinos->silenciar(enlaceWifi.conectando());
     v2->gestor->atender(ahora, false, canalWifi);
     canal = v2->gestor->activo();
   } else if (v2->vecinos) {
@@ -564,6 +571,16 @@ void servicioSyncV2() {
     }
   }
 }
+
+// ESP-NOW sigue al WiFi (#67): antes de conectar a un AP se pasa a su canal, y al perderlo vuelve a espnow_canal
+void alCanalDelWifi(uint8_t canal) {
+  if (!v2 || !v2->vecinos) return;
+  const uint8_t c = canal ? canal : canalEspNowConfigurado;
+  v2->vecinos->cambiarCanal(c);
+  v2->gestor->canalEspNow(c);  // el gestor solo pausa ESP-NOW si el WiFi está en otro canal que este
+}
+// No se busca WiFi a mitad de un mensaje de ESP-NOW: el escaneo saca la radio del canal ~1,6 s
+bool puedeEscanearWifi() { return !(v2 && v2->vecinos && v2->vecinos->enviando()); }
 
 // El circulito que gira en la pantalla de espera mientras se envían o reciben datos de la sincronización v2: paquetes
 // C1 con el servidor o con un vecino, PEDIDOs de ESP-NOW y un mensaje fragmentado en curso. Las balizas (cada 2 s) y
