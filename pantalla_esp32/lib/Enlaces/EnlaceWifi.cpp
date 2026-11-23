@@ -7,6 +7,7 @@
 volatile uint8_t EnlaceWifi::motivos_[EnlaceWifi::MOTIVOS] = {};
 volatile uint16_t EnlaceWifi::desconexiones_ = 0;
 volatile uint16_t EnlaceWifi::fallos_ = 0;
+volatile bool EnlaceWifi::escaneoListo_ = false;
 
 namespace {
 const char *textoMotivo(uint8_t m) {
@@ -99,6 +100,8 @@ void EnlaceWifi::registrarEventos() {
         if (motivo != WIFI_REASON_ASSOC_LEAVE) fallos_++;
       },
       ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+  // Arduino guarda los resultados al llegar el SCAN_DONE (antes de llamar a este aviso); aquí solo se marca el fin
+  WiFi.onEvent([](WiFiEvent_t, WiFiEventInfo_t) { escaneoListo_ = true; }, ARDUINO_EVENT_WIFI_SCAN_DONE);
 }
 
 void EnlaceWifi::atender() {
@@ -154,29 +157,16 @@ void EnlaceWifi::atender() {
 
   // Sin conexión ni intento en curso: buscar las redes guardadas (en segundo plano: no bloquea el cobro)
   if (escaneando_) {
-    const int16_t n = WiFi.scanComplete();
-    if (n == WIFI_SCAN_RUNNING && ahora - ultimoEscaneoMs_ < LIMITE_ESCANEO_MS) return;
-    escaneando_ = false;
     const uint32_t duro = ahora - ultimoEscaneoMs_;
-    // Un escaneo que falla, que no termina, o que "termina" con 0 redes en menos de 500 ms (uno de verdad tarda ~2-3 s)
-    // no vale: se repite en REPETIR_ESCANEO_MS en vez de esperar ESCANEO_MS
-    const bool falso = n < 0 || (n == 0 && duro < 500);
-    if (!falso) {
+    if (!escaneoListo_ && duro < LIMITE_ESCANEO_MS) return;
+    escaneando_ = false;
+    if (escaneoListo_) {
+      const int16_t n = WiFi.scanComplete();  // los resultados los guardó Arduino al llegar el SCAN_DONE
       escaneosFallidos_ = 0;
-      elegirYConectar(redes, n);
+      elegirYConectar(redes, n > 0 ? n : 0);
     } else {
-      escaneosFallidos_++;
-      ultimoEscaneoMs_ = ahora - ESCANEO_MS + REPETIR_ESCANEO_MS;
-      // Medido en las dos placas tras horas encendidas: TODOS los escaneos salían así, en silencio, y no se conectaba
-      // nunca (ni reiniciando la placa). Se para el escaneo en el driver: así llega su SCAN_DONE y el estado de
-      // WiFi.scanNetworks() de Arduino vuelve a empezar de cero. Y se anota (como mucho una vez por minuto)
-      if (escaneosFallidos_ >= 2) esp_wifi_scan_stop();
-      if (escaneosFallidos_ >= 2 && (avisoEscaneoMs_ == 0 || ahora - avisoEscaneoMs_ >= 60000)) {
-        avisoEscaneoMs_ = ahora;
-        log_("WiFi: la búsqueda de redes falla (" + String(escaneosFallidos_) + " seguidas, la última " +
-             (n == WIFI_SCAN_RUNNING ? String("sin terminar") : String(n) + " en " + String(duro) + " ms") +
-             "); se detiene y se repite");
-      }
+      esp_wifi_scan_stop();  // no terminó: se para en el driver
+      falloEscaneo("no terminó en " + String(duro) + " ms");
     }
     WiFi.scanDelete();
     return;
@@ -184,7 +174,7 @@ void EnlaceWifi::atender() {
   if (!iniciado_ && !hayEscaneo_) {
     // Recién encendido: el primer escaneo con la radio recién iniciada falla siempre (medido: -2 al cabo de 4 s, y
     // luego hay que esperar a repetirlo). Se le da ESPERA_INICIAL_MS antes
-    WiFi.mode(WIFI_STA);
+    WiFi.enableSTA(true);
     hayEscaneo_ = true;
     ultimoEscaneoMs_ = ahora - ESCANEO_MS + ESPERA_INICIAL_MS;
     return;
@@ -195,28 +185,41 @@ void EnlaceWifi::atender() {
 }
 
 void EnlaceWifi::empezarEscaneo() {
-  WiFi.mode(WIFI_STA);
+  WiFi.enableSTA(true);  // sin quitar el AP (ESP-NOW puede ir por él)
   // Sin reconexión automática del framework: reintentaría a ciegas mientras aquí se busca
   WiFi.setAutoReconnect(false);
   hayEscaneo_ = true;
   ultimoEscaneoMs_ = millis();
-  // En segundo plano, sin ocultas, activo, hasta MS_POR_CANAL por canal. Arduino da por fallido el escaneo que pasa de
-  // 20 veces eso: con 120 ms (2,4 s) se cortaban escaneos que tardaban 2,3-2,4 s (medido) y los siguientes salían
-  // vacíos en 13 ms mientras el driver terminaba. Con 200 ms el límite es de 4 s.
-  const int16_t r = WiFi.scanNetworks(true, false, false, MS_POR_CANAL);
-  escaneando_ = r == WIFI_SCAN_RUNNING;
-  if (!escaneando_) {  // no arrancó: se repite pronto, y cuenta como fallida
-    ultimoEscaneoMs_ = millis() - ESCANEO_MS + REPETIR_ESCANEO_MS;
-    escaneosFallidos_++;
-    if (escaneosFallidos_ >= 2) esp_wifi_scan_stop();
-    if (escaneosFallidos_ >= 2 && (avisoEscaneoMs_ == 0 || millis() - avisoEscaneoMs_ >= 60000)) {
-      avisoEscaneoMs_ = millis();
-      log_("WiFi: la búsqueda de redes no arranca (" + String(r) + ", " + String(escaneosFallidos_) + " seguidas)");
-    }
+  // Directamente en el driver, no con WiFi.scanNetworks(true): Arduino da por fallido un escaneo que pasa de 20 veces
+  // el tiempo por canal pero no reinicia su reloj, y desde ahí todos los siguientes salían "fallidos" o "con 0 redes"
+  // al instante. Medido: tras encender, ninguna placa conectaba nunca; con el AP de ESP-NOW (AP+STA) el escaneo tarda
+  // más y caía siempre. Aquí el fin lo marca el SCAN_DONE del driver (registrarEventos) y el límite es propio.
+  WiFi.scanDelete();
+  escaneoListo_ = false;
+  wifi_scan_config_t c = {};
+  c.show_hidden = false;
+  c.scan_type = WIFI_SCAN_TYPE_ACTIVE;
+  c.scan_time.active.min = 60;   // ms por canal
+  c.scan_time.active.max = 150;
+  const esp_err_t r = esp_wifi_scan_start(&c, false);
+  escaneando_ = r == ESP_OK;
+  if (!escaneando_) {
+    esp_wifi_scan_stop();
+    falloEscaneo(String("no arrancó (") + esp_err_to_name(r) + ")");
   }
   if (!iniciado_) {
     iniciado_ = true;
     log_("WiFi: buscando las redes guardadas");
+  }
+}
+
+// Un escaneo que no arranca o no termina: se repite en REPETIR_ESCANEO_MS y se anota (como mucho una vez por minuto)
+void EnlaceWifi::falloEscaneo(const String &que) {
+  escaneosFallidos_++;
+  ultimoEscaneoMs_ = millis() - ESCANEO_MS + REPETIR_ESCANEO_MS;
+  if (avisoEscaneoMs_ == 0 || millis() - avisoEscaneoMs_ >= 60000) {
+    avisoEscaneoMs_ = millis();
+    log_("WiFi: la búsqueda de redes " + que + " (" + String(escaneosFallidos_) + " seguidas); se repite");
   }
 }
 
