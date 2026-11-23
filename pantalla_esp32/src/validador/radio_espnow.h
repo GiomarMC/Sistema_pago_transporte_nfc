@@ -12,6 +12,7 @@ class RadioEspNow final : public RadioVecinos {
   size_t cantidad() const override { return vecinos_.cantidad(); }
   const Vecino &vecino(size_t i) const override { return vecinos_.vecino(i); }
   bool enviando() const override { return vecinos_.enviando(); }
+  uint32_t abortados() const override { return vecinos_.mensajesAbortados(); }
   Envio enviarMensaje(const uint8_t mac[6], const uint8_t *mensaje, size_t largo) override {
     return traducir(vecinos_.enviar(mac, mensaje, largo));
   }

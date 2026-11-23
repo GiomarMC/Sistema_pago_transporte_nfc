@@ -68,12 +68,21 @@ class RadioFalsa : public RadioVecinos {
   sp::Baliza publicada;
   int enviadosMensajes = 0, enviadosPedidos = 0;
   int limiteMensajes = 1000;
+  int abortarSiguientes = 0;  // los próximos N mensajes empiezan a salir (ACEPTADO) pero la radio los abandona
+  uint32_t nAbortados = 0;
 
   size_t cantidad() const override { return vecinos.size(); }
   const Vecino &vecino(size_t i) const override { return vecinos[i]; }
   bool enviando() const override { return false; }
+  uint32_t abortados() const override { return nAbortados; }
   Envio enviarMensaje(const uint8_t m[6], const uint8_t *msg, size_t largo) override {
     if (!otra || !visible || memcmp(m, otra->mac, 6) != 0 || enviadosMensajes >= limiteMensajes) return Envio::RECHAZADO;
+    if (abortarSiguientes > 0) {  // un fragmento no llegó: el otro no recibe nada
+      abortarSiguientes--;
+      nAbortados++;
+      enviadosMensajes++;
+      return Envio::ACEPTADO;
+    }
     Bytes b(msg, msg + largo);
     if (alterar) alterar(b);
     otra->mensajes.emplace_back(Bytes(mac, mac + 6), b);
@@ -387,6 +396,30 @@ void fuera_de_alcance() {
   printf("  encuentro: sin verse no pasa nada; al cruzarse, los viajes llegan y se confirman OK\n");
 }
 
+void aborto_se_reintenta() {
+  // El primer EVENTOS de B se aborta en la radio (en la placa: el WiFi buscando red sacó la radio del canal). Antes
+  // se daba por entregado y no se volvía a ofrecer hasta 10 min después; ahora se reintenta a los 5 s
+  Escena e;
+  e.B.viajes(30);
+  e.A.sinc->atender(&e.A.canal, e.ms);
+  e.B.radio.abortarSiguientes = 1;
+  e.ciclos(30);  // 3 s
+  assert(e.B.radio.nAbortados == 1 && e.B.iv->cuenta().eventosAbortados == 1);
+  assert(e.srv.eventosDe108 == 0 && e.A.p->ajenos.cantidad() == 0);  // no llegó nada y aún no se reintenta
+  e.ciclos(50);  // 5 s más: ya pasó la espera
+  assert(e.srv.eventosDe108 >= 1);
+  e.ciclos(100);  // B pide el ACUSE (cada 5 s) y A se lo da
+  vaciar(e);
+  assert(e.B.alm->ultimoAcusado() == 30 && e.B.sinc->pendientes() == 0);
+  // una radio que siempre aborta no se reintenta sin fin: como mucho PAQUETES_EVENTOS por encuentro
+  Escena f;
+  f.B.viajes(30);
+  f.B.radio.abortarSiguientes = 1000;
+  f.ciclos(10 * 60 * 3);  // 3 min
+  assert(f.B.radio.nAbortados == IntercambioVecinos::PAQUETES_EVENTOS);
+  printf("  aborto: un EVENTOS que la radio abandona se reintenta a los 5 s (no a los 10 min) y con tope OK\n");
+}
+
 }  // namespace
 
 int main() {
@@ -400,5 +433,6 @@ int main() {
   con_canal_propio_no_se_entrega();
   sin_firmados_no_se_responde();
   fuera_de_alcance();
+  aborto_se_reintenta();
   printf("M8-03/04 intercambio entre buses: eventos, acuses y listas con firmas reales, sin verse y alteradas OK\n");
 }

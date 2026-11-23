@@ -47,6 +47,7 @@ void IntercambioVecinos::atender(uint32_t ahoraMs, bool tengoCanal) {
   }
   publicarBaliza(ahoraMs, tengoCanal);
   recibir(ahoraMs);
+  revisarEntrega(ahoraMs);
   decidir(ahoraMs, tengoCanal);
   ejecutarTrabajo(ahoraMs);
 }
@@ -99,6 +100,26 @@ void IntercambioVecinos::recibir(uint32_t ahoraMs) {
   }
 }
 
+// Un EVENTOS que la radio abortó no llegó: se deshace lo que se anotó como entregado y se vuelve a ofrecer en
+// REINTENTO_EVENTOS_MS (no a los 10 min de ENTREGA_VIGENTE_MS). Sigue contando para el máximo por encuentro, así
+// que una radio que falla siempre no se reintenta sin fin. Solo hay un mensaje en vuelo a la vez y no sale otro hasta
+// que enviando() es false, así que el aumento de abortados() es de este.
+void IntercambioVecinos::revisarEntrega(uint32_t ahoraMs) {
+  if (!enVuelo_.activo || radio_.enviando()) return;
+  enVuelo_.activo = false;
+  if (radio_.abortados() == enVuelo_.abortadosAntes) return;  // llegó entero
+  cuenta_.eventosAbortados++;
+  Recuerdo &r = recuerdo(enVuelo_.mac, ahoraMs);
+  if (r.entregadoHasta > enVuelo_.entregadoAntes) r.entregadoHasta = enVuelo_.entregadoAntes;
+  r.reintentoMs = (ahoraMs + REINTENTO_EVENTOS_MS) | 1;  // nunca 0 (0 = sin espera)
+  for (size_t i = 0; i < nTrabajos_; i++) {  // lo que quedaba de la tanda seguía tras el que se perdió: se rehace
+    if (trabajos_[i].tipo == Tipo::EVENTOS && mismaMac(trabajos_[i].mac, enVuelo_.mac)) {
+      quitarTrabajo(i);
+      break;
+    }
+  }
+}
+
 void IntercambioVecinos::decidir(uint32_t ahoraMs, bool tengoCanal) {
   const uint32_t miVersion = almacen_.versionListas();
   const uint32_t pendientes = sinc_.pendientes();
@@ -131,8 +152,9 @@ void IntercambioVecinos::decidir(uint32_t ahoraMs, bool tengoCanal) {
     }
     const bool puedeRecibir = (b.flags & sp::BALIZA_ACEPTA_AJENOS) != 0;
     const bool leSirve = (b.flags & sp::BALIZA_CON_SERVIDOR) != 0 || sinCanalLargo;
+    if (r.reintentoMs && (int32_t)(ahoraMs - r.reintentoMs) >= 0) r.reintentoMs = 0;
     if (!tengoCanal && puedeRecibir && leSirve && pendientes > 0 && r.paquetes < PAQUETES_EVENTOS &&
-        !hayTrabajo(Tipo::EVENTOS, v.mac)) {
+        !r.reintentoMs && !hayTrabajo(Tipo::EVENTOS, v.mac)) {
       const uint32_t desde = r.entregadoHasta > almacen_.ultimoAcusado() ? r.entregadoHasta : almacen_.ultimoAcusado();
       if (desde < almacen_.ultimoEvento()) {
         Trabajo t = {};
@@ -181,6 +203,7 @@ void IntercambioVecinos::ejecutarTrabajo(uint32_t ahoraMs) {
     quitarTrabajo(0);
     return;
   }
+  const uint32_t abortadosAlEnviar = radio_.abortados();
   const RadioVecinos::Envio e = radio_.enviarMensaje(t.mac, buf_, n);
   if (e == RadioVecinos::Envio::OCUPADO) return;  // se reintenta en la próxima vuelta
   if (e == RadioVecinos::Envio::RECHAZADO) {
@@ -193,6 +216,10 @@ void IntercambioVecinos::ejecutarTrabajo(uint32_t ahoraMs) {
   if (t.tipo == Tipo::EVENTOS) {
     cuenta_.eventosEntregados++;
     Recuerdo &r = recuerdo(t.mac, ahoraMs);
+    enVuelo_.activo = true;
+    memcpy(enVuelo_.mac, t.mac, 6);
+    enVuelo_.entregadoAntes = r.entregadoHasta;
+    enVuelo_.abortadosAntes = abortadosAlEnviar;
     r.entregadoHasta = siguiente;
     r.entregaMs = ahoraMs;
     r.paquetes++;
