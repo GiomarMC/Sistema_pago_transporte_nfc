@@ -67,6 +67,7 @@ void VecinosEspNow::cambiarCanal(uint8_t canal) {
   const uint8_t nuevo = canal ? canal : canalBase_;
   if (nuevo == canal_) return;
   canal_ = nuevo;
+  buscador_.reiniciar();
   if (!iniciado_) return;
   if (WiFi.status() != WL_CONNECTED) fijarCanal();
   anotar("ESP-NOW: al canal " + String(canal_) + (canal ? " (el del WiFi)" : " (espnow_canal, sin WiFi)"));
@@ -76,6 +77,8 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   if (iniciado_) return;
   canal_ = canalWifi ? canalWifi : 1;
   canalBase_ = canal_;
+  buscador_ = BuscadorCanal(esp_random());
+  buscador_.base(canalBase_);
   if (!cola_) cola_ = xQueueCreate(COLA_BALIZAS, sizeof(Recibida));
   if (!colaTramas_) colaTramas_ = xQueueCreate(COLA_TRAMAS, sizeof(TramaCruda));
   if (!colaPedidos_) colaPedidos_ = xQueueCreate(COLA_PEDIDOS, sizeof(PedidoRecibido));
@@ -129,7 +132,8 @@ void VecinosEspNow::alRecibir(const uint8_t *mac, const uint8_t *datos, int larg
     if (largo < (int)sp::TAM_BALIZA) return;
     Recibida r;
     memcpy(r.mac, mac, 6);
-    memcpy(r.datos, datos, sp::TAM_BALIZA);
+    r.largo = largo < (int)sp::TAM_BALIZA_CON_CANAL ? largo : sp::TAM_BALIZA_CON_CANAL;
+    memcpy(r.datos, datos, r.largo);
     yo->recibidas_++;
     if (xQueueSend(yo->cola_, &r, 0) != pdTRUE) yo->perdidasCola_++;
   } else if (datos[2] == sp::FRAGMENTO && largo <= (int)sp::TAM_TRAMA_MAXIMO) {
@@ -168,7 +172,10 @@ void VecinosEspNow::programarSiguiente(uint32_t ahoraMs, bool primera) {
 
 void VecinosEspNow::enviarBaliza() {
   uint8_t trama[sp::TAM_TRAMA_MAXIMO];
-  const size_t largo = sp::armarBaliza(propia_, trama);
+  sp::Baliza b = propia_;
+  // El canal en que está la radio de verdad, para que un vecino que busca sepa adónde ir
+  b.canal = canalDeLaRadio();
+  const size_t largo = sp::armarBaliza(b, trama);
   ponerTasa(tasaBalizas_);
   if (esp_now_send(DIFUSION, trama, largo) == ESP_OK) {
     enviadas_++;
@@ -177,20 +184,51 @@ void VecinosEspNow::enviarBaliza() {
   }
 }
 
+// Se busca a los vecinos en otros canales solo con el STA sin conectar, sin el WiFi ocupando la radio y sin un mensaje
+// a medias
+bool VecinosEspNow::puedeBuscar() const {
+  return busqueda_ && busquedaPermitida_ && !silencio_ && !emisor_.ocupado() && WiFi.status() != WL_CONNECTED;
+}
+
+// Conectada, el del AP (cambiarCanal ya lo apuntó, pero manda el router); si no, el que se le puso
+uint8_t VecinosEspNow::canalDeLaRadio() const {
+  return WiFi.status() == WL_CONNECTED ? static_cast<uint8_t>(WiFi.channel()) : canal_;
+}
+
+void VecinosEspNow::saltar(uint8_t canal) {
+  canal_ = canal;
+  fijarCanal();
+  programarSiguiente(millis(), true);  // la baliza sale enseguida: un vecino de ese canal también nos oye
+}
+
 void VecinosEspNow::atender() {
   if (!iniciado_ || pausado_) return;
   const uint32_t ahora = millis();
+  const bool puede = puedeBuscar();
+  const uint8_t aqui = canalDeLaRadio();
 
   Recibida r;
   while (xQueueReceive(cola_, &r, 0) == pdTRUE) {
     sp::Baliza b;
-    if (!sp::leerBaliza(r.datos, sp::TAM_BALIZA, b)) continue;
+    if (!sp::leerBaliza(r.datos, r.largo, b)) continue;
     if (b.validador == propia_.validador) continue;  // un bus con nuestro mismo número: no es un vecino
+    if (b.canal && b.canal != aqui) {
+      // Su emisor está en otro canal y se oyó por el solape entre canales contiguos: no es un vecino con el que se
+      // pueda hablar (a sus fragmentos les faltaría alcance), pero dice adónde ir
+      const uint8_t c = buscador_.pista(ahora, aqui, b.canal, tabla_.cantidad(), puede);
+      if (c) {
+        anotar("ESP-NOW: baliza del " + String(b.validador) + " (canal " + String(c) + ") oída desde el canal " +
+               String(aqui) + "; se pasa al " + String(c));
+        saltar(c);
+        break;  // lo que quede en la cola se oyó en el canal anterior
+      }
+      continue;
+    }
     const bool nuevo = tabla_.actualizar(r.mac, b, ahora) == TablaVecinos::Cambio::NUEVO;
     if (nuevo) {
-      anotar("ESP-NOW: vecino " + String(b.validador) + " (" + macTexto(r.mac) + ") detectado; pendientes " +
-             String(b.pendientes) + ", ajenos " + String(b.ajenos) + ", listas v" + String(b.versionListas) +
-             ". Vecinos: " + String(tabla_.cantidad()));
+      anotar("ESP-NOW: vecino " + String(b.validador) + " (" + macTexto(r.mac) + ") detectado en el canal " +
+             String(canal_) + "; pendientes " + String(b.pendientes) + ", ajenos " + String(b.ajenos) +
+             ", listas v" + String(b.versionListas) + ". Vecinos: " + String(tabla_.cantidad()));
     }
   }
 
@@ -201,6 +239,14 @@ void VecinosEspNow::atender() {
     anotar("ESP-NOW: vecino " + String(perdidos[i].baliza.validador) + " (" + macTexto(perdidos[i].mac) +
            ") perdido: sin balizas desde hace " + String(TablaVecinos::CADUCIDAD_MS / 1000) + " s. Vecinos: " +
            String(tabla_.cantidad()));
+  }
+
+  if (busqueda_) {
+    const bool antes = buscador_.buscando();
+    const uint8_t c = buscador_.atender(ahora, canal_, tabla_.cantidad(), puede);
+    if (!antes && buscador_.buscando())
+      anotar("ESP-NOW: sin vecinos en el canal " + String(canal_) + "; si no aparece ninguno se buscan en los demás");
+    if (c) saltar(c);
   }
 
   atenderRecepcion(ahora);

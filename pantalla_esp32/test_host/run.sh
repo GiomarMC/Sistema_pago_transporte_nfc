@@ -18,6 +18,10 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
     lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp test_host/test_vecinos.cpp \
     -o /tmp/subepe-m8-test-vecinos
 /tmp/subepe-m8-test-vecinos
+# ESP-NOW sin WiFi: búsqueda del canal de los vecinos (recorrido barajado, pausa por los escaneos del WiFi, simulación)
+g++ -std=c++17 -Wall -Wextra -Werror -Ilib/Enlaces lib/Enlaces/BuscadorCanal.cpp test_host/test_buscador_canal.cpp \
+    -o /tmp/subepe-m8-test-buscador
+/tmp/subepe-m8-test-buscador
 g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
     lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp lib/Enlaces/EmisorFragmentos.cpp \
     test_host/test_emisor.cpp -o /tmp/subepe-m8-test-emisor
