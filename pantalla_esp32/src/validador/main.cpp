@@ -32,15 +32,40 @@
 #include <rom/ets_sys.h>
 #include <string.h>
 
+#include <CanalMqtt.h>
+
+#include <memory>
+
 #include "almacen.h"
+#include "almacen_sync_binario.h"
+#include "clave_servidor.h"
+#include "gestor_enlaces.h"
 #include "portal.h"
 #include "raices_tls.h"
+#include "secretos.h"
 #include "sincronizador.h"
+#include "sincronizador_v2.h"
 
 // Último paso en que entró el programa. Si el watchdog salta, dice dónde se quedó atascado
 // (la traza de la pila que imprime el sistema no sirve: es la del propio watchdog).
 static const char *volatile pasoActual = "arranque";
+#ifdef M15_MEDIR_LOOP
+// Al medir el loop también se anota qué paso fue el más largo (el que va desde que se marca hasta el siguiente PASO)
+static uint32_t pasoDesdeUs = 0, pasoMaxUs = 0;
+static const char *pasoMaxNombre = "";
+static void marcarPaso(const char *texto) {
+  const uint32_t ahora = micros();
+  if (pasoDesdeUs && ahora - pasoDesdeUs > pasoMaxUs) {
+    pasoMaxUs = ahora - pasoDesdeUs;
+    pasoMaxNombre = pasoActual;
+  }
+  pasoDesdeUs = ahora;
+  pasoActual = texto;
+}
+#define PASO(texto) marcarPaso(texto)
+#else
 #define PASO(texto) (pasoActual = (texto))
+#endif
 extern "C" void esp_task_wdt_isr_user_handler(void) {
   ets_printf("\n#WATCHDOG: el programa se bloqueó en el paso: %s\n", pasoActual);
 }
@@ -73,6 +98,22 @@ const std::vector<RedWifi> &redesGuardadas() { return almacen.redes(); }
 EnlaceWifi enlaceWifi(redesGuardadas, log, RAICES_TLS);
 Sincronizador sincronizador(almacen, log, enlaceWifi);
 PortalWifi portal(almacen, log);
+Secretos secretos;
+
+// --- Modo sync=v2 (M15): SincronizadorV2 + GestorEnlaces sobre CanalMqtt. Solo si config.txt lo pide Y están las
+// claves en la NVS; si no, sigue el v1. Los objetos son grandes (SincronizadorV2 lleva ~9 KB de búferes): van en
+// el montón, nunca en la pila de loop().
+constexpr uint32_t VERSION_FIRMWARE = 20261121;  // AAAAMMDD, para el HOLA
+struct SyncV2 {
+  uint8_t claveHmac[Secretos::TAM_CLAVE_HMAC];
+  std::unique_ptr<CanalMqtt> canal;
+  std::unique_ptr<GestorEnlaces> gestor;
+  std::unique_ptr<AlmacenSyncBinario> almacenSync;
+  std::unique_ptr<SincronizadorV2> sinc;
+  String estado;  // lo que se ve en la pantalla de espera
+  uint32_t horaVista = 0;
+};
+std::unique_ptr<SyncV2> v2;
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
 uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
 
@@ -84,8 +125,9 @@ struct MedirLoop {
     const uint32_t duracion = micros() - inicio;
     if (duracion > maximoUs) maximoUs = duracion;
     if (millis() - ultimoReporte >= 10000) {
-      Serial.println("# M15 loop_max_us=" + String(maximoUs));
+      Serial.println("# M15 loop_max_us=" + String(maximoUs) + " paso_max_us=" + String(pasoMaxUs) + " (" + pasoMaxNombre + ")");
       maximoUs = 0;
+      pasoMaxUs = 0;
       ultimoReporte = millis();
     }
   }
@@ -232,6 +274,10 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
               abono ? "Recarga +" + soles(abono) : "");
 }
 
+// El estado de la sincronización para la pantalla de espera ("WiFi OK", "Sin WiFi"...)
+const String &estadoSync() { return v2 ? v2->estado : sincronizador.estado(); }
+uint32_t horaDelServidor() { return v2 ? v2->sinc->horaServidor() : sincronizador.horaServidor(); }
+
 void pantallaEspera() {
   const bool wifiLista = enlaceWifi.estado() == EstadoEnlace::Listo;
   ui::estadoCanal(wifiLista ? "W" : "-", enlaceWifi.senal(),
@@ -245,13 +291,38 @@ void pantallaEspera() {
   } else if (!ahoraUnix()) {
     ui::espera("Bus " + String(almacen.validador()) + "  Sin hora", "Esperando el WiFi");
   } else {
-    const String &wifi = sincronizador.estado();
+    const String &wifi = estadoSync();
     ui::espera("Bus " + String(almacen.validador()) + (wifi.length() ? "  " + wifi : ""),
                "Sin subir: " + String(almacen.pendientes()));
   }
 }
 
-void guardarConfig(const String &config) {
+// Las claves del modo v2 (clave_hmac, mqtt_clave) van a la NVS, no a la microSD: se sacan de la configuración antes
+// de pasarla al Almacen, y no se imprimen
+String separarSecretos(const String &config) {
+  String resto;
+  int inicio = 0;
+  while (inicio <= (int)config.length()) {
+    int fin = config.indexOf(';', inicio);
+    if (fin < 0) fin = config.length();
+    const String par = config.substring(inicio, fin);
+    if (par.startsWith("clave_hmac=")) {
+      log(secretos.guardarClaveHmacHex(par.substring(11)) ? "Clave HMAC guardada en la NVS"
+                                                          : "ERROR: clave_hmac no válida o no se pudo guardar");
+    } else if (par.startsWith("mqtt_clave=")) {
+      log(secretos.guardarClaveMqtt(par.substring(11)) ? "Contraseña MQTT guardada en la NVS"
+                                                       : "ERROR: no se pudo guardar la contraseña MQTT");
+    } else if (par.length()) {
+      if (resto.length()) resto += ";";
+      resto += par;
+    }
+    inicio = fin + 1;
+  }
+  return resto;
+}
+
+void guardarConfig(const String &configRecibida) {
+  const String config = separarSecretos(configRecibida);
   log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
                                     : "ERROR: no se pudo guardar la configuración");
 }
@@ -271,7 +342,7 @@ void atenderPuente() {
     return;
   }
   if (config.length()) guardarConfig(config);
-  if (!sincronizador.horaServidor()) {  // la del servidor tiene preferencia
+  if (!horaDelServidor()) {  // la del servidor tiene preferencia
     const uint32_t h = puente.horaUnix();
     if (h) {
       baseUnix = h;
@@ -292,13 +363,88 @@ void iniciarLector() {
   ultimoIntentoLector = millis();
 }
 
-void comprobarModoSync() {
-  static String modoAvisado;
+// El host del broker MQTT: mqtt_servidor de config.txt o, si no, el del servidor v1 ("https://host[:puerto]/...")
+String hostMqtt() {
+  String h = almacen.config("mqtt_servidor");
+  if (h.length()) return h;
+  h = almacen.config("servidor");
+  const int a = h.indexOf("://");
+  if (a >= 0) h = h.substring(a + 3);
+  int fin = 0;
+  while (fin < (int)h.length() && h[fin] != ':' && h[fin] != '/') fin++;
+  return h.substring(0, fin);
+}
+
+// Si config.txt pide sync=v2, arma el sincronizador v2. Sin las claves o sin host, avisa y se queda en v1.
+void iniciarSyncV2() {
   const String pedido = almacen.config("sync");
-  if (pedido == modoAvisado) return;
-  modoAvisado = pedido;
-  if (pedido == "v2") log("sync=v2 aún no disponible: falta SincronizadorV2 y los enlaces; se mantiene v1");
-  else if (pedido.length() && pedido != "v1") log("sync desconocido; se mantiene v1");
+  if (pedido.length() && pedido != "v1" && pedido != "v2") log("sync desconocido; se mantiene v1");
+  if (pedido != "v2") return;
+  if (!almacen.listo() || !almacen.configurado() || !almacen.modoV2()) return;
+  std::unique_ptr<SyncV2> nuevo(new SyncV2());
+  const String clave = secretos.claveMqtt(), host = hostMqtt();
+  if (!secretos.claveHmac(nuevo->claveHmac)) {
+    log("sync=v2: falta la clave HMAC en la NVS (puente_nfc.py --configurar --clave-hmac); se mantiene v1");
+    return;
+  }
+  if (!clave.length() || !host.length()) {
+    log("sync=v2: falta la contraseña MQTT o el servidor (--mqtt-clave, --mqtt-servidor); se mantiene v1");
+    return;
+  }
+  nuevo->canal.reset(new CanalMqtt(enlaceWifi, host.c_str(), almacen.validador(), clave.c_str()));
+  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, *nuevo->canal));
+  nuevo->almacenSync.reset(
+      new AlmacenSyncBinario(almacen.cola(), almacen.estado(), almacen.paquetesAjenos(), almacen.aplicador(), ahoraUnix));
+  ConfigSyncV2 c;
+  c.validador = almacen.validador();
+  c.claveHmac = nuevo->claveHmac;
+  c.clavePublicaServidor = CLAVE_SERVIDOR;
+  c.versionFirmware = VERSION_FIRMWARE;
+  c.ahoraUnix = ahoraUnix;
+  nuevo->sinc.reset(new SincronizadorV2(*nuevo->almacenSync, c));
+  nuevo->gestor->iniciar();
+  v2 = std::move(nuevo);
+  log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()));
+}
+
+// Un turno de la sincronización v2. Solo se llama con el lector libre (sin tarjeta delante): conectar con el broker
+// (TLS) bloquea un par de segundos, y paso() hace una operación en la microSD.
+void servicioSyncV2() {
+  if (!v2) return;
+  const uint32_t ahora = millis();
+  v2->gestor->atender(ahora, false);
+  CanalPaquetes *canal = v2->gestor->activo();
+  uint32_t tx = 0, rx = 0;
+  if (almacen.listo()) almacen.consumo().bytesHoy(tx, rx);
+  v2->sinc->telemetria(enlaceWifi.senal(), tx, rx);
+  v2->sinc->atender(canal, ahora);
+  if (v2->sinc->horaServidor() && v2->sinc->horaServidor() != v2->horaVista) {
+    v2->horaVista = v2->sinc->horaServidor();
+    baseUnix = v2->sinc->horaServidor();
+    baseMillis = v2->sinc->millisHora();
+    pantallaEspera();
+  }
+  v2->almacenSync->paso(true);
+  const String estado = canal ? "WiFi OK" : (enlaceWifi.estado() == EstadoEnlace::Listo ? "Sin servidor" : "Sin WiFi");
+  if (estado != v2->estado) {
+    v2->estado = estado;
+    log("Sync v2: " + estado + (enlaceWifi.ultimoError().length() ? " (" + enlaceWifi.ultimoError() + ")" : ""));
+    pantallaEspera();
+  }
+  // Una línea de diagnóstico cada minuto: sirve para ver por qué no sube (broker, firmas, nada que subir...)
+  static uint32_t ultimoInforme = 0;
+  if (ahora - ultimoInforme >= 60000) {
+    ultimoInforme = ahora;
+    log("Sync v2: " + estado + ", HOLA enviados " + String(v2->sinc->holasEnviados()) + ", paquetes de eventos " +
+        String(v2->sinc->paquetesEventos()) + ", pendientes " + String(v2->sinc->pendientes()) + ", rechazados " +
+        String(v2->sinc->rechazados()) + " (" + sp::describir(v2->sinc->ultimoRechazo()) + "), hora del servidor " +
+        String(v2->sinc->horaServidor()));
+  }
+}
+
+void reiniciarWifi() {
+  if (v2) v2->canal->desconectar();
+  sincronizador.reiniciarWifi();
 }
 
 // Por qué arrancó la placa; un reinicio del watchdog o por caída de tensión se ve aquí
@@ -342,7 +488,7 @@ void setup() {
   PASO("setup: lector PN532");
   iniciarLector();
   PASO("setup: modo sync");
-  comprobarModoSync();
+  iniciarSyncV2();
   PASO("setup: pantalla de espera");
   pantallaEspera();
   PASO("setup: portal");
@@ -363,12 +509,11 @@ void loop() {
   MedirLoop medirLoop;
 #endif
   PASO("loop: portal");
-  comprobarModoSync();
   if (portal.activo()) {
     // Mientras se configura el WiFi no se cobra
     if (portal.atender()) {
       botonDesde = 0;
-      sincronizador.reiniciarWifi();
+      reiniciarWifi();
       pantallaEspera();
     } else if (puente.conectado() && millis() - ultimoSaludo > 3000) {
       // El puente reinicia la placa si deja de oírla: se le saluda de vez en cuando
@@ -388,7 +533,7 @@ void loop() {
   PASO("loop: ui::actualizar");
   ui::actualizar();
   PASO("loop: sincronizador");
-  if (sincronizador.atender()) {
+  if (!v2 && sincronizador.atender()) {  // con sync=v2 corre más abajo, con el lector libre
     if (sincronizador.horaServidor()) {  // la hora del servidor permite cobrar sin el puente
       baseUnix = sincronizador.horaServidor();
       baseMillis = sincronizador.millisHora();
@@ -396,8 +541,8 @@ void loop() {
     PASO("loop: pantalla tras sincronizar");
     pantallaEspera();  // actualiza "Sin subir"
   }
-  if (sincronizador.estado() != estadoMostrado) {
-    estadoMostrado = sincronizador.estado();
+  if (estadoSync() != estadoMostrado) {
+    estadoMostrado = estadoSync();
     PASO("loop: pantalla por cambio de estado");
     pantallaEspera();
   }
@@ -427,6 +572,8 @@ void loop() {
   atenderPuente();
 
   if (!lector.conectado()) {
+    PASO("loop: sync v2 (sin lector)");
+    servicioSyncV2();  // sin lector no hay tarjeta que esperar
     if (millis() - ultimoIntentoLector > 3000) {
       PASO("loop: reintento del lector PN532");
       iniciarLector();
@@ -449,8 +596,9 @@ void loop() {
       log("ERROR: el PN532 dejó de responder");
       pantallaEspera();
     }
-    PASO("loop: mantenimiento de la microSD");
-    almacen.mantenimiento();  // sin tarjeta delante: un paso de lo que haya pendiente (compactar la cola)
+    PASO("loop: sync v2 y mantenimiento de la microSD");
+    servicioSyncV2();         // sin tarjeta delante: conectar, intercambiar paquetes y un paso de la microSD
+    almacen.mantenimiento();  // un paso de lo que haya pendiente (compactar la cola)
     return;
   }
 

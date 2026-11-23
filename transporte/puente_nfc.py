@@ -176,6 +176,16 @@ def main():
     p.add_argument("--servidor", help="URL del servidor vista desde la ESP32, p. ej. "
                                       "https://subepe.app (por defecto, la de api.json). "
                                       "Sin --wifi, cambia solo servidor y token")
+    p.add_argument("--sync", choices=("v1", "v2"),
+                   help="con --configurar: protocolo de sincronización (v1 JSON/HTTP por defecto; "
+                        "v2 paquetes C1 por MQTT, necesita --clave-hmac y --mqtt-clave la primera vez)")
+    p.add_argument("--clave-hmac", help="con --configurar: clave HMAC del validador (64 hex; "
+                                        "manage.py clave_validador N). Se guarda en la NVS de la ESP32, "
+                                        "no en la microSD")
+    p.add_argument("--mqtt-clave", help="con --configurar: contraseña MQTT del validador "
+                                        "(manage.py clave_validador N --mqtt). Se guarda en la NVS")
+    p.add_argument("--mqtt-servidor", help="con --configurar: nombre del broker MQTT (por defecto, "
+                                           "el del servidor)")
     p.add_argument("--detalle", action="store_true", help="mostrar cada comando")
     p.add_argument("--simular", action="store_true",
                    help="probar la ESP32 con tarjetas virtuales (sin ACR122U); ver simular_tarjetas.py")
@@ -200,6 +210,16 @@ def main():
             pares.update(servidor=args.servidor, token=api_cliente.token_validador(args.validador))
             print(f"La ESP32 sincronizará con {args.servidor} (token de api.json, "
                   f"servidor {api_cliente._conf()['url']})")
+        if args.clave_hmac:
+            if len(args.clave_hmac) != 64 or any(c not in "0123456789abcdefABCDEF" for c in args.clave_hmac):
+                p.error("--clave-hmac son 64 caracteres hexadecimales")
+            pares["clave_hmac"] = args.clave_hmac.lower()
+        if args.mqtt_clave:
+            pares["mqtt_clave"] = args.mqtt_clave
+        if args.mqtt_servidor:
+            pares["mqtt_servidor"] = args.mqtt_servidor
+        if args.sync:
+            pares["sync"] = args.sync
         for clave, valor in pares.items():
             valor = str(valor)
             if not valor.isascii() or any(c in valor for c in ";\r\n"):

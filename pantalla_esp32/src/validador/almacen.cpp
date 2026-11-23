@@ -106,6 +106,8 @@ void Almacen::cargarDatos() {
     if (sp > 0) ultimaOp_[l.substring(0, sp).toInt()] = l.substring(sp + 1).toInt();
   });
   cargarListas();
+  v2_ = config("sync") == "v2";
+  if (v2_ && !listaNegraBin_.iniciar()) Serial.println("microSD: sin lista negra binaria todavía (arranca vacía)");
   cargarRedes();
   // Sin ellos el validador sigue cobrando: solo no puede guardar paquetes de otros buses
   if (!ajenos_.iniciar()) Serial.println("AVISO: no se pudo preparar /ajenos en la microSD");
@@ -181,7 +183,10 @@ bool Almacen::guardarConfig(const String &pares) {
   return configurado();
 }
 
-bool Almacen::bloqueada(uint32_t idTarjeta) const { return listaNegra_.count(idTarjeta) > 0; }
+bool Almacen::bloqueada(uint32_t idTarjeta) {
+  if (v2_) return listaNegraBin_.bloqueada(idTarjeta);  // ~36 ms en la microSD a 4 MHz; los urgentes van en RAM
+  return listaNegra_.count(idTarjeta) > 0;
+}
 
 bool Almacen::tarifa(uint8_t codigo, Tarifa &t) const {
   if (tarifasBin_.cantidad() == 0) {  // sin sincronizar todavía: las de siempre
