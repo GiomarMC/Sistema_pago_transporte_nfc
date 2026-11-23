@@ -54,6 +54,16 @@ uint16_t pendientesActuales = 0;
 uint32_t volverAEsperaEn = 0;   // 0 = la pantalla de espera ya está dibujada
 bool informacionFija = false;   // pantalla de información: no se sustituye sola
 
+// Indicador de sincronización: circulito de radio 3 que gira (le falta un cuarto) en el bloque de 8x8 píxeles de la
+// barra superior que va de x=88 a 95, libre entre las ondas del símbolo de la tarjeta y "P:n". Se redibuja solo ese
+// bloque (updateDisplayArea): por I2C son unos bytes, no la pantalla entera.
+constexpr uint8_t GIRO_BLOQUE_X = 11, GIRO_BLOQUE_Y = 0;  // en bloques de 8 px
+constexpr int GIRO_CX = 91, GIRO_CY = 4, GIRO_R = 3;
+constexpr uint32_t GIRO_PASO_MS = 200;
+bool giroActivo = false;
+uint8_t giroFase = 0;
+uint32_t giroSiguienteMs = 0;
+
 // Escribe `texto` con su borde superior en `y`, centrado entre `x0` y `x1`, con la
 // fuente más grande de la lista en la que cabe (si en ninguna, se recorta con la
 // más pequeña). Devuelve el alto de la fuente usada.
@@ -100,6 +110,24 @@ void icono(char tipo, int x, int y, uint8_t color) {
   pantalla.setDrawColor(1);
 }
 
+bool enEspera() { return oledLista && volverAEsperaEn == 0 && !informacionFija; }
+
+void dibujarGiro() {
+  pantalla.setDrawColor(0);
+  pantalla.drawBox(GIRO_BLOQUE_X * 8, GIRO_BLOQUE_Y * 8, 8, 8);
+  pantalla.setDrawColor(1);
+  if (!giroActivo) return;
+  static const uint8_t CUARTOS[4] = {U8G2_DRAW_UPPER_RIGHT, U8G2_DRAW_LOWER_RIGHT, U8G2_DRAW_LOWER_LEFT,
+                                     U8G2_DRAW_UPPER_LEFT};
+  for (uint8_t i = 0; i < 4; i++)
+    if (i != giroFase) pantalla.drawCircle(GIRO_CX, GIRO_CY, GIRO_R, CUARTOS[i]);
+}
+
+void enviarGiro() {
+  dibujarGiro();
+  pantalla.updateDisplayArea(GIRO_BLOQUE_X, GIRO_BLOQUE_Y, 1, 1);
+}
+
 void pantallaResultado(char tipo, const String lineas[3]) {
   const char *titulo = tipo == 'P' ? "PASE" : tipo == 'R' ? "RECHAZADA" : "ATENCION";
   pantalla.clearBuffer();
@@ -142,6 +170,7 @@ void pantallaEspera() {
   texto("Acerque su tarjeta", 25, FUENTES_ESPERA);
   texto(esperaLinea1, 41, FUENTES_PEQUENA);
   texto(esperaLinea2, 52, FUENTES_PEQUENA);
+  dibujarGiro();
   pantalla.sendBuffer();
   volverAEsperaEn = 0;
 }
@@ -196,6 +225,14 @@ void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
   pendientesActuales = pendientes;
 }
 
+void actividad(bool activa) {
+  if (activa == giroActivo) return;
+  giroActivo = activa;
+  giroFase = 0;
+  giroSiguienteMs = millis() + GIRO_PASO_MS;
+  if (enEspera()) enviarGiro();
+}
+
 void actualizar() {
   if (!oledLista) {
     if (millis() - ultimoReintentoMs >= 5000) {
@@ -206,6 +243,11 @@ void actualizar() {
   }
   if (!informacionFija && volverAEsperaEn != 0 && (int32_t)(millis() - volverAEsperaEn) >= 0) {
     pantallaEspera();
+  }
+  if (giroActivo && enEspera() && (int32_t)(millis() - giroSiguienteMs) >= 0) {
+    giroFase = (giroFase + 1) % 4;
+    giroSiguienteMs = millis() + GIRO_PASO_MS;
+    enviarGiro();
   }
 }
 

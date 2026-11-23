@@ -548,6 +548,29 @@ void servicioSyncV2() {
   }
 }
 
+// El circulito que gira en la pantalla de espera mientras se envían o reciben datos de la sincronización v2: paquetes
+// C1 con el servidor o con un vecino, PEDIDOs de ESP-NOW y un mensaje fragmentado en curso. Las balizas (cada 2 s) y
+// los keepalive de MQTT no cuentan: si no, giraría siempre. Se queda encendido un rato tras lo último para que se vea.
+void indicarActividad() {
+  static uint32_t firmaAnterior = 0, ultimaMs = 0;
+  if (!v2) return;
+  uint32_t firma = v2->sinc->holasEnviados() + v2->sinc->paquetesEventos() + v2->sinc->paquetesAjenos() +
+                   v2->sinc->reenvios() + v2->sinc->paquetesRecibidos();
+  bool enCurso = false;
+  if (v2->intercambio) {
+    const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
+    firma += c.pedidosListas + c.pedidosAcuses + c.pedidosAtendidos + c.eventosEntregados + c.listasEntregadas +
+             c.acusesEntregados;
+    enCurso = v2->vecinos->enviando();
+  }
+  const uint32_t ahora = millis();
+  if (firma != firmaAnterior || enCurso) {
+    firmaAnterior = firma;
+    ultimaMs = ahora;
+  }
+  ui::actividad(ultimaMs && ahora - ultimaMs < 1500);
+}
+
 // El portal necesita la radio y memoria libres para crear su red: antes de abrirlo se suelta la conexión MQTT/TLS
 // (sus búferes ocupan decenas de KB) y se pausa ESP-NOW. Al cerrarse, el gestor de enlaces los reanuda solo.
 void abrirPortal() {
@@ -657,6 +680,7 @@ void loop() {
   }
 
   PASO("loop: ui::actualizar");
+  indicarActividad();
   ui::actualizar();
   PASO("loop: sincronizador");
   if (!v2 && !wifiApagado && sincronizador.atender()) {  // con sync=v2 corre más abajo, con el lector libre

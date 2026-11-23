@@ -165,6 +165,7 @@ class SincronizadorV2 {
   uint32_t paquetesAjenos() const { return paquetesAjenos_; }
   uint32_t reenvios() const { return reenvios_; }
   uint32_t rechazados() const { return rechazados_; }
+  uint32_t paquetesRecibidos() const { return recibidos_; }  // del servidor o de un vecino, válidos o no
   uint32_t listasRechazadasPorFirma() const { return listasFirmaMala_; }
   sp::Motivo ultimoRechazo() const { return ultimoRechazo_; }
 
@@ -206,7 +207,7 @@ class SincronizadorV2 {
 
   uint32_t horaServidor_ = 0, millisHora_ = 0, horaCrudaMax_ = 0;
 
-  uint32_t holas_ = 0, paqueteEventos_ = 0, paquetesAjenos_ = 0, reenvios_ = 0, rechazados_ = 0;
+  uint32_t holas_ = 0, paqueteEventos_ = 0, paquetesAjenos_ = 0, reenvios_ = 0, rechazados_ = 0, recibidos_ = 0;
   sp::Motivo ultimoRechazo_ = sp::Motivo::OK;
 
   // Búferes grandes dentro del objeto: mejor que la pila del loop

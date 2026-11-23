@@ -127,6 +127,7 @@ size_t SincronizadorV2::empaquetarEventos(uint32_t desdeId, uint8_t *buf, size_t
 }
 
 void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado) {
+  recibidos_++;
   // Un EVENTOS de otro bus (solo por un vecino): su firma HMAC es de ese bus y no se puede comprobar aquí; se guarda
   // para llevarlo al servidor, que sí la comprueba. Solo se mira que tenga la forma de un EVENTOS.
   if (relevado && largo >= sp::TAM_CABECERA && datos[0] == 'S' && datos[1] == 'P' && datos[3] == sp::EVENTOS) {
