@@ -35,6 +35,7 @@
 #include <string.h>
 
 #include <CanalMqtt.h>
+#include <TareaFondo.h>
 
 #include <memory>
 
@@ -174,6 +175,7 @@ struct SyncV2 {
   uint32_t horaVista = 0;
 };
 std::unique_ptr<SyncV2> v2;
+TareaFondo tareaMqtt("mqtt");  // conecta MQTT/TLS sin parar loop() (#129)
 uint8_t canalEspNowConfigurado = 1;  // espnow_canal: el de ESP-NOW sin WiFi
 void alCanalDelWifi(uint8_t canal);  // más abajo, con el gestor ya creado
 bool puedeEscanearWifi();
@@ -525,7 +527,7 @@ void iniciarSyncV2() {
     log("sync=v2: falta la contraseña MQTT o el servidor (--mqtt-clave, --mqtt-servidor); se mantiene v1");
     return;
   }
-  nuevo->canal.reset(new CanalMqtt(enlaceWifi, host.c_str(), almacen.validador(), clave.c_str()));
+  nuevo->canal.reset(new CanalMqtt(enlaceWifi, host.c_str(), almacen.validador(), clave.c_str(), &tareaMqtt));
   // ESP-NOW entre buses (M8): opcional, config.txt espnow=on [espnow_canal=N]. Comparte la radio con el WiFi: con el
   // WiFi conectado a un AP en otro canal que espnow_canal se pausa (por defecto el canal 1)
   uint8_t canalEspNow = 1;
@@ -619,7 +621,9 @@ void servicioSyncV2() {
         String(v2->sinc->paquetesEventos()) + ", pendientes " + String(v2->sinc->pendientes()) + ", rechazados " +
         String(v2->sinc->rechazados()) + " (" + sp::describir(v2->sinc->ultimoRechazo()) + "), hora del servidor " +
         String(v2->sinc->horaServidor()) +
-        (enlaceWifi.estado() == EstadoEnlace::Listo ? ", WiFi en el canal " + String(WiFi.channel()) : String("")));
+        (enlaceWifi.estado() == EstadoEnlace::Listo ? ", WiFi en el canal " + String(WiFi.channel()) : String("")) +
+        ", última conexión MQTT " + String(v2->canal->ultimaConexionMs()) + " ms" +
+        (v2->canal->conectando() ? " (conectando)" : "") + ", pila libre de la tarea " + String(tareaMqtt.pilaLibre()) + " B");
     if (v2->intercambio) {
       const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
       log("ESP-NOW: canal " + String(v2->vecinos->canal()) +
@@ -670,6 +674,10 @@ void indicarActividad() {
 // (sus búferes ocupan decenas de KB) y se pausa ESP-NOW. Al cerrarse, el gestor de enlaces los reanuda solo.
 void abrirPortal() {
   if (v2) {
+    // Si está conectando en la otra tarea, se espera a que acabe (unos segundos como mucho: el TLS y el CONNECT tienen
+    // sus límites) para soltar ya sus búferes; si no, desconectar() lo dejaría para un atender() que no llega con el
+    // portal abierto
+    for (uint32_t desde = millis(); v2->canal->conectando() && millis() - desde < 20000;) delay(10);
     v2->canal->desconectar();
     if (v2->vecinos) v2->vecinos->pausar(true);
   }

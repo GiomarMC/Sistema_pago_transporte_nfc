@@ -75,6 +75,7 @@ class EnlaceWifi final : public Enlace {
   // está abierto al mismo destino. nullptr si el enlace no está Listo o falla.
   Client *abrir(const char *host, uint16_t puerto) override;
   void cerrar() override;
+  void prestarFlujo(bool prestado) override;
   uint32_t bytesTx() const override { return tx_; }
   uint32_t bytesRx() const override { return rx_; }
 
@@ -97,8 +98,9 @@ class EnlaceWifi final : public Enlace {
   // olvidarNombres(). IPAddress() si no la halla.
   IPAddress resolverLocal(const String &host);
   void olvidarNombres();
-  // Último fallo al abrir un flujo, para el registro ("" si no hubo)
-  const String &ultimoError() const { return ultimoError_; }
+  // Último fallo al abrir un flujo, para el registro ("" si no hubo). Con el flujo prestado lo está escribiendo otra
+  // tarea: no se lee y se devuelve "" (lo escribe abrir())
+  String ultimoError() const { return prestado_ ? String() : ultimoError_; }
 
  private:
   // Envuelve el cliente real para contar bytes sin que CanalMqtt lo sepa
@@ -133,6 +135,7 @@ class EnlaceWifi final : public Enlace {
   };
 
   Client *abrirCon(WiFiClient &cliente, bool tls, const char *host, uint16_t puerto);
+  void cerrarPropio();  // los cierres del propio enlace (red perdida, apagar, reiniciar): esperan si está prestado
   void prepararTls();
   void registrarEventos();
   void empezarEscaneo();
@@ -155,6 +158,8 @@ class EnlaceWifi final : public Enlace {
   bool tlsListo_ = false;
   String destino_;  // "tls|host:puerto" del flujo abierto, para reutilizarlo
   String ultimoError_;
+  // prestarFlujo(): solo lo cambia loop(); la otra tarea no toca estos dos
+  bool prestado_ = false, cierrePendiente_ = false;
 
   bool encendido_ = false, iniciado_ = false, conectado_ = false, mdnsIniciado_ = false;
   uint32_t inicioIntento_ = 0;
