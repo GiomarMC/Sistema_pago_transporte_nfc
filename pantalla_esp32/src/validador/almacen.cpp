@@ -105,6 +105,7 @@ void Almacen::cargarDatos() {
     int sp = l.indexOf(' ');
     if (sp > 0) ultimaOp_[l.substring(0, sp).toInt()] = l.substring(sp + 1).toInt();
   });
+  dudosos_.deTexto(leerArchivo("/cobros_dudosos.txt").c_str());
   cargarListas();
   v2_ = config("sync") == "v2";
   if (v2_ && !listaNegraBin_.iniciar()) Serial.println("microSD: sin lista negra binaria todavía (arranca vacía)");
@@ -216,6 +217,24 @@ void Almacen::recargasPendientes(uint32_t idCuenta, uint32_t ultima, int32_t &to
 bool Almacen::existeViaje(uint32_t idTarjeta, uint16_t operacion) {
   auto it = ultimaOp_.find(idTarjeta);
   return it != ultimaOp_.end() && it->second >= operacion;
+}
+
+void Almacen::guardarCobrosDudosos() {
+  char texto[CobrosDudosos::MAXIMO * 80];
+  dudosos_.aTexto(texto, sizeof(texto));
+  escribirArchivo("/cobros_dudosos.txt", texto);
+}
+
+void Almacen::anotarCobroDudoso(const CobroDudoso &c) {
+  dudosos_.anotar(c);
+  guardarCobrosDudosos();
+}
+
+CobrosDudosos::Resultado Almacen::resolverCobroDudoso(uint32_t idTarjeta, uint16_t operacion,
+                                                     uint16_t validadorTarjeta, CobroDudoso &c) {
+  const CobrosDudosos::Resultado r = dudosos_.resolver(idTarjeta, operacion, validadorTarjeta, validador_, c);
+  if (r != CobrosDudosos::Resultado::NINGUNO) guardarCobrosDudosos();
+  return r;
 }
 
 void Almacen::avisarCola(const char *texto) { Serial.printf("AVISO cola de eventos: %s\n", texto); }

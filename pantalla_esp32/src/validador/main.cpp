@@ -316,6 +316,30 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
     baseUnix += reg.fecha - ahora;
     ahora = reg.fecha;
   }
+  // Un cobro de este validador que se escribió sin poder comprobarlo (#237): el registro de la tarjeta dice si llegó
+  // a grabarse. Va antes del doble toque: así se recupera aunque hayan pasado más de 60 s
+  CobroDudoso dudoso;
+  switch (almacen.resolverCobroDudoso(cab.idTarjeta, reg.operacion, reg.validador, dudoso)) {
+    case CobrosDudosos::Resultado::GRABADO:
+      // Sin contador NFC: el de esta lectura es de otro uso de la tarjeta (y el servidor toma un contador repetido
+      // por un clon). Con la fecha del cobro si era la real; si era la estimada, la de ahora, que se corrige como
+      // cualquier otro evento
+      almacen.registrarViaje(dudoso.fechaReal ? dudoso.fecha : ahora, cab.idTarjeta, uidHex, dudoso.monto,
+                             dudoso.saldo, dudoso.operacion, sp::SIN_CONTADOR, dudoso.recargaHasta);
+      log("Cobro recuperado: la operación " + String(dudoso.operacion) + " de " + uidHex +
+          " sí se grabó en la tarjeta; viaje registrado");
+      break;
+    case CobrosDudosos::Resultado::INCIERTO:
+      // La tarjeta pasó por otro validador o punto antes de volver: no se sabe si aquel cobro se grabó. El servidor
+      // lo resuelve con los números de operación
+      almacen.registrarIncidencia(ahora, cab.idTarjeta, uidHex, "cobro dudoso op " + String(dudoso.operacion), false);
+      log("Cobro dudoso de " + uidHex + " (operación " + String(dudoso.operacion) +
+          ") sin resolver: la tarjeta ya va por la " + String(reg.operacion));
+      break;
+    default:
+      break;
+  }
+
   if (reg.validador == almacen.validador() && ahora >= reg.fecha && ahora - reg.fecha < MARGEN_DOBLE_TOQUE) {
     // Ya cobrado aquí hace un momento. Si la verificación de aquel cobro falló
     // (tarjeta retirada justo al final), el viaje se registra ahora.
@@ -342,10 +366,27 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   uint8_t datos[tt::TAM_REGISTRO], comprobacion[tt::TAM_REGISTRO];
   tt::codificarRegistro(nuevo, cab.idTarjeta, uid, lenUid, clave, datos);
   const uint8_t pagina = tt::PAG_REGISTRO[e.ranuraLibre()];
+  bool relecturaFalla = false;
+#ifdef PRUEBA_FALLA_RELECTURA
+  // Solo pruebas de banco (#237): la relectura de cada N cobros "falla" con la escritura ya hecha, como si la tarjeta
+  // se retirara justo al final
+  static uint32_t cobrosIntentados = 0;
+  relecturaFalla = ++cobrosIntentados % PRUEBA_FALLA_RELECTURA == 0;
+#endif
   if (!lector.escribir(pagina, datos, tt::TAM_REGISTRO / 4) ||
       !lector.leer(pagina, pagina + tt::TAM_REGISTRO / 4 - 1, comprobacion) ||
-      memcmp(datos, comprobacion, tt::TAM_REGISTRO) != 0) {
-    // El registro anterior sigue intacto: no se cobró
+      memcmp(datos, comprobacion, tt::TAM_REGISTRO) != 0 || relecturaFalla) {
+    // No se sabe si la escritura terminó (puede que solo fallara la relectura). Se anota y, en la próxima lectura de
+    // esta tarjeta, su registro dirá si quedó cobrada (#237). Si no terminó, el registro anterior sigue válido
+    CobroDudoso d;
+    d.idTarjeta = cab.idTarjeta;
+    d.operacion = nuevo.operacion;
+    d.fecha = ahora;
+    d.fechaReal = horaReal;
+    d.monto = t.precio;
+    d.saldo = nuevo.saldo;
+    d.recargaHasta = abono ? hasta : 0;
+    almacen.anotarCobroDudoso(d);
     return aviso("Acerque de nuevo", "Lectura interrumpida");
   }
 
@@ -675,6 +716,9 @@ void setup() {
   registrarMotivoReinicio();
 #ifdef MARGEN_DOBLE_TOQUE_PRUEBA
   log("PRUEBA DE BANCO: margen de doble toque de " + String(MARGEN_DOBLE_TOQUE) + " s (no usar en servicio)");
+#endif
+#ifdef PRUEBA_FALLA_RELECTURA
+  log("PRUEBA DE BANCO: falla la relectura de 1 de cada " + String(PRUEBA_FALLA_RELECTURA) + " cobros (no usar en servicio)");
 #endif
   // La configuración del WiFi (red, canal, protocolo) no se guarda en la flash: las redes están en la microSD y
   // WiFi.begin() se llama en cada intento de conexión (con una red inestable, cientos de escrituras por noche); y lo

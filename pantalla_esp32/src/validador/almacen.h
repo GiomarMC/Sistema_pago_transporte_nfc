@@ -27,6 +27,8 @@
 #include <Recargas.h>
 #include <TarifasGuardadas.h>
 
+#include "cobros_dudosos.h"
+
 struct Tarifa {
   String nombre;
   int32_t precio;  // céntimos
@@ -67,6 +69,11 @@ class Almacen {
   bool tarifa(uint8_t codigo, Tarifa &t) const;
   uint32_t ultimaOperacion(uint32_t idTarjeta) const;
   bool existeViaje(uint32_t idTarjeta, uint16_t operacion);
+  // Cobros escritos en la tarjeta sin poder comprobarlos (#237), guardados en /cobros_dudosos.txt
+  void anotarCobroDudoso(const CobroDudoso &c);
+  // La tarjeta se volvió a leer: qué pasó con su cobro dudoso, si tenía uno (ver CobrosDudosos::resolver)
+  CobrosDudosos::Resultado resolverCobroDudoso(uint32_t idTarjeta, uint16_t operacion, uint16_t validadorTarjeta,
+                                               CobroDudoso &c);
   // Recargas correlativas de la cuenta posteriores a `ultima`: suma y hasta qué seq
   void recargasPendientes(uint32_t idCuenta, uint32_t ultima, int32_t &total, uint32_t &hasta) const;
 
@@ -130,6 +137,8 @@ class Almacen {
   bool tieneClave_ = false;
   std::map<String, String> config_;
   std::map<uint32_t, uint32_t> ultimaOp_;
+  CobrosDudosos dudosos_;
+  void guardarCobrosDudosos();
   std::map<uint32_t, bool> listaNegra_;
   ArchivosSD archivos_;  // la microSD ya montada, vista como SistemaArchivos (raíz)
   EstadoPersistente estado_;
