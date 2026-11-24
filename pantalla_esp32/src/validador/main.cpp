@@ -77,7 +77,13 @@ extern "C" void esp_task_wdt_isr_user_handler(void) {
 
 namespace {
 
-constexpr uint32_t MARGEN_DOBLE_TOQUE = 60;            // s: otro toque aquí no se cobra
+// s: otro toque aquí no se cobra. Solo para pruebas de banco (M8-04: 30 viajes con una sola tarjeta) se puede bajar al
+// compilar: PLATFORMIO_BUILD_FLAGS="-DMARGEN_DOBLE_TOQUE_PRUEBA=3". Nunca en un validador en servicio
+#ifdef MARGEN_DOBLE_TOQUE_PRUEBA
+constexpr uint32_t MARGEN_DOBLE_TOQUE = MARGEN_DOBLE_TOQUE_PRUEBA;
+#else
+constexpr uint32_t MARGEN_DOBLE_TOQUE = 60;
+#endif
 constexpr uint8_t PIN_BOOT = 0;                        // botón BOOT de la placa
 // Si el bucle principal no avisa en este tiempo, la placa se reinicia sola e imprime
 // dónde estaba atascada. Lo más largo que hace el validador sin dar una vuelta es una
@@ -667,6 +673,9 @@ void setup() {
   Serial.begin(115200);
   activarWatchdog();  // desde el principio: también vigila un cuelgue durante setup()
   registrarMotivoReinicio();
+#ifdef MARGEN_DOBLE_TOQUE_PRUEBA
+  log("PRUEBA DE BANCO: margen de doble toque de " + String(MARGEN_DOBLE_TOQUE) + " s (no usar en servicio)");
+#endif
   // La configuración del WiFi (red, canal, protocolo) no se guarda en la flash: las redes están en la microSD y
   // WiFi.begin() se llama en cada intento de conexión (con una red inestable, cientos de escrituras por noche); y lo
   // guardado se cargaba con cualquier firmware (el largo alcance que dejó prueba_espnow escondía el portal)
