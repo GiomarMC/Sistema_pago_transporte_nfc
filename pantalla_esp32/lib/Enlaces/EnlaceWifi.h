@@ -88,6 +88,7 @@ class EnlaceWifi final : public Enlace {
   void reiniciar();
   void alElegirCanal(AvisoCanal aviso) { avisoCanal_ = aviso; }
   bool conectando() const { return intentando_; }  // hay un intento de conexión a un AP en curso
+  bool escaneando() const { return escaneando_; }  // la radio está recorriendo los canales buscando redes
   void permitirEscaneo(PuedeEscanear puede) { puedeEscanear_ = puede; }
   // Nombre con que este validador se anuncia por mDNS (p. ej. "validador-107"); hay que
   // fijarlo antes de la primera búsqueda

@@ -489,6 +489,8 @@ void iniciarSyncV2() {
     // Por la interfaz AP y en largo alcance: balizas y reintentos en LR a 250 kbit/s (llegan más lejos), el primer
     // intento de cada fragmento a 1 Mbit/s (más rápido de cerca). En la AP no toca la conexión WiFi de la STA
     nuevo->vecinos->usarInterfazAp();
+    // Sin WiFi, buscar a los vecinos en otros canales si en espnow_canal no hay ninguno (espnow_busqueda=off lo quita)
+    nuevo->vecinos->buscarVecinos(almacen.config("espnow_busqueda") != "off");
     nuevo->radio.reset(new RadioEspNow(*nuevo->vecinos));
   }
   const bool soloVecinos = almacen.config("subida") == "vecinos";
@@ -536,7 +538,10 @@ void servicioSyncV2() {
   if (!wifiApagado) {
     // El canal del AP al que está conectado el WiFi decide si ESP-NOW se pausa (solo anda en su canal)
     const uint8_t canalWifi = enlaceWifi.estado() == EstadoEnlace::Listo ? WiFi.channel() : v2->gestor->canalEspNow();
-    if (v2->vecinos) v2->vecinos->silenciar(enlaceWifi.conectando());
+    if (v2->vecinos) {
+      v2->vecinos->silenciar(enlaceWifi.conectando());
+      v2->vecinos->permitirBusqueda(!enlaceWifi.conectando() && !enlaceWifi.escaneando());
+    }
     v2->gestor->atender(ahora, false, canalWifi);
     canal = v2->gestor->activo();
   } else if (v2->vecinos) {
@@ -570,7 +575,9 @@ void servicioSyncV2() {
         (enlaceWifi.estado() == EstadoEnlace::Listo ? ", WiFi en el canal " + String(WiFi.channel()) : String("")));
     if (v2->intercambio) {
       const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
-      log("ESP-NOW: vecinos " + String(v2->vecinos->cantidad()) + ", pedidos de listas " + String(c.pedidosListas) +
+      log("ESP-NOW: canal " + String(v2->vecinos->canal()) +
+          (v2->vecinos->buscandoCanal() ? " (buscando vecinos)" : "") + ", saltos de canal " +
+          String(v2->vecinos->saltosDeCanal()) + ", vecinos " + String(v2->vecinos->cantidad()) + ", pedidos de listas " + String(c.pedidosListas) +
           ", de acuses " + String(c.pedidosAcuses) + ", atendidos " + String(c.pedidosAtendidos) + ", EVENTOS entregados " +
           String(c.eventosEntregados) + " (abortados " + String(c.eventosAbortados) + "), LISTAS " + String(c.listasEntregadas) + ", ACUSES " + String(c.acusesEntregados) +
           ", recibidos " + String(c.recibidos) + ", ajenos de vecinos " + String(v2->sinc->ajenosRecibidos()) + ", pedidos de hora " + String(c.pedidosHora) +

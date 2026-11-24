@@ -34,7 +34,8 @@ size_t armarBaliza(const Baliza &b, uint8_t trama[TAM_TRAMA_MAXIMO]) {
   escribe16(trama + 14, b.pendientes);
   escribe16(trama + 16, b.ajenos);
   trama[18] = b.flags;
-  return TAM_BALIZA;
+  trama[19] = b.canal;
+  return TAM_BALIZA_CON_CANAL;
 }
 
 bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &b) {
@@ -49,6 +50,7 @@ bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &b) {
   b.pendientes = lee16(trama + 14);
   b.ajenos = lee16(trama + 16);
   b.flags = trama[18];
+  b.canal = largo >= TAM_BALIZA_CON_CANAL ? trama[19] : 0;
   return true;
 }
 

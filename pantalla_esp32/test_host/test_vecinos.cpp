@@ -29,19 +29,23 @@ void formatoDeLaBaliza() {
   b.pendientes = 0x0A09;
   b.ajenos = 0x0C0B;
   b.flags = sp::BALIZA_CON_SERVIDOR | sp::BALIZA_ACEPTA_AJENOS;
+  b.canal = 6;
 
   uint8_t trama[sp::TAM_TRAMA_MAXIMO] = {};
-  assert(sp::armarBaliza(b, trama) == sp::TAM_BALIZA);
-  // Bytes exactos del contrato C1 5.10, little-endian
-  const uint8_t esperada[sp::TAM_BALIZA] = {'E', 'N', 1, 0, 0x07, 0x01, 0x01, 0x02, 0x03, 0x04,
-                                            0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x03};
-  assert(memcmp(trama, esperada, sp::TAM_BALIZA) == 0);
+  assert(sp::armarBaliza(b, trama) == sp::TAM_BALIZA_CON_CANAL);
+  // Bytes exactos del contrato C1 5.10, little-endian, y al final el canal del emisor
+  const uint8_t esperada[sp::TAM_BALIZA_CON_CANAL] = {'E', 'N', 1, 0, 0x07, 0x01, 0x01, 0x02, 0x03, 0x04,
+                                                      0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x03, 6};
+  assert(memcmp(trama, esperada, sp::TAM_BALIZA_CON_CANAL) == 0);
 
   sp::Baliza leida;
-  assert(sp::leerBaliza(trama, sp::TAM_BALIZA, leida));
+  assert(sp::leerBaliza(trama, sp::TAM_BALIZA_CON_CANAL, leida));
   assert(leida.validador == 263 && leida.versionListas == 0x04030201 &&
          leida.versionTarifas == 0x08070605 && leida.pendientes == 0x0A09 &&
-         leida.ajenos == 0x0C0B && leida.flags == 3);
+         leida.ajenos == 0x0C0B && leida.flags == 3 && leida.canal == 6);
+  // La de 19 B de un firmware anterior: se lee igual, con el canal desconocido
+  assert(sp::leerBaliza(trama, sp::TAM_BALIZA, leida));
+  assert(leida.validador == 263 && leida.flags == 3 && leida.canal == 0);
 
   // Bytes de más al final (una versión futura): se aceptan
   uint8_t larga[sp::TAM_BALIZA + 5];

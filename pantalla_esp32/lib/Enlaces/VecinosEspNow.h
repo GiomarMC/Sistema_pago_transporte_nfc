@@ -28,6 +28,7 @@
 
 #include <Fragmentos.h>
 
+#include "BuscadorCanal.h"
 #include "EmisorFragmentos.h"
 #include "TablaVecinos.h"
 #include "Vecinos.h"
@@ -70,6 +71,13 @@ class VecinosEspNow final : public Vecinos {
   // está medido es que transmitir en OTRO canal impide autenticar; en el mismo canal los rechazos medidos (motivo 2)
   // salen igual con ESP-NOW apagado
   void silenciar(bool si) { silencio_ = si; }
+  // Sin WiFi y sin vecinos, ESP-NOW busca a los vecinos en otros canales (BuscadorCanal) y se queda en el primero en
+  // que oiga a uno. Activa por defecto (config.txt espnow_busqueda=off la apaga). Con el STA conectado nunca salta.
+  void buscarVecinos(bool si) { busqueda_ = si; }
+  // En cada loop(): false mientras el WiFi se conecta o busca redes (la radio es suya); la búsqueda espera
+  void permitirBusqueda(bool si) { busquedaPermitida_ = si; }
+  bool buscandoCanal() const { return busqueda_ && buscador_.buscando(); }
+  uint32_t saltosDeCanal() const { return buscador_.saltos(); }
   void atender() override;                   // en cada loop(); no bloquea
   void pausar(bool si) override;
   size_t cantidad() const override { return tabla_.cantidad(); }
@@ -119,7 +127,8 @@ class VecinosEspNow final : public Vecinos {
  private:
   struct Recibida {
     uint8_t mac[6];
-    uint8_t datos[sp::TAM_BALIZA];
+    uint8_t largo;  // 19 (sin canal) o 20
+    uint8_t datos[sp::TAM_BALIZA_CON_CANAL];
   };
   struct TramaCruda {  // un fragmento tal como llegó, de la radio a atender()
     uint8_t mac[6];
@@ -143,6 +152,9 @@ class VecinosEspNow final : public Vecinos {
   void soltarDestino();
   void fijarCanal();
   void enviarBaliza();
+  bool puedeBuscar() const;
+  uint8_t canalDeLaRadio() const;
+  void saltar(uint8_t canal);  // la búsqueda pasa la radio a otro canal
   void programarSiguiente(uint32_t ahoraMs, bool primera);
   void anotar(const String &texto) const;
   static String macTexto(const uint8_t mac[6]);
@@ -162,6 +174,8 @@ class VecinosEspNow final : public Vecinos {
   void crearApOculto();
   void ponerProtocolos();
   uint32_t proximaMs_ = 0;
+  BuscadorCanal buscador_;
+  bool busqueda_ = true, busquedaPermitida_ = true;
   volatile uint32_t recibidas_ = 0, perdidasCola_ = 0;
   uint32_t enviadas_ = 0, erroresEnvio_ = 0;
   Tasa tasaDatos_ = Tasa::ESTANDAR, tasaReintentos_ = Tasa::ESTANDAR, tasaBalizas_ = Tasa::ESTANDAR;

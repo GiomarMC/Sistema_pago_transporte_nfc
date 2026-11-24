@@ -433,6 +433,9 @@ void setup() {
   propia.flags = sp::BALIZA_ACEPTA_AJENOS;
   vecinos.publicar(propia);
   registro("Prueba ESP-NOW: validador de prueba " + String(propia.validador));
+  // Las dos placas en el canal 1 fijo: en la prueba de alcance, al perder al vecino por distancia no debe irse a
+  // buscarlo a otro canal (al volver a acercarse estaría en otro y se mediría mal)
+  vecinos.buscarVecinos(false);
   vecinos.iniciar(1);
   configurarRadio();  // después de iniciar: la radio ya está en marcha
 }
