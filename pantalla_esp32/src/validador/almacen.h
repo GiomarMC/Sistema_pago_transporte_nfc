@@ -88,6 +88,7 @@ class Almacen {
   PaquetesFirmados &firmados() { return firmados_; }
   // Consumo de datos por canal y día (M3-06): de ahí salen bytesTxHoy y bytesRxHoy del HOLA
   ConsumoDatos &consumo() { return consumo_; }
+  uint32_t relojSd() const { return relojSd_; }
   // Los eventos y el estado en binario, para el sincronizador v2 (AlmacenSyncBinario)
   ColaEventos &cola() { return cola_; }
   EstadoPersistente &estado() { return estado_; }
@@ -131,6 +132,7 @@ class Almacen {
 
   uint8_t fallosCompactar_ = 0;  // la compactación se deja tras 3 fallos seguidos, hasta el siguiente acuse
   bool listo_ = false;
+  uint32_t relojSd_ = 0;  // Hz del bus de la microSD con que montó (20 MHz o, si no, 4 MHz)
   uint32_t ultimoIntentoMontaje_ = 0;
   uint16_t validador_ = 0;
   uint8_t clave_[32] = {0};

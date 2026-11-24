@@ -63,10 +63,26 @@ bool Almacen::montar() {
 #endif
   // Si un intento anterior falló, se suelta el bus y se vuelve a abrir: la tarjeta puede haber
   // quedado a mitad de una orden tras un reinicio brusco y solo contesta al volver a empezar
-  SD.end();
-  spiSD.end();
-  spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  return SD.begin(SD_CS, spiSD, 4000000);
+  //
+  // Reloj del bus (#51): primero a 20 MHz, el máximo que admite la microSD en SPI con los divisores de la ESP32. Con
+  // 50 000 tarjetas bloqueadas la consulta baja de 20-36 ms (a 4 MHz) a 6-19 ms según la tarjeta. Si a 20 MHz no
+  // monta (cables largos, tarjeta lenta) se vuelve a los 4 MHz de antes. -DSD_HZ=N al compilar fija uno solo.
+#ifdef SD_HZ
+  const uint32_t relojes[] = {SD_HZ};
+#else
+  const uint32_t relojes[] = {20000000, 4000000};
+#endif
+  for (uint32_t hz : relojes) {
+    SD.end();
+    spiSD.end();
+    spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+    if (SD.begin(SD_CS, spiSD, hz)) {
+      relojSd_ = hz;
+      Serial.printf("microSD: montada a %lu MHz\n", (unsigned long)(hz / 1000000));
+      return true;
+    }
+  }
+  return false;
 }
 
 bool Almacen::iniciar() {
@@ -185,7 +201,7 @@ bool Almacen::guardarConfig(const String &pares) {
 }
 
 bool Almacen::bloqueada(uint32_t idTarjeta) {
-  if (v2_) return listaNegraBin_.bloqueada(idTarjeta);  // ~36 ms en la microSD a 4 MHz; los urgentes van en RAM
+  if (v2_) return listaNegraBin_.bloqueada(idTarjeta);  // 6-19 ms a 20 MHz y 20-36 ms a 4 MHz (#51); los urgentes van en RAM
   return listaNegra_.count(idTarjeta) > 0;
 }
 
