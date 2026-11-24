@@ -16,7 +16,16 @@ struct AlmacenSyncBinario::Trabajo {
   Trabajo() { memset(&listas, 0, sizeof(listas)); }
 };
 
+struct AlmacenSyncBinario::Ajeno {
+  size_t largo = 0;
+  uint8_t paquete[sp::TAM_MAXIMO];
+};
+
 AlmacenSyncBinario::~AlmacenSyncBinario() {
+  for (Ajeno *&a : colaAjenos_) {
+    delete a;
+    a = nullptr;
+  }
   for (Trabajo *&t : cola_t_) {
     delete t;
     t = nullptr;
@@ -81,8 +90,46 @@ void AlmacenSyncBinario::aplicarTarifas(const sp::Tarifas &tarifas) {
 // Si la compactación falla varias veces seguidas (tarjeta con problemas) se deja en paz hasta el siguiente acuse
 bool AlmacenSyncBinario::compactarCola() const { return cola_.compactacionPendiente() && fallosCompactar_ < 3; }
 
+bool AlmacenSyncBinario::guardarAjeno(const uint8_t *paquete, size_t largo) {
+  if (!paquete || largo == 0 || largo > sp::TAM_MAXIMO || nAjenosCola_ >= COLA_AJENOS) return false;
+  Ajeno *a = new (std::nothrow) Ajeno;
+  if (!a) return false;
+  a->largo = largo;
+  memcpy(a->paquete, paquete, largo);
+  colaAjenos_[nAjenosCola_++] = a;
+  return true;
+}
+
+void AlmacenSyncBinario::guardarAcuseAjeno(const uint8_t *paquete, size_t largo) {
+  if (!paquete || largo < sp::TAM_CABECERA || largo > sizeof(AcuseGuardado::datos)) return;
+  const uint16_t destino = paquete[6] | (paquete[7] << 8);
+  size_t i = 0;
+  while (i < ACUSES_AJENOS && !(acuses_[i].largo && acuses_[i].validador == destino)) i++;
+  if (i == ACUSES_AJENOS) {  // no había uno de ese validador: el siguiente hueco, dando la vuelta
+    i = siguienteAcuse_;
+    siguienteAcuse_ = (siguienteAcuse_ + 1) % ACUSES_AJENOS;
+  }
+  acuses_[i].validador = destino;
+  acuses_[i].largo = static_cast<uint8_t>(largo);
+  memcpy(acuses_[i].datos, paquete, largo);
+}
+
+size_t AlmacenSyncBinario::acusePara(uint16_t validador, uint8_t *buf, size_t max) {
+  for (const AcuseGuardado &a : acuses_) {
+    if (a.largo && a.validador == validador && a.largo <= max) {
+      memcpy(buf, a.datos, a.largo);
+      return a.largo;
+    }
+  }
+  return 0;
+}
+
+size_t AlmacenSyncBinario::listasDesde(uint32_t desde, uint8_t *buf, size_t max, uint32_t &hasta) {
+  return firmados_ ? firmados_->leerDesde(desde, buf, max, hasta) : 0;
+}
+
 bool AlmacenSyncBinario::trabajoPendiente() const {
-  return aplicador_.ocupado() || nTrabajos_ > 0 || hayIncidencia_ || acusePendiente_ > cola_.ultimoAcusado() || compactarCola() ||
+  return aplicador_.ocupado() || nTrabajos_ > 0 || nAjenosCola_ > 0 || hayIncidencia_ || acusePendiente_ > cola_.ultimoAcusado() || compactarCola() ||
          ajenos_.confirmadosPorBorrar() > 0;
 }
 
@@ -159,6 +206,16 @@ bool AlmacenSyncBinario::paso(bool lectorLibre) {
       cuenta_.fallos++;
       fallosCompactar_++;
     }
+    return true;
+  }
+
+  // 4b. Un EVENTOS de un vecino por escribir (una escritura en la microSD, 0,5-0,9 s)
+  if (nAjenosCola_ > 0) {
+    Ajeno *a = colaAjenos_[0];
+    for (size_t j = 1; j < nAjenosCola_; j++) colaAjenos_[j - 1] = colaAjenos_[j];
+    colaAjenos_[--nAjenosCola_] = nullptr;
+    if (!ajenos_.guardar(a->paquete, a->largo)) cuenta_.fallos++;
+    delete a;
     return true;
   }
 

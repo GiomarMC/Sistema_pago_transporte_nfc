@@ -381,3 +381,14 @@ size_t PaquetesFirmados::listar(InfoPaquete *salida, size_t max) {
 size_t PaquetesFirmados::leer(uint32_t desde, uint32_t hasta, uint8_t *destino, size_t capacidad) {
   return leerPaquete(desde, hasta, destino, capacidad);
 }
+
+size_t PaquetesFirmados::leerDesde(uint32_t desde, uint8_t *destino, size_t capacidad, uint32_t &hasta) {
+  long mejor = -1;
+  for (size_t i = 0; i < indice_.size(); i++)
+    if (indice_[i].a == desde && (mejor < 0 || indice_[i].b > indice_[mejor].b)) mejor = static_cast<long>(i);
+  if (mejor < 0) return 0;
+  const uint32_t h = indice_[mejor].b;
+  const size_t n = leerPaquete(desde, h, destino, capacidad);
+  if (n > 0) hasta = h;
+  return n;
+}

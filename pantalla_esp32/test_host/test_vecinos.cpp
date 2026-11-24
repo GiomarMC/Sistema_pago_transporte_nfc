@@ -7,6 +7,8 @@
 #include <Fragmentos.h>
 #include <TablaVecinos.h>
 
+#include <initializer_list>
+
 namespace {
 
 sp::Baliza baliza(uint16_t validador, uint16_t pendientes = 0) {
@@ -27,19 +29,23 @@ void formatoDeLaBaliza() {
   b.pendientes = 0x0A09;
   b.ajenos = 0x0C0B;
   b.flags = sp::BALIZA_CON_SERVIDOR | sp::BALIZA_ACEPTA_AJENOS;
+  b.canal = 6;
 
   uint8_t trama[sp::TAM_TRAMA_MAXIMO] = {};
-  assert(sp::armarBaliza(b, trama) == sp::TAM_BALIZA);
-  // Bytes exactos del contrato C1 5.10, little-endian
-  const uint8_t esperada[sp::TAM_BALIZA] = {'E', 'N', 1, 0, 0x07, 0x01, 0x01, 0x02, 0x03, 0x04,
-                                            0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x03};
-  assert(memcmp(trama, esperada, sp::TAM_BALIZA) == 0);
+  assert(sp::armarBaliza(b, trama) == sp::TAM_BALIZA_CON_CANAL);
+  // Bytes exactos del contrato C1 5.10, little-endian, y al final el canal del emisor
+  const uint8_t esperada[sp::TAM_BALIZA_CON_CANAL] = {'E', 'N', 1, 0, 0x07, 0x01, 0x01, 0x02, 0x03, 0x04,
+                                                      0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x03, 6};
+  assert(memcmp(trama, esperada, sp::TAM_BALIZA_CON_CANAL) == 0);
 
   sp::Baliza leida;
-  assert(sp::leerBaliza(trama, sp::TAM_BALIZA, leida));
+  assert(sp::leerBaliza(trama, sp::TAM_BALIZA_CON_CANAL, leida));
   assert(leida.validador == 263 && leida.versionListas == 0x04030201 &&
          leida.versionTarifas == 0x08070605 && leida.pendientes == 0x0A09 &&
-         leida.ajenos == 0x0C0B && leida.flags == 3);
+         leida.ajenos == 0x0C0B && leida.flags == 3 && leida.canal == 6);
+  // La de 19 B de un firmware anterior: se lee igual, con el canal desconocido
+  assert(sp::leerBaliza(trama, sp::TAM_BALIZA, leida));
+  assert(leida.validador == 263 && leida.flags == 3 && leida.canal == 0);
 
   // Bytes de más al final (una versión futura): se aceptan
   uint8_t larga[sp::TAM_BALIZA + 5];
@@ -127,13 +133,57 @@ void vaciar() {
   assert(t.actualizar(MAC_A, baliza(105), 0) == TablaVecinos::Cambio::NUEVO);
 }
 
+void formatoDelPedido() {
+  sp::Pedido p;
+  p.validador = 107;
+  p.que = sp::PEDIDO_LISTAS;
+  p.x = 0x01020304;
+  uint8_t trama[sp::TAM_TRAMA_MAXIMO];
+  assert(sp::armarPedido(p, trama) == sp::TAM_PEDIDO);
+  // los bytes del contrato (C1 5.10): "EN" | clase 3 | 0 | validador(2) | que | x(4), little-endian
+  const uint8_t esperado[sp::TAM_PEDIDO] = {'E', 'N', 3, 0, 107, 0, 1, 4, 3, 2, 1};
+  assert(memcmp(trama, esperado, sizeof(esperado)) == 0);
+  sp::Pedido leido;
+  assert(sp::leerPedido(trama, sp::TAM_PEDIDO, leido) && leido.validador == 107 && leido.que == 1 && leido.x == 0x01020304);
+  // acuses (3) y tarifas (2)
+  p.que = sp::PEDIDO_ACUSES;
+  p.x = 0;
+  sp::armarPedido(p, trama);
+  assert(sp::leerPedido(trama, sp::TAM_PEDIDO, leido) && leido.que == 3);
+  // bytes de más al final se ignoran (una versión futura puede añadir campos)
+  uint8_t larga[20];
+  memcpy(larga, trama, sp::TAM_PEDIDO);
+  assert(sp::leerPedido(larga, sizeof(larga), leido));
+  // no vale: corto, otra clase, sin validador, `que` desconocido
+  assert(!sp::leerPedido(trama, sp::TAM_PEDIDO - 1, leido));
+  uint8_t mala[sp::TAM_PEDIDO];
+  memcpy(mala, trama, sizeof(mala));
+  mala[2] = sp::BALIZA;
+  assert(!sp::leerPedido(mala, sizeof(mala), leido));
+  memcpy(mala, trama, sizeof(mala));
+  mala[4] = mala[5] = 0;
+  assert(!sp::leerPedido(mala, sizeof(mala), leido));
+  for (int que : {0, sp::PEDIDO_HORA + 1, 255}) {
+    memcpy(mala, trama, sizeof(mala));
+    mala[6] = static_cast<uint8_t>(que);
+    assert(!sp::leerPedido(mala, sizeof(mala), leido));
+  }
+  // una baliza no se confunde con un pedido, ni al revés
+  sp::Baliza b;
+  b.validador = 5;
+  uint8_t tb[sp::TAM_TRAMA_MAXIMO];
+  sp::armarBaliza(b, tb);
+  assert(!sp::leerPedido(tb, sp::TAM_BALIZA, leido) && !sp::leerBaliza(trama, sp::TAM_PEDIDO, b));
+}
+
 }  // namespace
 
 int main() {
+  formatoDelPedido();
   formatoDeLaBaliza();
   tablaDeVecinos();
   tablaLlena();
   relojQueDaLaVuelta();
   vaciar();
-  puts("M8-01 vecinos: formato de la baliza y tabla (caducidad, llena, reloj) OK");
+  puts("M8-01/03 vecinos: formato de la baliza y del PEDIDO, y tabla (caducidad, llena, reloj) OK");
 }

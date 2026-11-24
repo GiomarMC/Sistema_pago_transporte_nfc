@@ -100,6 +100,12 @@ int LectorPN532::intercambiar(const uint8_t *cmd, size_t n, uint8_t *resp, size_
 
 bool LectorPN532::iniciar() {
   pinMode(irq_, INPUT_PULLUP);
+  // Con SCL o SDA retenidas a nivel bajo (un módulo colgado tras un reinicio de la ESP32; solo se arregla quitando la
+  // corriente) cada intento tardaba 12,5 s en agotar los tiempos de I2C: se falla enseguida y se reintenta luego
+  if (digitalRead(scl_) == 0 || digitalRead(sda_) == 0) {
+    conectado_ = false;
+    return false;
+  }
   bus_.begin(sda_, scl_, 100000);
   bus_.setTimeOut(1000);
   // Despertar: una transmisión vacía y una pausa

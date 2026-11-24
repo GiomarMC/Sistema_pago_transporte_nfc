@@ -18,6 +18,10 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
     lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp test_host/test_vecinos.cpp \
     -o /tmp/subepe-m8-test-vecinos
 /tmp/subepe-m8-test-vecinos
+# ESP-NOW sin WiFi: búsqueda del canal de los vecinos (recorrido barajado, pausa por los escaneos del WiFi, simulación)
+g++ -std=c++17 -Wall -Wextra -Werror -Ilib/Enlaces lib/Enlaces/BuscadorCanal.cpp test_host/test_buscador_canal.cpp \
+    -o /tmp/subepe-m8-test-buscador
+/tmp/subepe-m8-test-buscador
 g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
     lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp lib/Enlaces/EmisorFragmentos.cpp \
     test_host/test_emisor.cpp -o /tmp/subepe-m8-test-emisor
@@ -69,3 +73,12 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ili
     lib/Almacenamiento/EventosTexto.cpp lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o \
     test_host/test_eventos_texto.cpp -lmbedcrypto -o /tmp/subepe-m3-test-eventos-texto
 /tmp/subepe-m3-test-eventos-texto
+# M8-03/04: dos buses completos se cruzan por una radio falsa (eventos de B suben por A, acuse de vuelta, listas, firmas alteradas)
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
+    src/validador/sincronizador_v2.cpp src/validador/almacen_sync_binario.cpp src/validador/intercambio_vecinos.cpp \
+    lib/ProtocoloSP/ProtocoloSP.cpp lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/EstadoPersistente.cpp \
+    lib/Almacenamiento/ColaEventos.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
+    lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
+    /tmp/subepe-uecc.o test_host/test_intercambio.cpp -lmbedcrypto -o /tmp/subepe-m8-test-intercambio
+/tmp/subepe-m8-test-intercambio

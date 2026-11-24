@@ -28,6 +28,8 @@
 #include <CanalPaquetes.h>
 #include <ProtocoloSP.h>
 
+#include "correccion_hora.h"
+
 class AlmacenSync {
  public:
   virtual ~AlmacenSync() = default;
@@ -61,6 +63,35 @@ class AlmacenSync {
     (void)largo;
   }
   virtual void aplicarTarifas(const sp::Tarifas &tarifas) { (void)tarifas; }
+  // --- Intercambio con otros buses por ESP-NOW (M8-03) ---
+  // Un EVENTOS de otro validador que llegó por un vecino (tal cual, sin poder verificar su firma HMAC: solo la
+  // conoce el servidor). true si se aceptó para guardarlo (puede quedar en cola y escribirse después)
+  virtual bool guardarAjeno(const uint8_t *paquete, size_t largo) {
+    (void)paquete;
+    (void)largo;
+    return false;
+  }
+  // Un ACUSE del servidor para OTRO validador, que este bus recibió porque subió sus eventos: se guarda para
+  // entregárselo cuando lo pida (PEDIDO 3)
+  virtual void guardarAcuseAjeno(const uint8_t *paquete, size_t largo) {
+    (void)paquete;
+    (void)largo;
+  }
+  // El ACUSE guardado para `validador` (copiado en `buf`); 0 si no hay o no cabe
+  virtual size_t acusePara(uint16_t validador, uint8_t *buf, size_t max) {
+    (void)validador;
+    (void)buf;
+    (void)max;
+    return 0;
+  }
+  // El LISTAS guardado que parte de la versión `desde` (copiado en `buf`), con su version_hasta; 0 si no hay
+  virtual size_t listasDesde(uint32_t desde, uint8_t *buf, size_t max, uint32_t &hasta) {
+    (void)desde;
+    (void)buf;
+    (void)max;
+    (void)hasta;
+    return 0;
+  }
   // Algo anormal que debe quedar en el registro del validador (hasta 20 caracteres, como el detalle de un evento)
   virtual void incidencia(const char *detalle) { (void)detalle; }
 };
@@ -71,6 +102,9 @@ struct ConfigSyncV2 {
   const uint8_t *clavePublicaServidor = nullptr;   // 65 B: verifica los del servidor
   uint32_t versionFirmware = 0;                    // AAAAMMDD
   uint32_t (*ahoraUnix)() = nullptr;               // hora para el campo "creado"; nullptr = 0
+  // Eventos cobrados con la hora estimada: no salen hasta que se puedan corregir, y salen corregidos. nullptr = no se
+  // retiene ni se corrige nada
+  const CorreccionHora *correccion = nullptr;
 };
 
 class SincronizadorV2 {
@@ -99,6 +133,18 @@ class SincronizadorV2 {
     bytesRx_ = bytesRx;
   }
 
+  // Un paquete que llegó por otro camino que el canal de subida: de un vecino por ESP-NOW (o del celular por BLE).
+  //   - EVENTOS de otro validador: se guarda para llevarlo al servidor (no se puede verificar su firma)
+  //   - ACUSE, LISTAS y TARIFAS del servidor: se verifican (ECDSA) igual que si vinieran del servidor. Los
+  //     LISTAS y TARIFAS valen aunque vayan dirigidos a otro validador: su contenido es el mismo para todos y la
+  //     firma cubre el paquete entero. La hora de un ACUSE relevado se compensa con RETRASO_RELE_S.
+  // Cuenta en rechazados() lo que no se acepta.
+  void entregar(const uint8_t *datos, size_t largo, uint32_t ahoraMs);
+  // Arma un paquete EVENTOS propio, firmado, con hasta 30 eventos de id mayor que `desdeId`, para entregarlo a un
+  // vecino. Devuelve su largo (0 si no hay eventos o no cabe) y en `ultimoId` el id del último evento que lleva.
+  size_t empaquetarEventos(uint32_t desdeId, uint8_t *buf, size_t capacidad, uint32_t &ultimoId, uint32_t ahoraMs);
+  uint32_t ajenosRecibidos() const { return ajenosRecibidos_; }
+
   // En cada loop(). `canal` es el de subida que eligió el gestor, o nullptr si no hay.
   void atender(CanalPaquetes *canal, uint32_t ahoraMs);
 
@@ -124,6 +170,23 @@ class SincronizadorV2 {
   uint32_t paquetesAjenos() const { return paquetesAjenos_; }
   uint32_t reenvios() const { return reenvios_; }
   uint32_t rechazados() const { return rechazados_; }
+  uint32_t paquetesRecibidos() const { return recibidos_; }  // del servidor o de un vecino, válidos o no
+
+  // --- La hora para un vecino que no la tiene (PEDIDO de hora, M8) ---
+  // Manda un HOLA en la próxima vuelta con canal: el servidor contesta con un ACUSE con su hora, fresco
+  void pedirHola() { holaPendiente_ = true; }
+  // El último ACUSE para este validador que llegó del servidor (tal cual, firmado) y el millis() en que llegó. 0 si no
+  // hay o no cabe
+  size_t ultimoAcuse(uint8_t *buf, size_t max, uint32_t &recibidoMs) const;
+  // Se pidió la hora a un vecino: hasta `hastaMs` se acepta la hora de un ACUSE para OTRO validador que llegue por un
+  // vecino (va firmado por el servidor). Fuera de esa ventana, un ACUSE ajeno no cambia la hora: podría ser viejo
+  void esperarHoraDeVecino(uint32_t hastaMs) {
+    esperandoHora_ = true;
+    horaHastaMs_ = hastaMs;
+  }
+  uint32_t horasDeVecino() const { return horasDeVecino_; }
+  // El evento no puede salir todavía: lleva la hora estimada y aún no hay hora real para corregirla
+  bool retenido(uint32_t idEvento) const { return cfg_.correccion && cfg_.correccion->retenido(idEvento); }
   uint32_t listasRechazadasPorFirma() const { return listasFirmaMala_; }
   sp::Motivo ultimoRechazo() const { return ultimoRechazo_; }
 
@@ -135,19 +198,21 @@ class SincronizadorV2 {
 
   void alPasarAListo(CanalPaquetes *canal, uint32_t ahoraMs);
   void recibir(CanalPaquetes &canal, uint32_t ahoraMs);
-  void procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs);
+  void procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado = false);
   void enviarHola(CanalPaquetes &canal, uint32_t ahoraMs);
   bool enviarEventos(CanalPaquetes &canal, uint32_t ahoraMs);
   void enviarAjenos(CanalPaquetes &canal, uint32_t ahoraMs);
-  void alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, uint32_t ahoraMs);
-  void tomarHora(uint32_t horaServidor, uint32_t ahoraMs);
+  void alAcuse(const sp::Cabecera &cab, const sp::Acuse &acuse, const uint8_t *datos, size_t largo, uint32_t ahoraMs,
+               bool relevado);
+  void tomarHora(uint32_t horaServidor, uint32_t ahoraMs, bool relevado);
+  size_t prepararEventos(uint32_t desdeId);  // eventosDesde + retenidos fuera + fechas corregidas, en tx_.eventos
   uint32_t creado() const { return cfg_.ahoraUnix ? cfg_.ahoraUnix() : 0; }
 
   AlmacenSync &almacen_;
   ConfigSyncV2 cfg_;
   int8_t senal_ = 0;
   uint32_t bytesTx_ = 0, bytesRx_ = 0;
-  uint32_t listasFirmaMala_ = 0, ultimaIncidenciaMs_ = 0;
+  uint32_t listasFirmaMala_ = 0, ultimaIncidenciaMs_ = 0, ajenosRecibidos_ = 0;
   bool hayIncidencia_ = false;
 
   CanalPaquetes *canalActual_ = nullptr;  // el canal listo del que se parte; cambiar de canal es empezar de nuevo
@@ -163,8 +228,14 @@ class SincronizadorV2 {
   bool rondaAjenosActiva_ = false, hayRondaPrevia_ = false;
 
   uint32_t horaServidor_ = 0, millisHora_ = 0, horaCrudaMax_ = 0;
+  static constexpr size_t TAM_ACUSE = 128;  // un ACUSE firmado ocupa 92 B
+  uint8_t ultimoAcuse_[TAM_ACUSE];
+  size_t largoUltimoAcuse_ = 0;
+  uint32_t ultimoAcuseMs_ = 0;
+  bool esperandoHora_ = false;
+  uint32_t horaHastaMs_ = 0, horasDeVecino_ = 0;
 
-  uint32_t holas_ = 0, paqueteEventos_ = 0, paquetesAjenos_ = 0, reenvios_ = 0, rechazados_ = 0;
+  uint32_t holas_ = 0, paqueteEventos_ = 0, paquetesAjenos_ = 0, reenvios_ = 0, rechazados_ = 0, recibidos_ = 0;
   sp::Motivo ultimoRechazo_ = sp::Motivo::OK;
 
   // Búferes grandes dentro del objeto: mejor que la pila del loop

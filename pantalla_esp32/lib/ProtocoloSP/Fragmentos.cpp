@@ -34,7 +34,8 @@ size_t armarBaliza(const Baliza &b, uint8_t trama[TAM_TRAMA_MAXIMO]) {
   escribe16(trama + 14, b.pendientes);
   escribe16(trama + 16, b.ajenos);
   trama[18] = b.flags;
-  return TAM_BALIZA;
+  trama[19] = b.canal;
+  return TAM_BALIZA_CON_CANAL;
 }
 
 bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &b) {
@@ -49,6 +50,30 @@ bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &b) {
   b.pendientes = lee16(trama + 14);
   b.ajenos = lee16(trama + 16);
   b.flags = trama[18];
+  b.canal = largo >= TAM_BALIZA_CON_CANAL ? trama[19] : 0;
+  return true;
+}
+
+size_t armarPedido(const Pedido &p, uint8_t trama[TAM_TRAMA_MAXIMO]) {
+  trama[0] = 'E';
+  trama[1] = 'N';
+  trama[2] = PEDIDO;
+  trama[3] = 0;
+  escribe16(trama + 4, p.validador);
+  trama[6] = p.que;
+  escribe32(trama + 7, p.x);
+  return TAM_PEDIDO;
+}
+
+bool leerPedido(const uint8_t *trama, size_t largo, Pedido &p) {
+  if (largo < TAM_PEDIDO || largo > TAM_TRAMA_MAXIMO || trama[0] != 'E' || trama[1] != 'N' || trama[2] != PEDIDO)
+    return false;
+  const uint16_t validador = lee16(trama + 4);
+  const uint8_t que = trama[6];
+  if (validador == 0 || que < PEDIDO_LISTAS || que > PEDIDO_HORA) return false;
+  p.validador = validador;
+  p.que = que;
+  p.x = lee32(trama + 7);
   return true;
 }
 

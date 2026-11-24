@@ -83,5 +83,10 @@ for nombre, version, filas in tarifas:
     seq += 1
 salida.append(f"static const uint32_t TARIFAS_A_VERSION = {HORA - 86400}u, TARIFAS_B_VERSION = {HORA}u, TARIFAS_VIEJA_VERSION = {HORA - 2 * 86400}u;\n")
 
+# ACUSE para un segundo validador (108), para las pruebas de intercambio entre buses (M8-03)
+for hasta in (30,):
+    salida.append(en_c(f"ACUSE_108_HASTA_{hasta}", servidor(P.ACUSE, 108, P.Acuse(hasta, HORA), seq)))
+    seq += 1
+
 (pathlib.Path(__file__).parent / "vectores_listas.h").write_text("".join(salida), encoding="utf-8")
 print("vectores_listas.h generado:", len("".join(salida)), "caracteres")

@@ -9,7 +9,7 @@ GestorEnlaces::GestorEnlaces(Enlace &wifi, CanalPaquetes &mqttWifi, CanalPaquete
     : wifi_(wifi), mqttWifi_(mqttWifi), ble_(ble), vecinos_(vecinos) {}
 
 void GestorEnlaces::iniciar() {
-  if (vecinos_) vecinos_->iniciar(1);
+  if (vecinos_) vecinos_->iniciar(canalEspNow_);
   if (wifi_.estado() == EstadoEnlace::Apagado) wifi_.encender();
 }
 
@@ -18,7 +18,7 @@ void GestorEnlaces::atender(uint32_t ahoraMs, bool bleSolicitaCola, uint8_t cana
   mqttWifi_.atender();
   if (ble_) ble_->atender();
   if (vecinos_) {
-    const bool pausar = wifi_.estado() == EstadoEnlace::Listo && canalWifi != 1;
+    const bool pausar = wifi_.estado() == EstadoEnlace::Listo && canalWifi != canalEspNow_;
     if (pausar != vecinosPausados_) { vecinos_->pausar(pausar); vecinosPausados_ = pausar; }
     vecinos_->atender();
   }

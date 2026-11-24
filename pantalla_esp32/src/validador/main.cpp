@@ -22,6 +22,8 @@
  */
 
 #include <Arduino.h>
+#include <Preferences.h>
+#include <WiFi.h>
 #include <Formato.h>
 #include <LectorPN532.h>
 #include <LectorPuente.h>
@@ -32,15 +34,43 @@
 #include <rom/ets_sys.h>
 #include <string.h>
 
+#include <CanalMqtt.h>
+
+#include <memory>
+
 #include "almacen.h"
+#include "almacen_sync_binario.h"
+#include "clave_servidor.h"
+#include "correccion_hora.h"
+#include "gestor_enlaces.h"
+#include "intercambio_vecinos.h"
 #include "portal.h"
+#include "radio_espnow.h"
 #include "raices_tls.h"
+#include "secretos.h"
 #include "sincronizador.h"
+#include "sincronizador_v2.h"
 
 // Último paso en que entró el programa. Si el watchdog salta, dice dónde se quedó atascado
 // (la traza de la pila que imprime el sistema no sirve: es la del propio watchdog).
 static const char *volatile pasoActual = "arranque";
+#ifdef M15_MEDIR_LOOP
+// Al medir el loop también se anota qué paso fue el más largo (el que va desde que se marca hasta el siguiente PASO)
+static uint32_t pasoDesdeUs = 0, pasoMaxUs = 0;
+static const char *pasoMaxNombre = "";
+static void marcarPaso(const char *texto) {
+  const uint32_t ahora = micros();
+  if (pasoDesdeUs && ahora - pasoDesdeUs > pasoMaxUs) {
+    pasoMaxUs = ahora - pasoDesdeUs;
+    pasoMaxNombre = pasoActual;
+  }
+  pasoDesdeUs = ahora;
+  pasoActual = texto;
+}
+#define PASO(texto) marcarPaso(texto)
+#else
 #define PASO(texto) (pasoActual = (texto))
+#endif
 extern "C" void esp_task_wdt_isr_user_handler(void) {
   ets_printf("\n#WATCHDOG: el programa se bloqueó en el paso: %s\n", pasoActual);
 }
@@ -62,7 +92,53 @@ LectorPuente puente(Serial);  // ordenador opcional: configuración y hora
 Almacen almacen;
 
 uint32_t baseUnix = 0, baseMillis = 0;
+bool horaReal = false;  // true si la hora viene del servidor o del ordenador; false si es la estimada del arranque
 uint32_t ahoraUnix() { return baseUnix ? baseUnix + (millis() - baseMillis) / 1000 : 0; }
+
+// La placa no tiene reloj con batería: al apagarla pierde la hora. Para poder cobrar sin WiFi se guarda en la NVS
+// la última hora conocida (como mucho cada 30 min, para no gastar la flash) y al arrancar se parte de ella. Queda
+// por detrás de la real lo que estuvo apagada, así que es una hora ESTIMADA hasta que llegue la del servidor; los
+// viajes que se cobren en ese tiempo llevan esa fecha. Un validador nuevo, que nunca ha tenido la hora, sí necesita
+// conectarse una vez.
+constexpr uint32_t PERIODO_GUARDAR_HORA_MS = 30UL * 60 * 1000;
+uint32_t horaGuardada() {
+  Preferences p;
+  if (!p.begin("subepe", true)) return 0;
+  const uint32_t h = p.getUInt("t_unix", 0);
+  p.end();
+  return h;
+}
+void guardarHora(uint32_t unix) {
+  static uint32_t ultimoMs = 0;
+  if (ultimoMs && millis() - ultimoMs < PERIODO_GUARDAR_HORA_MS) return;
+  Preferences p;
+  if (p.begin("subepe", false)) {
+    p.putUInt("t_unix", unix);
+    p.end();
+    ultimoMs = millis();
+  }
+}
+// Los eventos guardados con la hora estimada no salen de la placa hasta que llega la real, y salen con la fecha
+// corregida (ver correccion_hora.h). Solo en RAM: si la placa se apaga antes, salen con la estimada.
+CorreccionHora correccionHora;
+void log(const String &texto);
+void anotarEvento(const sp::Evento &e) {
+  if (!horaReal) correccionHora.anotar(e.idEvento, baseUnix, baseMillis);
+}
+
+// Hora real (del servidor o del ordenador): `unix` era la hora en el instante `ms` (millis())
+void fijarHora(uint32_t unix, uint32_t ms) {
+  if (!correccionHora.hayHoraReal()) {
+    correccionHora.horaReal(unix, ms);
+    if (correccionHora.anotados())
+      log("Hora real: " + String(correccionHora.anotados()) + " eventos cobrados con la hora estimada salen corregidos (" +
+          String(correccionHora.delta()) + " s)");
+  }
+  baseUnix = unix;
+  baseMillis = ms;
+  horaReal = true;
+  guardarHora(ahoraUnix());
+}
 
 void log(const String &texto) {
   Serial.print('#');
@@ -73,6 +149,42 @@ const std::vector<RedWifi> &redesGuardadas() { return almacen.redes(); }
 EnlaceWifi enlaceWifi(redesGuardadas, log, RAICES_TLS);
 Sincronizador sincronizador(almacen, log, enlaceWifi);
 PortalWifi portal(almacen, log);
+Secretos secretos;
+
+// --- Modo sync=v2 (M15): SincronizadorV2 + GestorEnlaces sobre CanalMqtt. Solo si config.txt lo pide Y están las
+// claves en la NVS; si no, sigue el v1. Los objetos son grandes (SincronizadorV2 lleva ~9 KB de búferes): van en
+// el montón, nunca en la pila de loop().
+constexpr uint32_t VERSION_FIRMWARE = 20261121;  // AAAAMMDD, para el HOLA
+struct SyncV2 {
+  uint8_t claveHmac[Secretos::TAM_CLAVE_HMAC];
+  std::unique_ptr<VecinosEspNow> vecinos;       // solo con espnow=on en config.txt
+  std::unique_ptr<RadioEspNow> radio;
+  std::unique_ptr<IntercambioVecinos> intercambio;
+  std::unique_ptr<CanalMqtt> canal;
+  std::unique_ptr<GestorEnlaces> gestor;
+  std::unique_ptr<AlmacenSyncBinario> almacenSync;
+  std::unique_ptr<SincronizadorV2> sinc;
+  String estado;  // lo que se ve en la pantalla de espera
+  uint32_t horaVista = 0;
+};
+std::unique_ptr<SyncV2> v2;
+uint8_t canalEspNowConfigurado = 1;  // espnow_canal: el de ESP-NOW sin WiFi
+void alCanalDelWifi(uint8_t canal);  // más abajo, con el gestor ya creado
+bool puedeEscanearWifi();
+
+// subida=vecinos en config.txt (prueba de M8): la placa se conecta al WiFi como siempre, y así ESP-NOW queda en el
+// canal del AP, pero no abre MQTT. Al gestor se le da este canal, que nunca está listo, y los eventos solo salen por
+// un vecino de ESP-NOW. Sirve para probar el intercambio entre dos placas que tienen WiFi las dos.
+class CanalSinServidor : public CanalPaquetes {
+ public:
+  const char *nombre() const override { return "ninguno"; }
+  uint8_t codigoEnlace() const override { return 0; }
+  bool listo() const override { return false; }
+  void atender() override {}
+  bool enviar(const uint8_t *, size_t) override { return false; }
+  size_t recibir(uint8_t *, size_t) override { return 0; }
+};
+CanalSinServidor canalSinServidor;
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
 uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
 
@@ -84,8 +196,9 @@ struct MedirLoop {
     const uint32_t duracion = micros() - inicio;
     if (duracion > maximoUs) maximoUs = duracion;
     if (millis() - ultimoReporte >= 10000) {
-      Serial.println("# M15 loop_max_us=" + String(maximoUs));
+      Serial.println("# M15 loop_max_us=" + String(maximoUs) + " paso_max_us=" + String(pasoMaxUs) + " (" + pasoMaxNombre + ")");
       maximoUs = 0;
+      pasoMaxUs = 0;
       ultimoReporte = millis();
     }
   }
@@ -151,9 +264,9 @@ void grabarBloqueo(tt::Cabecera cab, const uint8_t *uid, size_t lenUid, const ui
 
 Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   const String uidHex = aHex(uid, lenUid);
-  const uint32_t ahora = ahoraUnix();
+  uint32_t ahora = ahoraUnix();
   if (!almacen.listo()) return aviso("Error microSD", "No se puede cobrar");
-  if (!ahora) return aviso("Sin hora", "Conecte el WiFi");
+  if (!ahora) return aviso("Sin hora", "Conecte el WiFi una vez");
 
   uint8_t pwd[4], pack[2], packTarjeta[2];
   tt::contrasena(almacen.claveMaestra(), uid, lenUid, pwd, pack);
@@ -191,6 +304,12 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   String nombre = t.nombre;
   if (nombre.length()) nombre.setCharAt(0, toupper(nombre[0]));
 
+  // Con la hora estimada del arranque (sin WiFi aún) la placa puede ir por detrás de la tarjeta, que lleva la fecha
+  // del último cobro, firmada: el reloj no retrocede respecto a ella, o un doble toque tras un reinicio cobraría dos veces
+  if (!horaReal && reg.fecha > ahora) {
+    baseUnix += reg.fecha - ahora;
+    ahora = reg.fecha;
+  }
   if (reg.validador == almacen.validador() && ahora >= reg.fecha && ahora - reg.fecha < MARGEN_DOBLE_TOQUE) {
     // Ya cobrado aquí hace un momento. Si la verificación de aquel cobro falló
     // (tarjeta retirada justo al final), el viaje se registra ahora.
@@ -232,6 +351,18 @@ Resultado cobrar(const uint8_t *uid, size_t lenUid) {
               abono ? "Recarga +" + soles(abono) : "");
 }
 
+// wifi=off en config.txt (se lee al arrancar): el validador no enciende el WiFi ni sincroniza. Para probar que cobra
+// sin red (o usarlo así en un bus sin cobertura); se quita con wifi=on y reiniciando.
+bool wifiApagado = false;
+
+// El estado de la sincronización para la pantalla de espera ("WiFi OK", "Sin WiFi"...)
+const String &estadoSync() {
+  static const String apagado = "WiFi apagado";
+  if (wifiApagado) return apagado;
+  return v2 ? v2->estado : sincronizador.estado();
+}
+uint32_t horaDelServidor() { return v2 ? v2->sinc->horaServidor() : sincronizador.horaServidor(); }
+
 void pantallaEspera() {
   const bool wifiLista = enlaceWifi.estado() == EstadoEnlace::Listo;
   ui::estadoCanal(wifiLista ? "W" : "-", enlaceWifi.senal(),
@@ -245,13 +376,38 @@ void pantallaEspera() {
   } else if (!ahoraUnix()) {
     ui::espera("Bus " + String(almacen.validador()) + "  Sin hora", "Esperando el WiFi");
   } else {
-    const String &wifi = sincronizador.estado();
+    const String &wifi = estadoSync();
     ui::espera("Bus " + String(almacen.validador()) + (wifi.length() ? "  " + wifi : ""),
                "Sin subir: " + String(almacen.pendientes()));
   }
 }
 
-void guardarConfig(const String &config) {
+// Las claves del modo v2 (clave_hmac, mqtt_clave) van a la NVS, no a la microSD: se sacan de la configuración antes
+// de pasarla al Almacen, y no se imprimen
+String separarSecretos(const String &config) {
+  String resto;
+  int inicio = 0;
+  while (inicio <= (int)config.length()) {
+    int fin = config.indexOf(';', inicio);
+    if (fin < 0) fin = config.length();
+    const String par = config.substring(inicio, fin);
+    if (par.startsWith("clave_hmac=")) {
+      log(secretos.guardarClaveHmacHex(par.substring(11)) ? "Clave HMAC guardada en la NVS"
+                                                          : "ERROR: clave_hmac no válida o no se pudo guardar");
+    } else if (par.startsWith("mqtt_clave=")) {
+      log(secretos.guardarClaveMqtt(par.substring(11)) ? "Contraseña MQTT guardada en la NVS"
+                                                       : "ERROR: no se pudo guardar la contraseña MQTT");
+    } else if (par.length()) {
+      if (resto.length()) resto += ";";
+      resto += par;
+    }
+    inicio = fin + 1;
+  }
+  return resto;
+}
+
+void guardarConfig(const String &configRecibida) {
+  const String config = separarSecretos(configRecibida);
   log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
                                     : "ERROR: no se pudo guardar la configuración");
 }
@@ -260,7 +416,10 @@ void guardarConfig(const String &config) {
 // (--configurar) y la hora. Se le saluda mientras falte alguna de las dos o
 // mientras conteste; cada saludo sin respuesta espera 1,5 s.
 void atenderPuente() {
-  const bool falta = !almacen.configurado() || !ahoraUnix();
+  // Los primeros segundos tras arrancar siempre se saluda: con la hora guardada (cobrar sin WiFi) ya no falta nada y,
+  // si no, el puente no podría reconfigurar una placa que ya está configurada
+  const bool ventanaInicial = millis() < 30000;
+  const bool falta = !almacen.configurado() || !ahoraUnix() || ventanaInicial;
   if (!falta && !puente.conectado()) return;
   if (millis() - ultimoSaludo < (puente.conectado() ? 3000 : 10000)) return;
   ultimoSaludo = millis();
@@ -271,11 +430,10 @@ void atenderPuente() {
     return;
   }
   if (config.length()) guardarConfig(config);
-  if (!sincronizador.horaServidor()) {  // la del servidor tiene preferencia
+  if (!horaDelServidor()) {  // la del servidor tiene preferencia
     const uint32_t h = puente.horaUnix();
     if (h) {
-      baseUnix = h;
-      baseMillis = millis();
+      fijarHora(h, millis());
     }
   }
   if (!estaba) log("Ordenador conectado. Validador " + String(almacen.validador()) + ", eventos sin subir: " +
@@ -292,13 +450,190 @@ void iniciarLector() {
   ultimoIntentoLector = millis();
 }
 
-void comprobarModoSync() {
-  static String modoAvisado;
+// El host del broker MQTT: mqtt_servidor de config.txt o, si no, el del servidor v1 ("https://host[:puerto]/...")
+String hostMqtt() {
+  String h = almacen.config("mqtt_servidor");
+  if (h.length()) return h;
+  h = almacen.config("servidor");
+  const int a = h.indexOf("://");
+  if (a >= 0) h = h.substring(a + 3);
+  int fin = 0;
+  while (fin < (int)h.length() && h[fin] != ':' && h[fin] != '/') fin++;
+  return h.substring(0, fin);
+}
+
+// Si config.txt pide sync=v2, arma el sincronizador v2. Sin las claves o sin host, avisa y se queda en v1.
+void iniciarSyncV2() {
   const String pedido = almacen.config("sync");
-  if (pedido == modoAvisado) return;
-  modoAvisado = pedido;
-  if (pedido == "v2") log("sync=v2 aún no disponible: falta SincronizadorV2 y los enlaces; se mantiene v1");
-  else if (pedido.length() && pedido != "v1") log("sync desconocido; se mantiene v1");
+  if (pedido.length() && pedido != "v1" && pedido != "v2") log("sync desconocido; se mantiene v1");
+  if (pedido != "v2") return;
+  if (!almacen.listo() || !almacen.configurado() || !almacen.modoV2()) return;
+  std::unique_ptr<SyncV2> nuevo(new SyncV2());
+  const String clave = secretos.claveMqtt(), host = hostMqtt();
+  if (!secretos.claveHmac(nuevo->claveHmac)) {
+    log("sync=v2: falta la clave HMAC en la NVS (puente_nfc.py --configurar --clave-hmac); se mantiene v1");
+    return;
+  }
+  if (!clave.length() || !host.length()) {
+    log("sync=v2: falta la contraseña MQTT o el servidor (--mqtt-clave, --mqtt-servidor); se mantiene v1");
+    return;
+  }
+  nuevo->canal.reset(new CanalMqtt(enlaceWifi, host.c_str(), almacen.validador(), clave.c_str()));
+  // ESP-NOW entre buses (M8): opcional, config.txt espnow=on [espnow_canal=N]. Comparte la radio con el WiFi: con el
+  // WiFi conectado a un AP en otro canal que espnow_canal se pausa (por defecto el canal 1)
+  uint8_t canalEspNow = 1;
+  if (almacen.config("espnow") == "on") {
+    const int c = almacen.config("espnow_canal").toInt();
+    if (c >= 1 && c <= 13) canalEspNow = static_cast<uint8_t>(c);
+    nuevo->vecinos.reset(new VecinosEspNow(log));
+    // Por la interfaz AP y en largo alcance: balizas y reintentos en LR a 250 kbit/s (llegan más lejos), el primer
+    // intento de cada fragmento a 1 Mbit/s (más rápido de cerca). En la AP no toca la conexión WiFi de la STA
+    nuevo->vecinos->usarInterfazAp();
+    // Sin WiFi, buscar a los vecinos en otros canales si en espnow_canal no hay ninguno (espnow_busqueda=off lo quita)
+    nuevo->vecinos->buscarVecinos(almacen.config("espnow_busqueda") != "off");
+    nuevo->radio.reset(new RadioEspNow(*nuevo->vecinos));
+  }
+  const bool soloVecinos = almacen.config("subida") == "vecinos";
+  if (soloVecinos && !nuevo->vecinos) log("subida=vecinos sin espnow=on: no hay por dónde subir los eventos");
+  CanalPaquetes &subida = soloVecinos ? static_cast<CanalPaquetes &>(canalSinServidor) : *nuevo->canal;
+  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, subida, nullptr, nuevo->vecinos.get()));
+  nuevo->gestor->canalEspNow(canalEspNow);
+  canalEspNowConfigurado = canalEspNow;
+  enlaceWifi.alElegirCanal(alCanalDelWifi);
+  enlaceWifi.permitirEscaneo(puedeEscanearWifi);
+  nuevo->almacenSync.reset(new AlmacenSyncBinario(almacen.cola(), almacen.estado(), almacen.paquetesAjenos(),
+                                                  almacen.aplicador(), ahoraUnix, &almacen.firmados()));
+  ConfigSyncV2 c;
+  c.validador = almacen.validador();
+  c.claveHmac = nuevo->claveHmac;
+  c.clavePublicaServidor = CLAVE_SERVIDOR;
+  c.versionFirmware = VERSION_FIRMWARE;
+  c.ahoraUnix = ahoraUnix;
+  c.correccion = &correccionHora;
+  nuevo->sinc.reset(new SincronizadorV2(*nuevo->almacenSync, c));
+  if (nuevo->radio) {
+    nuevo->intercambio.reset(new IntercambioVecinos(*nuevo->radio, *nuevo->sinc, *nuevo->almacenSync, almacen.validador()));
+    sp::Baliza inicial;
+    inicial.validador = almacen.validador();
+    nuevo->vecinos->publicar(inicial);  // hasta que IntercambioVecinos publique la suya
+  }
+  if (!wifiApagado) nuevo->gestor->iniciar();  // enciende el WiFi y, si hay, ESP-NOW
+  else if (nuevo->vecinos) nuevo->vecinos->iniciar(canalEspNow);  // sin WiFi: solo ESP-NOW
+  if (nuevo->vecinos) {
+    using T = VecinosEspNow::Tasa;
+    nuevo->vecinos->fijarTasas(T::ESTANDAR, T::LR250, T::LR250);
+  }
+  v2 = std::move(nuevo);
+  log("Sincronización v2 activa: MQTT a " + host + " como validador " + String(almacen.validador()) +
+      (v2->vecinos ? ", ESP-NOW en el canal " + String(canalEspNow) : String("")) +
+      (soloVecinos ? ". subida=vecinos: sin MQTT, los eventos solo salen por ESP-NOW" : ""));
+}
+
+// Un turno de la sincronización v2. Solo se llama con el lector libre (sin tarjeta delante): conectar con el broker
+// (TLS) bloquea un par de segundos, y paso() hace una operación en la microSD.
+void servicioSyncV2() {
+  if (!v2) return;
+  const uint32_t ahora = millis();
+  CanalPaquetes *canal = nullptr;
+  if (!wifiApagado) {
+    // El canal del AP al que está conectado el WiFi decide si ESP-NOW se pausa (solo anda en su canal)
+    const uint8_t canalWifi = enlaceWifi.estado() == EstadoEnlace::Listo ? WiFi.channel() : v2->gestor->canalEspNow();
+    if (v2->vecinos) {
+      v2->vecinos->silenciar(enlaceWifi.conectando());
+      v2->vecinos->permitirBusqueda(!enlaceWifi.conectando() && !enlaceWifi.escaneando());
+    }
+    v2->gestor->atender(ahora, false, canalWifi);
+    canal = v2->gestor->activo();
+  } else if (v2->vecinos) {
+    v2->vecinos->atender();  // sin WiFi el gestor no corre: ESP-NOW se atiende aquí
+  }
+  uint32_t tx = 0, rx = 0;
+  if (almacen.listo()) almacen.consumo().bytesHoy(tx, rx);
+  v2->sinc->telemetria(enlaceWifi.senal(), tx, rx);
+  v2->sinc->atender(canal, ahora);
+  if (v2->sinc->horaServidor() && v2->sinc->horaServidor() != v2->horaVista) {
+    v2->horaVista = v2->sinc->horaServidor();
+    fijarHora(v2->sinc->horaServidor(), v2->sinc->millisHora());
+    pantallaEspera();
+  }
+  if (v2->intercambio) v2->intercambio->atender(ahora, canal != nullptr, !horaReal);
+  v2->almacenSync->paso(true);
+  const String estado = canal ? "WiFi OK" : (enlaceWifi.estado() == EstadoEnlace::Listo ? "Sin servidor" : "Sin WiFi");
+  if (estado != v2->estado) {
+    v2->estado = estado;
+    log("Sync v2: " + estado + (enlaceWifi.ultimoError().length() ? " (" + enlaceWifi.ultimoError() + ")" : ""));
+    pantallaEspera();
+  }
+  // Una línea de diagnóstico cada minuto: sirve para ver por qué no sube (broker, firmas, nada que subir...)
+  static uint32_t ultimoInforme = 0;
+  if (ahora - ultimoInforme >= 60000) {
+    ultimoInforme = ahora;
+    log("Sync v2: " + estado + ", HOLA enviados " + String(v2->sinc->holasEnviados()) + ", paquetes de eventos " +
+        String(v2->sinc->paquetesEventos()) + ", pendientes " + String(v2->sinc->pendientes()) + ", rechazados " +
+        String(v2->sinc->rechazados()) + " (" + sp::describir(v2->sinc->ultimoRechazo()) + "), hora del servidor " +
+        String(v2->sinc->horaServidor()) +
+        (enlaceWifi.estado() == EstadoEnlace::Listo ? ", WiFi en el canal " + String(WiFi.channel()) : String("")));
+    if (v2->intercambio) {
+      const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
+      log("ESP-NOW: canal " + String(v2->vecinos->canal()) +
+          (v2->vecinos->buscandoCanal() ? " (buscando vecinos)" : "") + ", saltos de canal " +
+          String(v2->vecinos->saltosDeCanal()) + ", vecinos " + String(v2->vecinos->cantidad()) + ", pedidos de listas " + String(c.pedidosListas) +
+          ", de acuses " + String(c.pedidosAcuses) + ", atendidos " + String(c.pedidosAtendidos) + ", EVENTOS entregados " +
+          String(c.eventosEntregados) + " (abortados " + String(c.eventosAbortados) + "), LISTAS " + String(c.listasEntregadas) + ", ACUSES " + String(c.acusesEntregados) +
+          ", recibidos " + String(c.recibidos) + ", ajenos de vecinos " + String(v2->sinc->ajenosRecibidos()) + ", pedidos de hora " + String(c.pedidosHora) +
+          ", horas dadas " + String(c.horasEntregadas) + ", horas de vecino " + String(v2->sinc->horasDeVecino()));
+    }
+  }
+}
+
+// ESP-NOW sigue al WiFi (#67): antes de conectar a un AP se pasa a su canal, y al perderlo vuelve a espnow_canal
+void alCanalDelWifi(uint8_t canal) {
+  if (!v2 || !v2->vecinos) return;
+  const uint8_t c = canal ? canal : canalEspNowConfigurado;
+  v2->vecinos->cambiarCanal(c);
+  v2->gestor->canalEspNow(c);  // el gestor solo pausa ESP-NOW si el WiFi está en otro canal que este
+}
+// No se busca WiFi a mitad de un mensaje de ESP-NOW: el escaneo saca la radio del canal ~1,6 s
+bool puedeEscanearWifi() { return !(v2 && v2->vecinos && v2->vecinos->enviando()); }
+
+// El circulito que gira en la pantalla de espera mientras se envían o reciben datos de la sincronización v2: paquetes
+// C1 con el servidor o con un vecino, PEDIDOs de ESP-NOW y un mensaje fragmentado en curso. Las balizas (cada 2 s) y
+// los keepalive de MQTT no cuentan: si no, giraría siempre. Se queda encendido un rato tras lo último para que se vea.
+void indicarActividad() {
+  static uint32_t firmaAnterior = 0, ultimaMs = 0;
+  if (!v2) return;
+  uint32_t firma = v2->sinc->holasEnviados() + v2->sinc->paquetesEventos() + v2->sinc->paquetesAjenos() +
+                   v2->sinc->reenvios() + v2->sinc->paquetesRecibidos();
+  bool enCurso = false;
+  if (v2->intercambio) {
+    const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
+    firma += c.pedidosListas + c.pedidosAcuses + c.pedidosAtendidos + c.eventosEntregados + c.listasEntregadas +
+             c.acusesEntregados;
+    enCurso = v2->vecinos->enviando();
+  }
+  const uint32_t ahora = millis();
+  if (firma != firmaAnterior || enCurso) {
+    firmaAnterior = firma;
+    ultimaMs = ahora;
+  }
+  ui::actividad(ultimaMs && ahora - ultimaMs < 1500);
+}
+
+// El portal necesita la radio y memoria libres para crear su red: antes de abrirlo se suelta la conexión MQTT/TLS
+// (sus búferes ocupan decenas de KB) y se pausa ESP-NOW. Al cerrarse, el gestor de enlaces los reanuda solo.
+void abrirPortal() {
+  if (v2) {
+    v2->canal->desconectar();
+    if (v2->vecinos) v2->vecinos->pausar(true);
+  }
+  portal.iniciar();
+}
+
+void reiniciarWifi() {
+  if (v2) v2->canal->desconectar();
+  // abrirPortal() pausó ESP-NOW directamente (el gestor no lo sabe y no lo reanudaba: quedaba parado hasta reiniciar)
+  if (v2 && v2->vecinos) v2->vecinos->pausar(false);
+  sincronizador.reiniciarWifi();
 }
 
 // Por qué arrancó la placa; un reinicio del watchdog o por caída de tensión se ve aquí
@@ -332,22 +667,37 @@ void setup() {
   Serial.begin(115200);
   activarWatchdog();  // desde el principio: también vigila un cuelgue durante setup()
   registrarMotivoReinicio();
+  // La configuración del WiFi (red, canal, protocolo) no se guarda en la flash: las redes están en la microSD y
+  // WiFi.begin() se llama en cada intento de conexión (con una red inestable, cientos de escrituras por noche); y lo
+  // guardado se cargaba con cualquier firmware (el largo alcance que dejó prueba_espnow escondía el portal)
+  WiFi.persistent(false);
   PASO("setup: ui::iniciar");
   ui::iniciar();
   PASO("setup: pantalla Iniciando");
   ui::espera("Validador", "Iniciando...");
   pinMode(PIN_BOOT, INPUT_PULLUP);
+  PASO("setup: hora guardada");
+  if (const uint32_t h = horaGuardada()) {  // hora estimada para cobrar aunque no haya WiFi
+    baseUnix = h;
+    baseMillis = millis();
+  }
   PASO("setup: microSD");
+  almacen.alGuardarEvento(anotarEvento);  // antes de iniciar: así se anota todo evento nuevo
   almacen.iniciar();
   PASO("setup: lector PN532");
   iniciarLector();
   PASO("setup: modo sync");
-  comprobarModoSync();
+  wifiApagado = almacen.config("wifi") == "off";
+#ifdef WIFI_APAGADO_PRUEBA
+  wifiApagado = true;  // compilación de prueba (-DWIFI_APAGADO_PRUEBA): sin tocar la configuración de la microSD
+#endif
+  if (wifiApagado) log("wifi=off: el WiFi no se enciende; solo se cobra (se guarda todo para subirlo después)");
+  iniciarSyncV2();
   PASO("setup: pantalla de espera");
   pantallaEspera();
   PASO("setup: portal");
   // Sin ninguna red guardada, el portal se abre solo (se cierra a los 10 min sin uso)
-  if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) portal.iniciar();
+  if (almacen.listo() && almacen.configurado() && almacen.redes().empty()) abrirPortal();
 }
 
 void loop() {
@@ -363,12 +713,11 @@ void loop() {
   MedirLoop medirLoop;
 #endif
   PASO("loop: portal");
-  comprobarModoSync();
   if (portal.activo()) {
     // Mientras se configura el WiFi no se cobra
     if (portal.atender()) {
       botonDesde = 0;
-      sincronizador.reiniciarWifi();
+      reiniciarWifi();
       pantallaEspera();
     } else if (puente.conectado() && millis() - ultimoSaludo > 3000) {
       // El puente reinicia la placa si deja de oírla: se le saluda de vez en cuando
@@ -381,23 +730,23 @@ void loop() {
   }
   PASO("loop: botón BOOT");
   if (botonMantenido() && almacen.listo() && almacen.configurado()) {
-    portal.iniciar();
+    abrirPortal();
     return;
   }
 
   PASO("loop: ui::actualizar");
+  indicarActividad();
   ui::actualizar();
   PASO("loop: sincronizador");
-  if (sincronizador.atender()) {
+  if (!v2 && !wifiApagado && sincronizador.atender()) {  // con sync=v2 corre más abajo, con el lector libre
     if (sincronizador.horaServidor()) {  // la hora del servidor permite cobrar sin el puente
-      baseUnix = sincronizador.horaServidor();
-      baseMillis = sincronizador.millisHora();
+      fijarHora(sincronizador.horaServidor(), sincronizador.millisHora());
     }
     PASO("loop: pantalla tras sincronizar");
     pantallaEspera();  // actualiza "Sin subir"
   }
-  if (sincronizador.estado() != estadoMostrado) {
-    estadoMostrado = sincronizador.estado();
+  if (estadoSync() != estadoMostrado) {
+    estadoMostrado = estadoSync();
     PASO("loop: pantalla por cambio de estado");
     pantallaEspera();
   }
@@ -406,7 +755,7 @@ void loop() {
   if (almacen.reintentarMontaje()) {
     log("microSD montada tras reintentar");
     pantallaEspera();
-    if (almacen.configurado() && almacen.redes().empty()) portal.iniciar();  // como en setup()
+    if (almacen.configurado() && almacen.redes().empty()) abrirPortal();  // como en setup()
   }
 
   PASO("loop: consumo de datos");
@@ -427,6 +776,8 @@ void loop() {
   atenderPuente();
 
   if (!lector.conectado()) {
+    PASO("loop: sync v2 (sin lector)");
+    servicioSyncV2();  // sin lector no hay tarjeta que esperar
     if (millis() - ultimoIntentoLector > 3000) {
       PASO("loop: reintento del lector PN532");
       iniciarLector();
@@ -449,8 +800,9 @@ void loop() {
       log("ERROR: el PN532 dejó de responder");
       pantallaEspera();
     }
-    PASO("loop: mantenimiento de la microSD");
-    almacen.mantenimiento();  // sin tarjeta delante: un paso de lo que haya pendiente (compactar la cola)
+    PASO("loop: sync v2 y mantenimiento de la microSD");
+    servicioSyncV2();         // sin tarjeta delante: conectar, intercambiar paquetes y un paso de la microSD
+    almacen.mantenimiento();  // un paso de lo que haya pendiente (compactar la cola)
     return;
   }
 
