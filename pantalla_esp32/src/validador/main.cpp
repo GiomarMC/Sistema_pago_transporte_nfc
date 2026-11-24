@@ -34,6 +34,7 @@
 #include <rom/ets_sys.h>
 #include <string.h>
 
+#include <BusI2C.h>
 #include <CanalMqtt.h>
 #include <TareaFondo.h>
 
@@ -93,8 +94,9 @@ constexpr uint8_t PIN_BOOT = 0;                        // botón BOOT de la plac
 constexpr uint32_t WATCHDOG_S = 45;
 constexpr uint32_t PULSACION_PORTAL = 3000;            // ms pulsado para abrir el portal WiFi
 
-// PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32
-LectorPN532 lector(Wire, 21, 22, 32);
+// PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32. La OLED, si la hay, va en su propio bus (SDA P25, SCL P33; #200)
+constexpr uint8_t PIN_SDA = 21, PIN_SCL = 22;
+LectorPN532 lector(Wire1, PIN_SDA, PIN_SCL, 32);  // Wire1: Wire es de la OLED (U8g2 solo sabe usar Wire)
 LectorPuente puente(Serial);  // ordenador opcional: configuración y hora
 Almacen almacen;
 
@@ -420,7 +422,9 @@ void pantallaEspera() {
   if (!almacen.listo()) {
     ui::espera("Error microSD", "Revise la tarjeta SD");
   } else if (!lector.conectado()) {
-    ui::espera("Sin lector", "Revise el PN532");
+    // Casi siempre es el PN532 colgado tras reiniciarse la ESP32 con él encendido (cargar firmware, abrir el puerto
+    // serie, EN, watchdog): retiene el bus y solo vuelve quitándole la corriente (#200)
+    ui::espera("Sin lector", "Desenchufe 15 s");
   } else if (!almacen.configurado()) {
     ui::espera("Sin configurar", "puente --configurar");
   } else if (!ahoraUnix()) {
@@ -491,7 +495,19 @@ void atenderPuente() {
   pantallaEspera();
 }
 
+void avisarBusLiberado(int pulsos) {
+  if (pulsos > 0) log("Bus I2C del PN532: SDA estaba retenida a nivel bajo; liberada con " + String(pulsos) + " pulsos de reloj");
+  else if (pulsos < 0) log("Bus I2C del PN532 bloqueado (SCL=" + String(digitalRead(PIN_SCL)) + ", SDA=" + String(digitalRead(PIN_SDA)) +
+                           "): no se soltó; hay que quitar la corriente de la placa");
+}
+
 void iniciarLector() {
+  // Si el bus quedó retenido (SDA baja con SCL libre), se suelta antes de intentarlo. Wire1 se cierra: liberarBusI2C()
+  // toma los pines como GPIO y el siguiente begin() los vuelve a dar al I2C
+  if (digitalRead(PIN_SDA) == 0 && digitalRead(PIN_SCL) == 1) {
+    Wire1.end();
+    avisarBusLiberado(liberarBusI2C(PIN_SDA, PIN_SCL));
+  }
   if (lector.iniciar()) {
     log("Lector " + lector.version() + " listo");
   } else {
@@ -733,6 +749,8 @@ void setup() {
   // WiFi.begin() se llama en cada intento de conexión (con una red inestable, cientos de escrituras por noche); y lo
   // guardado se cargaba con cualquier firmware (el largo alcance que dejó prueba_espnow escondía el portal)
   WiFi.persistent(false);
+  PASO("setup: bus I2C");
+  const int pulsosI2C = liberarBusI2C(PIN_SDA, PIN_SCL);  // antes de la OLED y del PN532 (#200); se avisa cuando ya hay registro
   PASO("setup: ui::iniciar");
   ui::iniciar();
   PASO("setup: pantalla Iniciando");
@@ -747,6 +765,7 @@ void setup() {
   almacen.alGuardarEvento(anotarEvento);  // antes de iniciar: así se anota todo evento nuevo
   almacen.iniciar();
   PASO("setup: lector PN532");
+  avisarBusLiberado(pulsosI2C);
   iniciarLector();
   PASO("setup: modo sync");
   wifiApagado = almacen.config("wifi") == "off";
