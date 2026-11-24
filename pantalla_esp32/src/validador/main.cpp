@@ -95,7 +95,7 @@ constexpr uint32_t PULSACION_PORTAL = 3000;            // ms pulsado para abrir 
 
 // PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32. La OLED, si la hay, va en su propio bus (SDA P25, SCL P33; #200)
 constexpr uint8_t PIN_SDA = 21, PIN_SCL = 22;
-LectorPN532 lector(Wire, PIN_SDA, PIN_SCL, 32);
+LectorPN532 lector(Wire1, PIN_SDA, PIN_SCL, 32);  // Wire1: Wire es de la OLED (U8g2 solo sabe usar Wire)
 LectorPuente puente(Serial);  // ordenador opcional: configuración y hora
 Almacen almacen;
 
@@ -497,10 +497,10 @@ void avisarBusLiberado(int pulsos) {
 }
 
 void iniciarLector() {
-  // Si el bus quedó retenido (SDA baja con SCL libre), se suelta antes de intentarlo. Wire se cierra: liberarBusI2C()
+  // Si el bus quedó retenido (SDA baja con SCL libre), se suelta antes de intentarlo. Wire1 se cierra: liberarBusI2C()
   // toma los pines como GPIO y el siguiente begin() los vuelve a dar al I2C
   if (digitalRead(PIN_SDA) == 0 && digitalRead(PIN_SCL) == 1) {
-    Wire.end();
+    Wire1.end();
     avisarBusLiberado(liberarBusI2C(PIN_SDA, PIN_SCL));
   }
   if (lector.iniciar()) {

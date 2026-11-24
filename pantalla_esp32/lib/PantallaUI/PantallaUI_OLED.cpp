@@ -6,7 +6,7 @@
 //   -DOLED_DIRECCION=0x3D dirección I2C de 7 bits (por defecto 0x3C; la serigrafía
 //                         0X78 / 0X7A del módulo son 0x3C / 0x3D escritas en 8 bits)
 //
-// Cableado: SDA = P25, SCL = P33, en un bus I2C propio (Wire1). Antes compartía P21/P22 con el PN532, y una OLED
+// Cableado: SDA = P25, SCL = P33, en un bus I2C propio (Wire, el primer controlador; el PN532 va en Wire1). Antes compartía P21/P22 con el PN532, y una OLED
 // colgada que retiene SCL dejaba también sin lector a la placa (#200): ahora solo se queda sin pantalla.
 #ifdef PANTALLA_OLED
 #include "PantallaUI.h"
@@ -26,11 +26,12 @@ constexpr int8_t PIN_SCL = 33;
 // Con el bus para ella sola va a 400 kHz (el modo rápido del SH1106): una pantalla entera tarda ~25 ms en vez de ~100
 constexpr uint32_t VELOCIDAD_I2C = 400000;
 
-// Las clases _2ND_HW_I2C de U8g2 usan Wire1, el segundo controlador I2C de la ESP32
+// U8g2 usa Wire. (Sus clases _2ND_HW_I2C, con Wire1, no hacen nada en la ESP32: U8g2 solo las activa si la placa define
+// WIRE_INTERFACES_COUNT, y el núcleo de la ESP32 no lo define. Compilan y no envían nada.) Por eso el PN532 va en Wire1
 #ifdef OLED_SSD1306
-U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #else
-U8G2_SH1106_128X64_NONAME_F_2ND_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
+U8G2_SH1106_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #endif
 
 bool oledLista = false;        // false mientras el bus I2C esté bloqueado o la OLED no conteste
@@ -184,11 +185,11 @@ void pantallaEspera() {
 // no vuelve nunca y el watchdog reiniciaría la placa en bucle (#200). Por eso se mira antes y, si el bus está
 // bloqueado, se sigue SIN pantalla y se reintenta cada 5 s. Si solo retiene SDA, se suelta con pulsos de reloj.
 bool intentarArrancar() {
-  Wire1.end();  // liberarBusI2C() toma los pines como GPIO; el begin() de abajo se los devuelve al I2C
+  Wire.end();  // liberarBusI2C() toma los pines como GPIO; el begin() de abajo se los devuelve al I2C
   if (liberarBusI2C(PIN_SDA, PIN_SCL) < 0) return false;
-  Wire1.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
-  Wire1.beginTransmission(OLED_DIRECCION);
-  if (Wire1.endTransmission() != 0) return false;   // nadie responde en esa dirección (o el bus se bloqueó)
+  Wire.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
+  Wire.beginTransmission(OLED_DIRECCION);
+  if (Wire.endTransmission() != 0) return false;   // nadie responde en esa dirección (o el bus se bloqueó)
 
   pantalla.setI2CAddress(OLED_DIRECCION << 1);   // U8g2 pide la dirección en 8 bits
   pantalla.begin();

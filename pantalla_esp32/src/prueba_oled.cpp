@@ -32,8 +32,8 @@ void escanearBus() {
   Serial.println("[1] Escaneando el bus I2C (SDA=P25, SCL=P33)...");
   int encontrados = 0;
   for (uint8_t dir = 1; dir < 127; dir++) {
-    Wire1.beginTransmission(dir);
-    if (Wire1.endTransmission() != 0) continue;
+    Wire.beginTransmission(dir);
+    if (Wire.endTransmission() != 0) continue;
     encontrados++;
     const char *quien = dir == 0x24 ? "PN532" : (dir == 0x3C || dir == 0x3D) ? "OLED" : dir == 0x68 ? "reloj DS3231" : "desconocido";
     Serial.printf("    Dispositivo I2C en 0x%02X  (%s)\n", dir, quien);
@@ -47,7 +47,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\n=== Prueba de la OLED ===");
-  Wire1.begin(PIN_SDA, PIN_SCL, 100000);
+  Wire.begin(PIN_SDA, PIN_SCL, 100000);
   escanearBus();
 
   Serial.println("[2] Iniciando la pantalla...");
