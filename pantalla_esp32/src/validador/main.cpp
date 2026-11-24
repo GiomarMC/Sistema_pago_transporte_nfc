@@ -92,8 +92,9 @@ constexpr uint8_t PIN_BOOT = 0;                        // botón BOOT de la plac
 constexpr uint32_t WATCHDOG_S = 45;
 constexpr uint32_t PULSACION_PORTAL = 3000;            // ms pulsado para abrir el portal WiFi
 
-// PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32
-LectorPN532 lector(Wire, 21, 22, 32);
+// PN532 por I2C: SDA = P21, SCL = P22, IRQ = P32 (la OLED, si la hay, va en el mismo bus)
+constexpr uint8_t PIN_SDA = 21, PIN_SCL = 22;
+LectorPN532 lector(Wire, PIN_SDA, PIN_SCL, 32);
 LectorPuente puente(Serial);  // ordenador opcional: configuración y hora
 Almacen almacen;
 
@@ -488,7 +489,56 @@ void atenderPuente() {
   pantallaEspera();
 }
 
+// #200: si la ESP32 se reinicia a mitad de una lectura por I2C, el esclavo que estaba enviando (el PN532 o la OLED,
+// que no se reinician con ella) se queda esperando reloj con SDA a nivel bajo, y así sigue en cada reinicio hasta que
+// se le quita la corriente (visto el 24 nov en la 106: SCL=1, SDA=0 tras el reinicio 18 de 20). Con SCL libre se suelta
+// dando pulsos de reloj hasta que deje SDA (le faltan como mucho 8 bits y el ACK) y una condición de STOP.
+// Con SCL a nivel bajo no sirve: un módulo la retiene, y eso solo se arregla quitando la corriente.
+// Devuelve el número de pulsos que hicieron falta, 0 si el bus ya estaba libre y -1 si no se soltó.
+int liberarBusI2C() {
+  pinMode(PIN_SDA, INPUT_PULLUP);
+  pinMode(PIN_SCL, INPUT_PULLUP);
+  delayMicroseconds(10);
+  if (digitalRead(PIN_SCL) == 0) return -1;
+  if (digitalRead(PIN_SDA) == 1) return 0;
+  pinMode(PIN_SCL, OUTPUT_OPEN_DRAIN);
+  int pulsos = 0;
+  while (pulsos < 18 && digitalRead(PIN_SDA) == 0) {  // 9 de sobra por si el primero no llega a contar
+    digitalWrite(PIN_SCL, LOW);
+    delayMicroseconds(10);
+    digitalWrite(PIN_SCL, HIGH);
+    delayMicroseconds(10);
+    pulsos++;
+  }
+  // STOP: SDA sube mientras SCL está alta
+  pinMode(PIN_SDA, OUTPUT_OPEN_DRAIN);
+  digitalWrite(PIN_SCL, LOW);
+  delayMicroseconds(10);
+  digitalWrite(PIN_SDA, LOW);
+  delayMicroseconds(10);
+  digitalWrite(PIN_SCL, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(PIN_SDA, HIGH);
+  delayMicroseconds(10);
+  pinMode(PIN_SDA, INPUT_PULLUP);
+  pinMode(PIN_SCL, INPUT_PULLUP);
+  delayMicroseconds(10);
+  return digitalRead(PIN_SDA) == 1 && digitalRead(PIN_SCL) == 1 ? pulsos : -1;
+}
+
+void avisarBusLiberado(int pulsos) {
+  if (pulsos > 0) log("Bus I2C: SDA estaba retenida a nivel bajo; liberada con " + String(pulsos) + " pulsos de reloj");
+  else if (pulsos < 0) log("Bus I2C bloqueado (SCL=" + String(digitalRead(PIN_SCL)) + ", SDA=" + String(digitalRead(PIN_SDA)) +
+                           "): no se soltó; hay que quitar la corriente de la placa");
+}
+
 void iniciarLector() {
+  // Si el bus quedó retenido (SDA baja con SCL libre), se suelta antes de intentarlo. Wire se cierra: liberarBusI2C()
+  // toma los pines como GPIO y el siguiente begin() los vuelve a dar al I2C
+  if (digitalRead(PIN_SDA) == 0 && digitalRead(PIN_SCL) == 1) {
+    Wire.end();
+    avisarBusLiberado(liberarBusI2C());
+  }
   if (lector.iniciar()) {
     log("Lector " + lector.version() + " listo");
   } else {
@@ -724,6 +774,8 @@ void setup() {
   // WiFi.begin() se llama en cada intento de conexión (con una red inestable, cientos de escrituras por noche); y lo
   // guardado se cargaba con cualquier firmware (el largo alcance que dejó prueba_espnow escondía el portal)
   WiFi.persistent(false);
+  PASO("setup: bus I2C");
+  const int pulsosI2C = liberarBusI2C();  // antes de la OLED y del PN532 (#200); se avisa cuando ya hay registro
   PASO("setup: ui::iniciar");
   ui::iniciar();
   PASO("setup: pantalla Iniciando");
@@ -738,6 +790,7 @@ void setup() {
   almacen.alGuardarEvento(anotarEvento);  // antes de iniciar: así se anota todo evento nuevo
   almacen.iniciar();
   PASO("setup: lector PN532");
+  avisarBusLiberado(pulsosI2C);
   iniciarLector();
   PASO("setup: modo sync");
   wifiApagado = almacen.config("wifi") == "off";
