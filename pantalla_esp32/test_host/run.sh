@@ -22,6 +22,10 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
 g++ -std=c++17 -Wall -Wextra -Werror -Ilib/Enlaces lib/Enlaces/BuscadorCanal.cpp test_host/test_buscador_canal.cpp \
     -o /tmp/subepe-m8-test-buscador
 /tmp/subepe-m8-test-buscador
+# #237: cobros escritos en la tarjeta sin poder comprobarlos (grabado / no grabado / incierto, y su archivo)
+g++ -std=c++17 -Wall -Wextra -Werror -Isrc/validador src/validador/cobros_dudosos.cpp test_host/test_cobros_dudosos.cpp \
+    -o /tmp/subepe-237-test-dudosos
+/tmp/subepe-237-test-dudosos
 g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
     lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp lib/Enlaces/EmisorFragmentos.cpp \
     test_host/test_emisor.cpp -o /tmp/subepe-m8-test-emisor
