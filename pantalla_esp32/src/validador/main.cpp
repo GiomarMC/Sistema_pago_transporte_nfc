@@ -175,7 +175,8 @@ struct SyncV2 {
   uint32_t horaVista = 0;
 };
 std::unique_ptr<SyncV2> v2;
-TareaFondo tareaMqtt("mqtt");  // conecta MQTT/TLS sin parar loop() (#129)
+TareaFondo tareaMqtt("mqtt");
+constexpr uint32_t BUSCAR_TARJETA_MS = 0;  // esperarTarjeta(): con 0, un solo intento  // conecta MQTT/TLS sin parar loop() (#129)
 uint8_t canalEspNowConfigurado = 1;  // espnow_canal: el de ESP-NOW sin WiFi
 void alCanalDelWifi(uint8_t canal);  // más abajo, con el gestor ya creado
 bool puedeEscanearWifi();
@@ -856,7 +857,9 @@ void loop() {
   uint8_t uid[10];
   size_t lenUid = 0;
   PASO("loop: esperar tarjeta");
-  if (!lector.esperarTarjeta(300, uid, lenUid)) {
+  // Un solo intento de InListPassiveTarget por vuelta (~30 ms): antes se repetía durante 300 ms y loop() nunca bajaba
+  // de 300 ms (#129). La búsqueda sigue igual de seguida; entre intento e intento se atiende lo demás.
+  if (!lector.esperarTarjeta(BUSCAR_TARJETA_MS, uid, lenUid)) {
     if (!lector.conectado()) {
       log("ERROR: el PN532 dejó de responder");
       pantallaEspera();
