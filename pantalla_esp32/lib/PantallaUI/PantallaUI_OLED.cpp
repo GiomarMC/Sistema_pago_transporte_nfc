@@ -6,10 +6,12 @@
 //   -DOLED_DIRECCION=0x3D dirección I2C de 7 bits (por defecto 0x3C; la serigrafía
 //                         0X78 / 0X7A del módulo son 0x3C / 0x3D escritas en 8 bits)
 //
-// Cableado: SDA = P21, SCL = P22, los mismos pines que el PN532 (comparten bus).
+// Cableado: SDA = P25, SCL = P33, en un bus I2C propio (Wire1). Antes compartía P21/P22 con el PN532, y una OLED
+// colgada que retiene SCL dejaba también sin lector a la placa (#200): ahora solo se queda sin pantalla.
 #ifdef PANTALLA_OLED
 #include "PantallaUI.h"
 
+#include <BusI2C.h>
 #include <U8g2lib.h>
 #include <Wire.h>
 
@@ -19,15 +21,16 @@
 
 namespace {
 
-constexpr int8_t PIN_SDA = 21;
-constexpr int8_t PIN_SCL = 22;
-// Igual que el PN532: así los dos módulos comparten bus sin cambiarse la velocidad
-constexpr uint32_t VELOCIDAD_I2C = 100000;
+constexpr int8_t PIN_SDA = 25;
+constexpr int8_t PIN_SCL = 33;
+// Con el bus para ella sola va a 400 kHz (el modo rápido del SH1106): una pantalla entera tarda ~25 ms en vez de ~100
+constexpr uint32_t VELOCIDAD_I2C = 400000;
 
+// Las clases _2ND_HW_I2C de U8g2 usan Wire1, el segundo controlador I2C de la ESP32
 #ifdef OLED_SSD1306
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
+U8G2_SSD1306_128X64_NONAME_F_2ND_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #else
-U8G2_SH1106_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
+U8G2_SH1106_128X64_NONAME_F_2ND_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #endif
 
 bool oledLista = false;        // false mientras el bus I2C esté bloqueado o la OLED no conteste
@@ -175,16 +178,17 @@ void pantallaEspera() {
   volverAEsperaEn = 0;
 }
 
-// Pone en marcha la OLED si el bus I2C está libre y ella responde. A veces, tras un reinicio de la ESP32 (puerto
-// serie, botón EN, watchdog), un módulo del bus (casi seguro el PN532, que no se reinicia con ella) deja SCL a nivel
-// bajo y ahí se queda hasta quitar la corriente: medido con SCL=0 antes de Wire.begin(), sin soltarse en 20 s ni con
-// pulsos de reloj. Con el bus así, pantalla.begin() de U8g2 no vuelve nunca y el watchdog reinicia la placa en bucle
-// (#200). Por eso se mira antes y, si el bus está bloqueado, se sigue SIN pantalla y se reintenta cada 5 s.
+// Pone en marcha la OLED si su bus I2C está libre y ella responde. A veces, tras un reinicio de la ESP32 (puerto
+// serie, botón EN, watchdog), la OLED, que no se reinicia con ella, deja SCL a nivel bajo y ahí se queda hasta quitar
+// la corriente (medido el 24 nov: al desconectar su SCL el bus quedó libre). Con el bus así, pantalla.begin() de U8g2
+// no vuelve nunca y el watchdog reiniciaría la placa en bucle (#200). Por eso se mira antes y, si el bus está
+// bloqueado, se sigue SIN pantalla y se reintenta cada 5 s. Si solo retiene SDA, se suelta con pulsos de reloj.
 bool intentarArrancar() {
-  if (digitalRead(PIN_SCL) == 0 || digitalRead(PIN_SDA) == 0) return false;
-  Wire.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
-  Wire.beginTransmission(OLED_DIRECCION);
-  if (Wire.endTransmission() != 0) return false;   // nadie responde en esa dirección (o el bus se bloqueó)
+  Wire1.end();  // liberarBusI2C() toma los pines como GPIO; el begin() de abajo se los devuelve al I2C
+  if (liberarBusI2C(PIN_SDA, PIN_SCL) < 0) return false;
+  Wire1.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
+  Wire1.beginTransmission(OLED_DIRECCION);
+  if (Wire1.endTransmission() != 0) return false;   // nadie responde en esa dirección (o el bus se bloqueó)
 
   pantalla.setI2CAddress(OLED_DIRECCION << 1);   // U8g2 pide la dirección en 8 bits
   pantalla.begin();
@@ -203,7 +207,7 @@ namespace ui {
 bool iniciar() {
   if (intentarArrancar()) return true;
   Serial.println(String("#AVISO: la OLED no responde (SCL=") + digitalRead(PIN_SCL) + ", SDA=" + digitalRead(PIN_SDA) +
-                 "): se sigue sin pantalla y se reintenta cada 5 s. Si SCL=0, hay que quitar la corriente de la placa");
+                 "): se sigue sin pantalla (el lector sigue cobrando) y se reintenta cada 5 s. Si SCL=0, hay que quitar la corriente de la placa");
   return false;
 }
 

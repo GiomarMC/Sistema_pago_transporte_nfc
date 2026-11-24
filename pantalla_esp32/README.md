@@ -95,11 +95,13 @@ y la microSD van cada una en su propio bus SPI; el PN532, en el bus I2C.
 |---|---|---|
 | GND | GND | Derecho, 1.º |
 | VCC | 3V3 | Izquierdo, 1.º |
-| SCL | P22 (el mismo que el SCL del PN532) | Derecho, 3.º |
-| SDA | P21 (el mismo que el SDA del PN532) | Derecho, 6.º |
+| SCL | P33 | Izquierdo, 8.º |
+| SDA | P25 | Izquierdo, 9.º |
 
-La OLED comparte el bus I2C con el PN532 (direcciones 0x3C y 0x24, no chocan) y
-no usa pines nuevos. **El orden de sus pines es GND, VCC, SCL, SDA**, distinto
+La OLED va en **su propio bus I2C** (SDA en P25, SCL en P33), no en el del PN532. Hasta el 24 nov
+compartía P21/P22, pero si la ESP32 se reiniciaba con los módulos encendidos, la
+OLED podía quedarse reteniendo SCL y dejaba también sin lector a la placa (#200).
+Con un bus para ella, en ese caso solo se pierde la pantalla. **El orden de sus pines es GND, VCC, SCL, SDA**, distinto
 al de muchos módulos: conecta por el rótulo. Si el escáner I2C (`prueba_oled`)
 ve 0x3D en vez de 0x3C, compila con `-DOLED_DIRECCION=0x3D`. Si la imagen sale
 corrida 2 píxeles o con ruido en un borde, el controlador es el otro: usa los
@@ -495,7 +497,7 @@ En `transporte/`:
 | "Error microSD" en la pantalla | Tarjeta no insertada, de más de 32 GB o no FAT32, o cableado de la microSD (prueba con el firmware `prueba`). |
 | Cobra pero el saldo de la cuenta no baja en el servidor | Los viajes suben al sincronizar (cada 30 s con WiFi). Mira el estado en la pantalla y los mensajes (`pio device monitor`). |
 | La pantalla dice "Sin WiFi" | La red no es de 2,4 GHz, la contraseña es incorrecta o no hay señal. Corrígela con el portal (botón BOOT 3 s). |
-| La pantalla se queda en "Iniciando..." o se reinicia sola cada 45 s | El programa se bloqueó y el **watchdog** (45 s) reinició la placa. Con el monitor serie abierto, el mensaje `#WATCHDOG: el programa se bloqueó en el paso: ...` dice dónde se quedó, y al arrancar se anota `#Arranque: WATCHDOG...`. Si se repite en `setup: ui::iniciar` (la OLED, por I2C), **corta la corriente** de toda la placa y los módulos (desenchufa el USB 15 s): un simple reinicio no lo quita. Revisa también los cables de SDA (P21) y SCL (P22). Abrir el monitor serie reinicia la placa. |
+| La pantalla se queda en "Iniciando..." o se reinicia sola cada 45 s | El programa se bloqueó y el **watchdog** (45 s) reinició la placa. Con el monitor serie abierto, el mensaje `#WATCHDOG: el programa se bloqueó en el paso: ...` dice dónde se quedó, y al arrancar se anota `#Arranque: WATCHDOG...`. Si se repite en `setup: ui::iniciar` (la OLED, por I2C), **corta la corriente** de toda la placa y los módulos (desenchufa el USB 15 s): un simple reinicio no lo quita. Revisa también los cables de SDA y SCL (P21/P22 del PN532; P25/P33 de la OLED). Abrir el monitor serie reinicia la placa. |
 | La pantalla dice "Sin servidor" | Los mensajes de la ESP32 muestran el motivo: `HTTP 401` es un token que no es de ese servidor (vuelve a configurar con `--servidor`); un error `TLS` es un certificado que no es de Let's Encrypt; `connection refused` o un tiempo agotado, el servidor caído o una URL mal escrita. |
 
 ## 12. Estado y pendientes

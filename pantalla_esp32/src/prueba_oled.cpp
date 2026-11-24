@@ -8,8 +8,8 @@
  * 2. Recorre en la OLED las mismas pantallas que usa el validador: espera, PASE,
  *    RECHAZADA, ATENCION y la pantalla de información del portal WiFi.
  *
- * Cableado (la placa rotula los pines como P21, P22...):
- *   OLED: GND->GND  VCC->3V3  SCL->P22  SDA->P21     (¡el orden del módulo es GND, VCC, SCL, SDA!)
+ * Cableado (la placa rotula los pines como P25, P33...):
+ *   OLED: GND->GND  VCC->3V3  SCL->P33  SDA->P25     (¡el orden del módulo es GND, VCC, SCL, SDA!)
  *
  * Cómo saber si el controlador es el correcto (la barra superior de PASE/RECHAZADA
  * llega de borde a borde, así que se nota enseguida):
@@ -26,14 +26,14 @@
 #include <PantallaUI.h>
 #include <Wire.h>
 
-constexpr int8_t PIN_SDA = 21, PIN_SCL = 22;
+constexpr int8_t PIN_SDA = 25, PIN_SCL = 33;  // bus propio de la OLED (#200)
 
 void escanearBus() {
-  Serial.println("[1] Escaneando el bus I2C (SDA=P21, SCL=P22)...");
+  Serial.println("[1] Escaneando el bus I2C (SDA=P25, SCL=P33)...");
   int encontrados = 0;
   for (uint8_t dir = 1; dir < 127; dir++) {
-    Wire.beginTransmission(dir);
-    if (Wire.endTransmission() != 0) continue;
+    Wire1.beginTransmission(dir);
+    if (Wire1.endTransmission() != 0) continue;
     encontrados++;
     const char *quien = dir == 0x24 ? "PN532" : (dir == 0x3C || dir == 0x3D) ? "OLED" : dir == 0x68 ? "reloj DS3231" : "desconocido";
     Serial.printf("    Dispositivo I2C en 0x%02X  (%s)\n", dir, quien);
@@ -47,7 +47,7 @@ void setup() {
   Serial.begin(115200);
   delay(500);
   Serial.println("\n=== Prueba de la OLED ===");
-  Wire.begin(PIN_SDA, PIN_SCL, 100000);
+  Wire1.begin(PIN_SDA, PIN_SCL, 100000);
   escanearBus();
 
   Serial.println("[2] Iniciando la pantalla...");
