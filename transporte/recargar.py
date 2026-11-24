@@ -66,6 +66,11 @@ def recargar_tarjeta(t: NTAG215, monto: int):
     pagina = formato.PAG_REGISTROS[est.ranura_libre]
     datos = nuevo.a_bytes(t.uid, clave, cab)
     try:
+        # La autenticación de antes no sirve: mientras se esperaba al servidor, el ACR122U (o pcscd) volvió a
+        # seleccionar la tarjeta y la perdió (medido: pasa a los 2 s sin hablarle). Sin esto la escritura se rechaza
+        # con la tarjeta quieta en el lector cada vez que el servidor tarda (#240).
+        if t.autenticar(pwd) != pack:
+            raise ErrorTarjeta("PACK")
         t.escribir_paginas(pagina, datos)
         if t.leer(pagina, pagina + len(datos) // 4 - 1) != datos:
             raise ErrorTarjeta("verificación de escritura")
