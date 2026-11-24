@@ -9,7 +9,7 @@ dentro de la misma transacción (sincronización v2, C1 5.5): si la operación
 falla, el cambio tampoco queda.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.db.models import Max, Q
@@ -193,11 +193,20 @@ def entregar_recargas(tarjeta, hasta_seq, por, fecha=None):
 
 @transaction.atomic
 def registrar_entrega_en_punto(tarjeta, hasta_seq, operacion, contador, recarga_id=None):
-    entregar_recargas(tarjeta, hasta_seq, PUNTO_RECARGA)
+    movimientos = Movimiento.objects.filter(cuenta_id=tarjeta.cuenta_id)
     if recarga_id is not None:
-        # Deja constancia de la operación de tarjeta (sirve para detectar clones)
-        Movimiento.objects.filter(ref=f"R{recarga_id}", cuenta_id=tarjeta.cuenta_id).update(
-            tarjeta=tarjeta, operacion=operacion, validador=PUNTO_RECARGA, contador=contador)
+        movimientos = movimientos.filter(ref=f"R{recarga_id}")
+    else:
+        # Sin recarga nueva (recargar.py --aplicar): el punto grabó recargas ya abonadas, remotas o de un intento que
+        # no llegó a la tarjeta. La operación se anota en el movimiento de la última que entrega: si no, la tarjeta
+        # "salta" esa operación en el servidor (#237)
+        ultima = (Recarga.objects.filter(cuenta_id=tarjeta.cuenta_id, seq__lte=hasta_seq, aplicada_en__isnull=True,
+                                         reembolsada_en__isnull=True)
+                  .order_by("-seq").first())
+        movimientos = movimientos.filter(ref=f"R{ultima.id}", operacion__isnull=True) if ultima else movimientos.none()
+    entregar_recargas(tarjeta, hasta_seq, PUNTO_RECARGA)
+    # Deja constancia de la operación de tarjeta (sirve para detectar clones y operaciones que faltan)
+    movimientos.update(tarjeta=tarjeta, operacion=operacion, validador=PUNTO_RECARGA, contador=contador)
 
 
 # --- Emisión ------------------------------------------------------------------
@@ -384,3 +393,37 @@ def procesar_evento(numero, ev):
         alertar(tarjeta, "saldo negativo",
                 f"{ref}: cuenta {cuenta.id} con {soles(cuenta.saldo)} (uso sin conexión de una "
                 "tarjeta bloqueada, clon o copia)")
+
+
+# --- Operaciones que faltan (#237) ----------------------------------------------
+
+ALERTA_OPERACION_FALTANTE = "operación de tarjeta sin registrar"
+ESPERA_OPERACIONES = timedelta(hours=24)
+
+
+def revisar_operaciones(espera=ESPERA_OPERACIONES, ahora=None):
+    """Busca tarjetas que "saltan" una operación: la tarjeta va por la N+1 y el servidor no sabe nada de la N. Pasa,
+    por ejemplo, si un validador grabó un cobro en la tarjeta sin poder comprobarlo y la tarjeta no volvió a él: el
+    pasajero pagó un viaje que el servidor no tiene.
+
+    Los validadores suben cuando pueden, así que un hueco se da por bueno solo cuando la operación siguiente lleva más
+    de `espera` en el servidor (para entonces la que falta ya habría llegado). Deja una alerta por hueco, una sola vez.
+    Devuelve [(tarjeta_id, operación)] de las alertas nuevas."""
+    limite = (ahora or timezone.now()) - espera
+    nuevas = []
+    filas = (Movimiento.objects.filter(tarjeta__isnull=False, operacion__isnull=False)
+             .order_by("tarjeta_id", "operacion").values_list("tarjeta_id", "operacion", "fecha", "ref"))
+    anterior = None  # (tarjeta, operación) de la fila anterior
+    for tarjeta_id, operacion, fecha, ref in filas:
+        if anterior and anterior[0] == tarjeta_id and operacion > anterior[1] + 1 and fecha <= limite:
+            for falta in range(anterior[1] + 1, operacion):
+                prefijo = f"tarjeta {tarjeta_id}, operación {falta}:"
+                if Alerta.objects.filter(tipo=ALERTA_OPERACION_FALTANTE, detalle__startswith=prefijo).exists():
+                    continue
+                alertar(Tarjeta.objects.filter(pk=tarjeta_id).first(), ALERTA_OPERACION_FALTANTE,
+                        f"{prefijo} la tarjeta pasó a la {operacion} ({ref or 'sin referencia'}) y el servidor no "
+                        "tiene la anterior. Posible cobro grabado en la tarjeta sin registrar (o recarga en punto "
+                        "sin confirmar): revisar el saldo de la cuenta")
+                nuevas.append((tarjeta_id, falta))
+        anterior = (tarjeta_id, operacion)
+    return nuevas
