@@ -57,7 +57,7 @@ void EnlaceWifi::apagar() {
   conectado_ = false;
   intentando_ = false;
   escaneando_ = false;
-  cerrar();
+  cerrarPropio();
   olvidarNombres();
   WiFi.scanDelete();
   WiFi.disconnect();
@@ -73,7 +73,7 @@ void EnlaceWifi::reiniciar() {
   hayEscaneo_ = false;
   vistas_ = "?";  // distinto de cualquier lista: lo primero que se vea se anota
   WiFi.scanDelete();
-  cerrar();
+  cerrarPropio();
   olvidarNombres();
 }
 
@@ -126,7 +126,7 @@ void EnlaceWifi::atender() {
     intentando_ = false;
     hayEscaneo_ = false;  // se busca enseguida
     vistas_ = "?";  // distinto de cualquier lista: lo primero que se vea se anota
-    cerrar();
+    cerrarPropio();
     olvidarNombres();  // la IP del servidor local puede ser otra al volver
     log_("WiFi perdido; se sigue cobrando sin conexión");
     avisarCanal(0);
@@ -333,6 +333,19 @@ Client *EnlaceWifi::abrirCon(WiFiClient &cliente, bool tls, const char *host, ui
   }
   destino_ = destino;
   return &contado_;
+}
+
+void EnlaceWifi::cerrarPropio() {
+  if (prestado_) cierrePendiente_ = true;
+  else cerrar();
+}
+
+void EnlaceWifi::prestarFlujo(bool prestado) {
+  prestado_ = prestado;
+  if (!prestado && cierrePendiente_) {
+    cierrePendiente_ = false;
+    cerrar();
+  }
 }
 
 void EnlaceWifi::cerrar() {

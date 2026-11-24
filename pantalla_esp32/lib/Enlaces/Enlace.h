@@ -23,6 +23,10 @@ class Enlace {
   // nullptr si el enlace no está Listo o falla la conexión.
   virtual Client *abrir(const char *host, uint16_t puerto) = 0;
   virtual void cerrar() = 0;
+  // Con true, otra tarea (CanalMqtt conectando en segundo plano) está usando el flujo: el enlace no lo cierra por su
+  // cuenta (al perder la red, al apagarse...) hasta que se le devuelva con false, y entonces lo cierra si hizo falta.
+  // cerrar() sí lo cierra siempre: solo lo llama quien usa el flujo. Por defecto no hace nada.
+  virtual void prestarFlujo(bool) {}
   virtual uint32_t bytesTx() const = 0;  // desde el arranque
   virtual uint32_t bytesRx() const = 0;
 };
