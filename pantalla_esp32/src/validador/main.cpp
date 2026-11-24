@@ -419,7 +419,9 @@ void pantallaEspera() {
   if (!almacen.listo()) {
     ui::espera("Error microSD", "Revise la tarjeta SD");
   } else if (!lector.conectado()) {
-    ui::espera("Sin lector", "Revise el PN532");
+    // Casi siempre es el PN532 colgado tras reiniciarse la ESP32 con él encendido (cargar firmware, abrir el puerto
+    // serie, EN, watchdog): retiene el bus y solo vuelve quitándole la corriente (#200)
+    ui::espera("Sin lector", "Desenchufe 15 s");
   } else if (!almacen.configurado()) {
     ui::espera("Sin configurar", "puente --configurar");
   } else if (!ahoraUnix()) {
