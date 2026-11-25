@@ -25,7 +25,7 @@ void comprueba(bool ok, const char *que) {
 }
 
 const char *ARCHIVOS[] = {"/eventos.txt", "/estado.txt", "/eventos.bin", "/eventos.tmp", "/estado.bin", "/estado.tmp",
-                          "/estado.bak",  "/ultima_op.txt", "/eventos.migrado", "/estado.migrado"};
+                          "/estado.bak", "/estado.ab", "/estado.abn",  "/ultima_op.txt", "/eventos.migrado", "/estado.migrado"};
 
 String sufijo(const char *r) { return String(r) + ".prueba"; }
 

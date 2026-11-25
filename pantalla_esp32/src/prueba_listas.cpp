@@ -75,9 +75,9 @@ AplicadorListas::Resultado aplicar(Sistema &s, const char *nombre, const uint8_t
 }
 
 void limpiar() {
-  for (const char *r : {"/estado.bin", "/estado.tmp", "/estado.bak", "/lista_negra.bin", "/lista_negra.tmp", "/lista_negra.bak",
-                        "/urgentes.bin", "/urgentes.tmp", "/recargas.bin", "/recargas.tmp", "/recargas.bak", "/tarifas.bin",
-                        "/tarifas.tmp", "/tarifas.bak", "/firmados.log", "/firmados.tmp"})
+  for (const char *r : {"/estado.bin", "/estado.tmp", "/estado.bak", "/estado.ab", "/estado.abn", "/lista_negra.bin", "/lista_negra.tmp", "/lista_negra.bak",
+                        "/urgentes.bin", "/urgentes.tmp", "/recargas.bin", "/recargas.tmp", "/recargas.bak", "/recargas.ab", "/recargas.abn", "/tarifas.bin",
+                        "/tarifas.tmp", "/tarifas.bak", "/tarifas.ab", "/tarifas.abn", "/firmados.log", "/firmados.tmp"})
     if (archivos.existe(r)) archivos.borrar(r);
   // los LISTAS que esta prueba guarda en /firmados, por nombre (recorrer la carpeta es lento en la microSD)
   const uint32_t pares[][2] = {{0, FOTO_INTERMEDIA_1}, {FOTO_INTERMEDIA_1, FOTO_INTERMEDIA_2}, {FOTO_INTERMEDIA_2, 200},

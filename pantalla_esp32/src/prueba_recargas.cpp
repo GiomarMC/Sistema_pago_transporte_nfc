@@ -134,7 +134,7 @@ void escribe(const char *ruta, const char *texto) {
 
 void probarAlmacen() {
   Serial.println("Almacen del validador:");
-  for (const char *r : {"/recargas.bin", "/recargas.tmp", "/recargas.bak", "/tarifas.bin", "/tarifas.tmp", "/tarifas.bak"})
+  for (const char *r : {"/recargas.bin", "/recargas.tmp", "/recargas.bak", "/recargas.ab", "/recargas.abn", "/tarifas.bin", "/tarifas.tmp", "/tarifas.bak", "/tarifas.ab", "/tarifas.abn"})
     SD.remove(r);
   // como los dejaba la versión anterior (texto)
   escribe("/recargas.txt", "7 1 100\n7 2 200\n7 4 999\n8 1 5\n");
@@ -142,7 +142,7 @@ void probarAlmacen() {
 
   comprueba(almacen.iniciar(), "Almacen::iniciar() con microSD");
   comprueba(!SD.exists("/recargas.txt") && !SD.exists("/tarifas.txt"), "los .txt se migraron y se borraron");
-  comprueba(SD.exists("/recargas.bin") && SD.exists("/tarifas.bin"), "existen los .bin");
+  comprueba(SD.exists("/recargas.ab") && SD.exists("/tarifas.ab"), "existen los .ab");
   int32_t total;
   uint32_t hasta;
   almacen.recargasPendientes(7, 0, total, hasta);

@@ -209,7 +209,9 @@ struct MedirLoop {
     const uint32_t duracion = micros() - inicio;
     if (duracion > maximoUs) maximoUs = duracion;
     if (millis() - ultimoReporte >= 10000) {
-      Serial.println("# M15 loop_max_us=" + String(maximoUs) + " paso_max_us=" + String(pasoMaxUs) + " (" + pasoMaxNombre + ")");
+      // Con la memoria libre y el mayor bloque: TLS necesita decenas de KB seguidos (#129)
+      Serial.println("# M15 loop_max_us=" + String(maximoUs) + " paso_max_us=" + String(pasoMaxUs) + " (" + pasoMaxNombre +
+                     ") heap=" + String(ESP.getFreeHeap()) + " bloque=" + String(ESP.getMaxAllocHeap()));
       maximoUs = 0;
       pasoMaxUs = 0;
       ultimoReporte = millis();
@@ -691,6 +693,7 @@ void servicioSyncV2() {
       v2->vecinos->silenciar(enlaceWifi.conectando());
       v2->vecinos->permitirBusqueda(!enlaceWifi.conectando() && !enlaceWifi.escaneando());
     }
+    PASO("loop: sync v2, gestor de enlaces");
     v2->gestor->atender(ahora, false, canalWifi);
     canal = v2->gestor->activo();
   } else if (v2->vecinos) {
@@ -699,13 +702,16 @@ void servicioSyncV2() {
   uint32_t tx = 0, rx = 0;
   if (almacen.listo()) almacen.consumo().bytesHoy(tx, rx);
   v2->sinc->telemetria(enlaceWifi.senal(), tx, rx);
+  PASO("loop: sync v2, sincronizador");
   v2->sinc->atender(canal, ahora);
   if (v2->sinc->horaServidor() && v2->sinc->horaServidor() != v2->horaVista) {
     v2->horaVista = v2->sinc->horaServidor();
     fijarHora(v2->sinc->horaServidor(), v2->sinc->millisHora());
     pantallaEspera();
   }
+  PASO("loop: sync v2, intercambio con vecinos");
   if (v2->intercambio) v2->intercambio->atender(ahora, canal != nullptr, !horaReal);
+  PASO("loop: sync v2, paso de la microSD");
   v2->almacenSync->paso(true);
   const String estado = canal ? "WiFi OK" : (enlaceWifi.estado() == EstadoEnlace::Listo ? "Sin servidor" : "Sin WiFi");
   if (estado != v2->estado) {
@@ -819,9 +825,9 @@ void activarWatchdog() {
 }  // namespace
 
 void setup() {
-  // Con un búfer de salida grande, un log() deja el texto en él y vuelve: sin él, cada línea esperaba a salir por el
-  // cable a 115200 baudios (el informe de cada minuto, ~650 B, paraba loop() 64 ms; #129)
-  Serial.setTxBufferSize(2048);
+  // Con un búfer de salida, un log() deja el texto en él y vuelve: sin él, cada línea esperaba a salir por el cable a
+  // 115200 baudios (el informe de cada minuto, ~650 B, paraba loop() 64 ms; #129). 1 KB: la memoria hace falta para TLS
+  Serial.setTxBufferSize(1024);
   Serial.begin(115200);
   activarWatchdog();  // desde el principio: también vigila un cuelgue durante setup()
   registrarMotivoReinicio();

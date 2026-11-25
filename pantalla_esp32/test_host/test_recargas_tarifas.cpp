@@ -1,4 +1,4 @@
-// M3-04: /recargas.bin y /tarifas.bin, con cortes de energía simulados.
+// M3-04: /recargas.ab y /tarifas.ab (dos ranuras, #129), con cortes de energía simulados.
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,13 +37,22 @@ std::unique_ptr<sp::Listas> listas(uint32_t desde, std::vector<EntradaLista> e) 
 
 bool aplicar(Recargas &r, uint32_t desde, std::vector<EntradaLista> e) { return r.aplicar(*listas(desde, std::move(e))); }
 
-// Lo que dice el archivo (sin el pie): los registros de 12 B, que deben estar ordenados y sin repetir
-std::vector<Recarga> enDisco(FsFalso &fs, const char *ruta = "/recargas.bin") {
+// La carga vigente de un archivo de ranuras (la válida más nueva), leída sobre una copia para no tocar nada
+std::vector<uint8_t> cargaVigente(const FsFalso &fs, const char *ruta, const char magia[4]) {
+  FsFalso copia = fs;
+  ArchivoRanuras a(copia, ruta, magia);
+  std::vector<uint8_t> carga;
+  a.cargar(carga, 1 << 20);
+  return carga;
+}
+
+// Lo que dice el archivo: los registros de 12 B, que deben estar ordenados y sin repetir
+std::vector<Recarga> enDisco(FsFalso &fs, const char *ruta = "/recargas.ab") {
   std::vector<Recarga> v;
   if (!fs.archivos.count(ruta)) return v;
-  const std::vector<uint8_t> &b = fs.archivos[ruta].cache;
-  assert(b.size() >= ArchivoAtomico::TAM_PIE && (b.size() - ArchivoAtomico::TAM_PIE) % 12 == 0);
-  for (size_t i = 0; i < (b.size() - ArchivoAtomico::TAM_PIE) / 12; i++) {
+  const std::vector<uint8_t> b = cargaVigente(fs, ruta, "REC1");
+  assert(b.size() % 12 == 0);
+  for (size_t i = 0; i < b.size() / 12; i++) {
     Recarga r;
     memcpy(&r.cuenta, &b[i * 12], 4);
     memcpy(&r.seq, &b[i * 12 + 4], 4);
@@ -217,7 +226,7 @@ void cortesDeEnergia() {
   {
     Recargas r(base);
     assert(aplicar(r, 0, {pendiente(7, 1, 100), pendiente(7, 2, 200), pendiente(8, 1, 5)}));
-    assert(aplicar(r, 5, {pendiente(8, 2, 6)}));  // una segunda generación, para que haya .bak
+    assert(aplicar(r, 5, {pendiente(8, 2, 6)}));  // una segunda generación: las dos ranuras con algo
   }
   const std::vector<Recarga> antes = enDisco(base);
   FsFalso copia = base;
@@ -228,34 +237,39 @@ void cortesDeEnergia() {
   assert(antes != despues);
 
   int cortes = 0, vieja = 0, nueva = 0;
-  for (long k = 0;; k++) {
-    FsFalso fs = base;
-    fs.programarCorte(k);
-    bool cortado = false;
-    try {
+  bool terminado = false;
+  for (long k = 0; !terminado; k++) {
+    for (uint32_t semilla = 1; semilla <= 16; semilla++) {  // lo que sobrevive de lo no vaciado cambia con el azar
+      FsFalso fs = base;
+      fs.azar = semilla * 7919;
+      fs.programarCorte(k);
+      bool cortado = false;
+      try {
+        Recargas r(fs);
+        r.iniciar();
+        assert(aplicar(r, 6, {aplicada(7, 1), pendiente(7, 3, 30), pendiente(9, 1, 1)}));
+      } catch (CorteDeEnergia &) {
+        cortado = true;
+      }
+      fs.sinCorte();
+      if (!cortado) {
+        assert(enDisco(fs) == despues);
+        terminado = true;
+        break;
+      }
+      cortes++;
+      fs.aplicarCorte();
       Recargas r(fs);
-      r.iniciar();
+      assert(r.iniciar());
+      assert(r.todas() == antes || r.todas() == despues);  // nunca una mezcla
+      (r.todas() == antes ? vieja : nueva)++;
+      assert(enDisco(fs) == r.todas());
+      // quien lo pidió lo repite (no avanzó la versión de listas) y llega a lo mismo
       assert(aplicar(r, 6, {aplicada(7, 1), pendiente(7, 3, 30), pendiente(9, 1, 1)}));
-    } catch (CorteDeEnergia &) {
-      cortado = true;
+      assert(r.todas() == despues);
     }
-    fs.sinCorte();
-    if (!cortado) {
-      assert(enDisco(fs) == despues);
-      break;
-    }
-    cortes++;
-    fs.aplicarCorte();
-    Recargas r(fs);
-    assert(r.iniciar());
-    assert(r.todas() == antes || r.todas() == despues);  // nunca una mezcla
-    (r.todas() == antes ? vieja : nueva)++;
-    assert(enDisco(fs) == r.todas());  // y el .bin quedó con ella
-    // quien lo pidió lo repite (no avanzó la versión de listas) y llega a lo mismo
-    assert(aplicar(r, 6, {aplicada(7, 1), pendiente(7, 3, 30), pendiente(9, 1, 1)}));
-    assert(r.todas() == despues);
   }
-  assert(cortes >= 5 && vieja > 0 && nueva > 0);
+  assert(cortes >= 16 && vieja > 0 && nueva > 0);
   printf("  %d cortes (%d dejaron la lista vieja, %d la nueva) OK\n", cortes, vieja, nueva);
 }
 
@@ -263,37 +277,37 @@ void copiaCorruptaYEscrituraFallida() {
   FsFalso fs;
   Recargas r(fs);
   assert(aplicar(r, 0, {pendiente(7, 1, 100)}));
-  assert(aplicar(r, 5, {pendiente(7, 2, 200)}));  // .bin con 2, .bak con 1
+  assert(aplicar(r, 5, {pendiente(7, 2, 200)}));  // ranura 0 con 1 (generación 1), ranura 1 con 2 (generación 2)
   const std::vector<Recarga> dos = r.todas();
-  assert(fs.archivos.count("/recargas.bak") && dos.size() == 2);
+  assert(fs.archivos.count("/recargas.ab") && dos.size() == 2);
+  const size_t R = 512, CAB = ArchivoRanuras::TAM_CABECERA;
 
-  // un bit cambiado en .bin: el CRC lo rechaza y se usa .bak
+  // un bit cambiado en la ranura vigente: el CRC la rechaza y se usa la otra
   FsFalso mala = fs;
-  mala.archivos["/recargas.bin"].durable[3] ^= 0x40;
-  mala.archivos["/recargas.bin"].cache = mala.archivos["/recargas.bin"].durable;
+  mala.archivos["/recargas.ab"].durable[R + CAB + 3] ^= 0x40;
+  mala.archivos["/recargas.ab"].cache = mala.archivos["/recargas.ab"].durable;
   Recargas c(mala);
   assert(c.iniciar() && c.cantidad() == 1 && c.todas()[0].seq == 1);
-  assert(enDisco(mala).size() == 1);  // y lo dejó en orden
-  // con .bin y .bak intercambiados (ambas válidas) manda la generación más nueva, no el nombre
+  assert(enDisco(mala).size() == 1);
+  // con las ranuras intercambiadas (ambas válidas) manda la generación más nueva, no la posición
   FsFalso cruzada = fs;
-  std::swap(cruzada.archivos["/recargas.bin"], cruzada.archivos["/recargas.bak"]);
+  auto &x = cruzada.archivos["/recargas.ab"].durable;
+  std::swap_ranges(x.begin(), x.begin() + R, x.begin() + R);
+  cruzada.archivos["/recargas.ab"].cache = x;
   Recargas g(cruzada);
   assert(g.iniciar() && g.todas() == dos);
-  assert(enDisco(cruzada) == dos);  // y el .bin quedó con la nueva
-  // y si están corruptas todas, arranca vacía
-  mala.archivos["/recargas.bin"].durable[3] ^= 0x40;
-  for (auto &p : mala.archivos) {
-    p.second.durable[0] ^= 0xFF;
-    p.second.cache = p.second.durable;
-  }
+  assert(enDisco(cruzada) == dos);
+  // y si están corruptas las dos, arranca vacía
+  mala.archivos["/recargas.ab"].durable[0] ^= 0xFF;
+  mala.archivos["/recargas.ab"].cache = mala.archivos["/recargas.ab"].durable;
   Recargas d(mala);
   assert(!d.iniciar() && d.cantidad() == 0);
-  // un archivo cortado a la mitad tampoco vale
+  // un archivo de otro tamaño no es de este formato (las escrituras en su sitio no cambian el tamaño): no vale
   FsFalso corto = fs;
-  corto.archivos["/recargas.bin"].durable.resize(10);
-  corto.archivos["/recargas.bin"].cache = corto.archivos["/recargas.bin"].durable;
+  corto.archivos["/recargas.ab"].durable.resize(700);
+  corto.archivos["/recargas.ab"].cache = corto.archivos["/recargas.ab"].durable;
   Recargas e(corto);
-  assert(e.iniciar() && e.cantidad() == 1);
+  assert(!e.iniciar() && e.cantidad() == 0);
 
   // la tarjeta falla al escribir: el cambio no vale y todo sigue como estaba
   fs.agregarFalla = true;
@@ -345,12 +359,11 @@ void tarifasComoEnC1() {
   assert(t.guardar(p->tarifas));
   assert(t.version() == p->tarifas.version && t.cantidad() == 3);
 
-  // el archivo empieza con el cuerpo del paquete TARIFAS, byte a byte, y sigue con el pie
+  // lo guardado es el cuerpo del paquete TARIFAS, byte a byte
   size_t largo;
   const uint8_t *cuerpo = cuerpoDelVector(largo);
-  const std::vector<uint8_t> &b = fs.archivos["/tarifas.bin"].cache;
-  assert(b.size() == largo + ArchivoAtomico::TAM_PIE);
-  assert(memcmp(b.data(), cuerpo, largo) == 0);
+  const std::vector<uint8_t> b = cargaVigente(fs, "/tarifas.ab", "TAR1");
+  assert(b.size() == largo && memcmp(b.data(), cuerpo, largo) == 0);
 
   // la misma lista otra vez no escribe (se cortaría de intentarlo); una distinta sí
   fs.programarCorte(0);
@@ -405,36 +418,43 @@ void tarifasConCortes() {
     assert(t.guardar(p->tarifas));
     v2.version++;
     v2.tarifas[1].precio = 60;
-    assert(t.guardar(v2));  // para que haya .bak
+    assert(t.guardar(v2));  // las dos ranuras con algo
   }
   sp::Tarifas v3 = v2;
   v3.version++;
   v3.tarifas[1].precio = 70;
   int cortes = 0, vieja = 0, nueva = 0;
-  for (long k = 0;; k++) {
-    FsFalso fs = base;
-    fs.programarCorte(k);
-    bool cortado = false;
-    try {
+  bool terminado = false;
+  for (long k = 0; !terminado; k++) {
+    for (uint32_t semilla = 1; semilla <= 16; semilla++) {
+      FsFalso fs = base;
+      fs.azar = semilla * 7919;
+      fs.programarCorte(k);
+      bool cortado = false;
+      try {
+        TarifasGuardadas t(fs);
+        t.iniciar();
+        assert(t.guardar(v3));
+      } catch (CorteDeEnergia &) {
+        cortado = true;
+      }
+      fs.sinCorte();
+      if (!cortado) {
+        terminado = true;
+        break;
+      }
+      cortes++;
+      fs.aplicarCorte();
       TarifasGuardadas t(fs);
-      t.iniciar();
-      assert(t.guardar(v3));
-    } catch (CorteDeEnergia &) {
-      cortado = true;
+      assert(t.iniciar());
+      sp::Tarifa x;
+      assert(t.tarifa(2, x));
+      assert((t.version() == v2.version && x.precio == 60) || (t.version() == v3.version && x.precio == 70));
+      (x.precio == 60 ? vieja : nueva)++;
+      assert(t.cantidad() == 3);
     }
-    fs.sinCorte();
-    if (!cortado) break;
-    cortes++;
-    fs.aplicarCorte();
-    TarifasGuardadas t(fs);
-    assert(t.iniciar());
-    sp::Tarifa x;
-    assert(t.tarifa(2, x));
-    assert((t.version() == v2.version && x.precio == 60) || (t.version() == v3.version && x.precio == 70));
-    (x.precio == 60 ? vieja : nueva)++;
-    assert(t.cantidad() == 3);
   }
-  assert(cortes >= 5 && vieja > 0 && nueva > 0);
+  assert(cortes >= 16 && vieja > 0 && nueva > 0);
   printf("  tarifas: %d cortes (%d dejaron las viejas, %d las nuevas) OK\n", cortes, vieja, nueva);
 }
 

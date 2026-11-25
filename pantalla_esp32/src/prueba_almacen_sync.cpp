@@ -60,9 +60,9 @@ struct Sistema {
 };
 
 void limpiar() {
-  for (const char *r : {"/estado.bin", "/estado.tmp", "/estado.bak", "/eventos.bin", "/eventos.tmp", "/lista_negra.bin",
+  for (const char *r : {"/estado.bin", "/estado.tmp", "/estado.bak", "/estado.ab", "/estado.abn", "/eventos.bin", "/eventos.tmp", "/lista_negra.bin",
                         "/lista_negra.tmp", "/lista_negra.bak", "/urgentes.bin", "/urgentes.tmp", "/recargas.bin", "/recargas.tmp",
-                        "/recargas.bak", "/tarifas.bin", "/tarifas.tmp", "/tarifas.bak", "/firmados.log", "/firmados.tmp",
+                        "/recargas.bak", "/recargas.ab", "/recargas.abn", "/tarifas.bin", "/tarifas.tmp", "/tarifas.bak", "/tarifas.ab", "/tarifas.abn", "/firmados.log", "/firmados.tmp",
                         "/ajenos.log", "/ajenos.tmp", "/firmados/200-205.bin", "/firmados/205-210.bin"})
     if (archivos.existe(r)) archivos.borrar(r);
   char n[48];

@@ -113,7 +113,7 @@ void medirTiempos() {
 
 // Con la letra B por el puerto serie se borran los datos de la prueba y se reinicia
 void borrarTodo() {
-  for (const char *f : {"/eventos.bin", "/eventos.tmp", "/estado.bin", "/estado.tmp", "/estado.bak"}) archivos.borrar(f);
+  for (const char *f : {"/eventos.bin", "/eventos.tmp", "/estado.bin", "/estado.tmp", "/estado.bak", "/estado.ab", "/estado.abn"}) archivos.borrar(f);
   Serial.println("BORRADO");
   delay(100);
   ESP.restart();
