@@ -14,8 +14,10 @@ on:
     branches: [main]
     paths: ["servidor_api/**", ".github/workflows/servidor.yml"]
   pull_request:
-    # El contrato C4 también: los tests validan las respuestas contra él
-    paths: ["servidor_api/**", "docs/contratos/api-cliente-v1.yaml", ".github/workflows/servidor.yml"]
+    # El contrato C4 también: los tests validan las respuestas contra él. Y el simulador de la NTAG 424:
+    # los tests de /t usan sus enlaces (portal/tests_sun_simulador.py)
+    paths: ["servidor_api/**", "docs/contratos/api-cliente-v1.yaml", "transporte/tarjeta/**",
+            "transporte/tests/lector424_prueba.py", ".github/workflows/servidor.yml"]
   workflow_dispatch:  # botón "Run workflow" para desplegar a mano
 
 env:
