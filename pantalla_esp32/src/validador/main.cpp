@@ -273,6 +273,25 @@ void grabarBloqueo(tt::Cabecera cab, const uint8_t *uid, size_t lenUid, const ui
   lector.escribir(tt::PAG_CABECERA, buf, tt::TAM_CABECERA / 4);
 }
 
+// #246: la última tarjeta atendida y cuándo se retiró, para no volver a leerla al salir del campo
+constexpr uint32_t IGNORAR_MISMA_TARJETA_MS = 2000;
+struct {
+  uint8_t uid[10];
+  size_t len = 0;
+  uint32_t retiradaMs = 0;
+  bool ignorar = false;
+} ultimaTarjeta;
+
+// Con la tarjeta puesta no se vuelve al bucle: se avisa al watchdog aquí
+void esperarRetirada() {
+  PASO("loop: esperando que retiren la tarjeta");
+  while (lector.conectado() && !lector.retirada(300)) {
+    esp_task_wdt_reset();
+    ui::actualizar();
+  }
+  ultimaTarjeta.retiradaMs = millis();
+}
+
 Resultado cobrar(const uint8_t *uid, size_t lenUid) {
   const String uidHex = aHex(uid, lenUid);
   uint32_t ahora = ahoraUnix();
@@ -921,6 +940,16 @@ void loop() {
     return;
   }
 
+  // La misma tarjeta que se acaba de retirar: al salir cruza el borde del campo y el lector la ve un instante, pero el
+  // resto falla, y su "Tarjeta no válida" o "Lectura fallida" tapaba en pantalla el resultado bueno (#246). Se ignora
+  // y se vuelve a esperar a que se retire
+  if (ultimaTarjeta.ignorar && lenUid == ultimaTarjeta.len && memcmp(uid, ultimaTarjeta.uid, lenUid) == 0 &&
+      millis() - ultimaTarjeta.retiradaMs < IGNORAR_MISMA_TARJETA_MS) {
+    lector.terminar();
+    esperarRetirada();
+    return;
+  }
+
   uint32_t inicio = millis();
   PASO("loop: cobrar");
   Resultado r = cobrar(uid, lenUid);
@@ -931,10 +960,8 @@ void loop() {
       (r.l3.length() ? " | " + r.l3 : "") + " (" + String(millis() - inicio) + " ms)");
   pantallaEspera();
 
-  // Con la tarjeta puesta no se vuelve al bucle: se avisa al watchdog aquí
-  PASO("loop: esperando que retiren la tarjeta");
-  while (lector.conectado() && !lector.retirada(300)) {
-    esp_task_wdt_reset();
-    ui::actualizar();
-  }
+  memcpy(ultimaTarjeta.uid, uid, lenUid);
+  ultimaTarjeta.len = lenUid;
+  ultimaTarjeta.ignorar = r.tipo != 'A';  // tras "Acerque de nuevo" hay que poder volver a leerla enseguida
+  esperarRetirada();
 }
