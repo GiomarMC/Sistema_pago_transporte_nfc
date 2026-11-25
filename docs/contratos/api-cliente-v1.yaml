@@ -962,7 +962,7 @@ components:
         creada: { $ref: "#/components/schemas/FechaHora" }
     EstadoOrden:
       type: string
-      enum: [creada, pendiente, pagada, acreditada, fallida, expirada, reembolsada]
+      enum: [creada, pendiente, pagada, acreditada, fallida, expirada]
     OrdenCreada:
       type: object
       required: [id, estado, monto, url_pago, expira]

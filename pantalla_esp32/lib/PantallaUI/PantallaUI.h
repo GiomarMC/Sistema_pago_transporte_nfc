@@ -21,7 +21,11 @@ void espera(const String &l1, const String &l2);
 // y cantidad de eventos pendientes. No interrumpe la pantalla de resultado.
 void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes);
 
-// Llamar en cada vuelta de loop(): vuelve a la espera cuando toca.
+// Indicador de sincronización: un circulito que gira en la barra superior de la espera mientras se envían o reciben
+// datos. Solo redibuja su esquina (no toca el resto ni interrumpe un resultado); llamar con el estado en cada loop().
+void actividad(bool activa);
+
+// Llamar en cada vuelta de loop(): vuelve a la espera cuando toca y hace girar el indicador.
 void actualizar();
 
 // Pantalla fija con un título y hasta 6 líneas (p. ej. los datos del portal de

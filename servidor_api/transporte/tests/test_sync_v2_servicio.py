@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from transporte.models import (Alerta, CambioLista, Cuenta, EventoRecibido, Movimiento, Recarga,
                                Tarifa, Tarjeta, Validador)
+from transporte import servicios
 from transporte.sync_v2 import paquetes as p
 from transporte.sync_v2 import servicio
 
@@ -115,6 +116,31 @@ class Eventos(Base):
         self.v[101].refresh_from_db()
         self.assertEqual(self.v[101].ultimo_evento_contiguo, 5)
         self.assertEqual(self.viajes().count(), 5)
+
+    def test_validador_que_pasa_de_v1_a_v2_cuenta_los_eventos_ya_subidos_por_v1(self):
+        # Los viajes 1 a 3 y una incidencia (id 4) subieron por v1 (JSON): solo dejan movimiento y alerta
+        for i in (1, 2, 3):
+            servicios.procesar_evento(101, {
+                "id": i, "tipo": "viaje", "fecha": "2026-11-21T14:03:09+00:00", "tarjeta_id": self.tarjeta.id,
+                "uid": self.tarjeta.uid, "monto": 80, "saldo_final": 100, "operacion": i, "contador": 9,
+                "recarga_hasta": None, "detalle": None})
+        servicios.procesar_evento(101, {
+            "id": 4, "tipo": "incidencia", "fecha": "2026-11-21T14:03:09+00:00", "tarjeta_id": self.tarjeta.id,
+            "uid": self.tarjeta.uid, "monto": None, "saldo_final": None, "operacion": None, "contador": None,
+            "recarga_hasta": None, "detalle": "prueba"})
+        self.assertEqual(EventoRecibido.objects.filter(validador=self.v[101]).count(), 0)
+        # El evento 5 llega ya por v2: se confirma hasta el 5, no hasta 0
+        self.assertEqual(self.acuse(servicio.procesar(self.eventos(self.viaje(5)), "mqtt")), 5)
+        self.v[101].refresh_from_db()
+        self.assertEqual(self.v[101].ultimo_evento_contiguo, 5)
+        # Un hueco de verdad sigue frenando: el 7 sin el 6
+        self.assertEqual(self.acuse(servicio.procesar(self.eventos(self.viaje(7)), "mqtt")), 5)
+        # Los ids de v1 de OTRO validador no cuentan
+        servicios.procesar_evento(102, {
+            "id": 1, "tipo": "viaje", "fecha": "2026-11-21T14:03:09+00:00", "tarjeta_id": self.tarjeta.id,
+            "uid": self.tarjeta.uid, "monto": 80, "saldo_final": 100, "operacion": 1, "contador": 9,
+            "recarga_hasta": None, "detalle": None})
+        self.assertEqual(self.acuse(servicio.procesar(self.eventos(self.viaje(3), origen=102), "mqtt")), 1)
 
     def test_evento_corrupto_se_alerta_y_no_frena_la_contiguidad(self):
         raro = self.viaje(2, tipo=9)

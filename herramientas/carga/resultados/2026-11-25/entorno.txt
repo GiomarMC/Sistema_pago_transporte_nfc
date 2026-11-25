@@ -1,0 +1,10 @@
+fecha: 2026-11-25T15:53:34-05:00
+commit: 038b4f4
+validadores: 50 · evento cada 10 s · 1800 s · núcleo 2
+equipo: AMD Ryzen 7 5800H with Radeon Graphics · 16 CPU · kernel 7.3.3-200.fc44.x86_64
+docker: 29.9.3 · compose 5.7.1
+límites:
+  db: RAM 314572800 B · RAM+swap 851443712 B · CPU 2
+  web: RAM 262144000 B · RAM+swap 799014912 B · CPU 2
+  mosquitto: RAM 52428800 B · RAM+swap 589299712 B · CPU 2
+  puente: RAM 157286400 B · RAM+swap 694157312 B · CPU 2

@@ -20,7 +20,7 @@ class OrdenRecarga(models.Model):
         ACREDITADA = "acreditada"
         FALLIDA = "fallida"
         EXPIRADA = "expirada"
-        REEMBOLSADA = "reembolsada"
+        REEMBOLSADA = "reembolsada"  # sin uso: no hay reembolsos (#102); se deja para no migrar
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     cuenta = models.ForeignKey("transporte.Cuenta", on_delete=models.PROTECT)

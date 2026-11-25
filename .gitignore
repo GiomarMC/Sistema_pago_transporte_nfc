@@ -29,3 +29,4 @@ INFORME-AVANCE-NFC.md
 
 # --- Compilación de la ESP32 (PlatformIO) ---
 pantalla_esp32/.pio/
+herramientas/c1_falso_clave.pem

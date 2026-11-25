@@ -45,6 +45,10 @@ class EnlaceFalso : public Enlace {
     if (abierto_ != nullptr) cierres_++;
     abierto_ = nullptr;
   }
+  void prestarFlujo(bool prestado) override {
+    prestado_ = prestado;
+    if (prestado) prestamos_++;
+  }
   uint32_t bytesTx() const override { return tx_; }
   uint32_t bytesRx() const override { return rx_; }
 
@@ -69,6 +73,8 @@ class EnlaceFalso : public Enlace {
   uint32_t atenciones() const { return atenciones_; }
   uint32_t aperturas() const { return aperturas_; }
   uint32_t cierres() const { return cierres_; }
+  bool prestado() const { return prestado_; }
+  uint32_t prestamos() const { return prestamos_; }
 
  private:
   const char *nombre_;
@@ -80,5 +86,7 @@ class EnlaceFalso : public Enlace {
   const char *ultimoHost_ = nullptr;
   uint16_t ultimoPuerto_ = 0;
   uint32_t tx_ = 0, rx_ = 0;
+  bool prestado_ = false;
+  uint32_t prestamos_ = 0;
   uint32_t encendidos_ = 0, apagados_ = 0, atenciones_ = 0, aperturas_ = 0, cierres_ = 0;
 };

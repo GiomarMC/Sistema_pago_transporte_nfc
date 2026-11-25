@@ -57,9 +57,13 @@ URLCONF_PORTAL = "portal.urls"
 URLCONF_PRINCIPAL = "config.urls_main"
 
 # Despliegue con HTTPS detrás de Caddy (docker-compose.prod.yml): Caddy recibe
-# HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original.
+# HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original
+# y la IP del cliente (X-Forwarded-For). Sin Caddy delante, esa cabecera la
+# podría inventar el cliente, así que solo se usa con DJANGO_HTTPS=1.
+IP_DESDE_PROXY = False
 if os.environ.get("DJANGO_HTTPS", "0") == "1":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    IP_DESDE_PROXY = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     # Formularios del panel y del portal enviados desde sus dominios
