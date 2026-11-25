@@ -231,7 +231,7 @@ class M19Tests(TestCase):
             correo="cliente@example.com", correo_verificado_en=timezone.now())
         self.vinculo = ClienteCuenta.objects.create(usuario=self.cliente, cuenta=self.cuenta)
 
-    def test_ordenes_filtros_detalle_eventos_y_reembolso_solo_operador(self):
+    def test_ordenes_filtros_detalle_eventos_y_sin_reembolso(self):
         orden = crear_orden(self.cliente, self.cuenta, 1000, uuid.uuid4())
         CobroSimulado.objects.filter(orden=orden).update(estado="pagado", pagado_en=timezone.now())
         confirmar_cobro(orden)
@@ -251,15 +251,12 @@ class M19Tests(TestCase):
         self.assertContains(lista, "diferencia de prueba")
         detalle = self.client.get(reverse("panel:orden_pago_detalle", args=[orden.pk]))
         self.assertContains(detalle, "cobro.pagado")
-        self.assertContains(detalle, "Reembolsar")
-        ruta = reverse("panel:reembolsar_orden", args=[orden.pk])
-        self.assertEqual(self.client.post(ruta, {"motivo": ""}).status_code, 400)
-        self.client.force_login(self.cliente)
-        self.assertEqual(self.client.post(ruta, {"motivo": "solicitud"}).status_code, 403)
-        self.client.force_login(self.operador)
-        self.assertEqual(self.client.post(ruta, {"motivo": "solicitud"}).status_code, 302)
+        # #102: sin reembolsos, ni botón ni ruta
+        self.assertNotContains(detalle, "Reembolsar")
+        self.assertEqual(self.client.post(f"/panel/pagos/ordenes/{orden.pk}/reembolsar/",
+                                          {"motivo": "solicitud"}).status_code, 404)
         orden.refresh_from_db()
-        self.assertEqual(orden.estado, "acreditada")  # M11 bloquea reembolsos offline
+        self.assertEqual(orden.estado, "acreditada")
 
     def test_hola_se_refleja_en_validadores(self):
         ahora = timezone.now()

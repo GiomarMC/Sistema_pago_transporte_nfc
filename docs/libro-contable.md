@@ -61,7 +61,6 @@ esa cuenta significa que el cliente tiene S/ 10.00 más.
 | Recarga en punto o ventanilla | `recarga` | `R<id de recarga>` | `CAJA_VENTANILLA` | `SALDO_CLIENTE_<id>` | `servicios.crear_recarga(..., "punto")` |
 | Viaje | `viaje` | `V<validador>-<evento>` | `SALDO_CLIENTE_<id>` | `INGRESOS_PASAJES` | `servicios.procesar_evento` |
 | Emisión de tarjeta con saldo inicial | `recarga` | `R<id de recarga>` | `CAJA_VENTANILLA` | `SALDO_CLIENTE_<id>` | `servicios.crear_recarga(..., "emision")` |
-| Reembolso de una recarga no aplicada | `reverso` | `rev-R<id de recarga>` | `SALDO_CLIENTE_<id>` | la caja de la recarga original | `libro.revertir` (M11-08) |
 | Ajuste (abono) | `ajuste` | la que fije el operador | `AJUSTES` | `SALDO_CLIENTE_<id>` | `libro.registrar` |
 | Ajuste (cargo) | `ajuste` | la que fije el operador | `SALDO_CLIENTE_<id>` | `AJUSTES` | `libro.registrar` |
 | Saldo de apertura | `apertura` | `apertura-<id de cuenta>` | `AJUSTES` | `SALDO_CLIENTE_<id>` | migración `libro/0003_apertura` |
@@ -159,33 +158,7 @@ un monto propio; hoy no se usa.
 
 ### 5.6 Reembolso
 
-Beto recarga S/ 20.00 por la web (recarga 18) y pide que se le devuelva antes de
-que la recarga llegue a su tarjeta. Primero, la recarga:
-
-Asiento `R18` (tipo `recarga`):
-
-| Cuenta | Debe | Haber | Partida |
-|---|---:|---:|---:|
-| `CAJA_PASARELA` | 2000 | | `+2000` |
-| `SALDO_CLIENTE_8` | | 2000 | `−2000` |
-| **Total** | **2000** | **2000** | **0** ✓ |
-
-El reembolso no borra `R18`: registra su espejo con `libro.revertir(asiento,
-motivo)`.
-
-Asiento `rev-R18` (tipo `reverso`, descripción «Reverso de R18: <motivo>»):
-
-| Cuenta | Debe | Haber | Partida |
-|---|---:|---:|---:|
-| `SALDO_CLIENTE_8` | 2000 | | `+2000` |
-| `CAJA_PASARELA` | | 2000 | `−2000` |
-| **Total** | **2000** | **2000** | **0** ✓ |
-
-Saldo de Beto: 3.00 + 20.00 − 20.00 = S/ 3.00. `CAJA_PASARELA` también vuelve a
-quedar como antes de `R18`.
-
-Si la recarga ya llegó a la tarjeta, no se reembolsa (M11-08 responde «requiere
-ajuste manual»): se corrige con un ajuste.
+No hay reembolsos: las recargas no son reembolsables (#102, ver `docs/pagos.md`). Un error se corrige con un ajuste (5.7). `libro.revertir` sigue disponible para anular un asiento propio con su espejo, pero ningún flujo lo usa hoy.
 
 ### 5.7 Ajuste
 
@@ -270,8 +243,8 @@ operación, se registra de nuevo con otra ref.
 transacción: si cualquiera de los tres falla, no queda nada. Los movimientos
 de S/ 0 no se asientan.
 
-> **Al implementar algo nuevo que mueva dinero** (reembolsos de M11-08,
-> ajustes desde el panel): `libro.registrar` y `libro.revertir` solo escriben el
+> **Al implementar algo nuevo que mueva dinero** (por ejemplo, los ajustes
+> desde el panel): `libro.registrar` y `libro.revertir` solo escriben el
 > libro, **no tocan `Cuenta.saldo`**. Quien los llame debe actualizar la caché
 > en la misma transacción, con la cuenta bloqueada (`select_for_update`). Si
 > no, `verificar_libro` lo marcará como descuadre esa misma noche.
