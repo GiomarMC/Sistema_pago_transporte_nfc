@@ -148,11 +148,22 @@ size_t codificar(const Paquete &p, uint8_t *salida, size_t capacidad);
 size_t empaquetar(const Paquete &p, const uint8_t claveHmac[TAM_CLAVE_HMAC], uint8_t *salida,
                   size_t capacidad);
 
+// La firma ECDSA de un paquete del servidor ya comprobada aparte (#129: en otra tarea, porque tarda ~67 ms), o
+// COMPROBAR para que la compruebe desempaquetar()
+enum class FirmaServidor : uint8_t { COMPROBAR, VALIDA, INVALIDA };
+
 // Valida magia, versión, largo, tipo, origen y firma, en ese orden, y recién entonces lee
 // el cuerpo. Si devuelve false, `salida` queda a medias y no se debe usar.
 bool desempaquetar(const uint8_t *datos, size_t largo, ClaveHmacDe claveHmacDe,
                    const uint8_t clavePublica[TAM_CLAVE_PUBLICA], Paquete &salida,
-                   Motivo *motivo = nullptr);
+                   Motivo *motivo = nullptr, FirmaServidor firma = FirmaServidor::COMPROBAR);
+
+// Si `datos` tiene la forma de un paquete del servidor (magia y origen 0) y el largo que dice su cabecera; no mira
+// la firma
+bool esDelServidor(const uint8_t *datos, size_t largo);
+// Si la firma ECDSA de un paquete completo del servidor es válida. Sin estado compartido (a diferencia de
+// ecdsaValida, que guarda la clave ya comprobada): se puede llamar desde otra tarea
+bool firmaServidorValida(const uint8_t *datos, size_t largo, const uint8_t clavePublica[TAM_CLAVE_PUBLICA]);
 
 // Un evento suelto en su forma de 64 B de C1 5.3 (la misma que va dentro de EVENTOS y que se
 // guarda en /eventos.bin). eventoABytes devuelve 64, o 0 si el UID es más largo de 10 B.

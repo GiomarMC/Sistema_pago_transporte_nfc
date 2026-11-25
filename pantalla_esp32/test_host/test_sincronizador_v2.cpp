@@ -300,7 +300,9 @@ void listasYTarifasAlAlmacen() {
   canal.vaciar();
   servidorDice(canal, LISTAS_107);
   servidorDice(canal, TARIFAS_107);
-  s.atender(&canal, 100);
+  s.atender(&canal, 100);  // un paquete por vuelta (#129): primero LISTAS
+  assert(alm.listasRecibidas_ == 1 && alm.tarifasRecibidas_ == 0);
+  s.atender(&canal, 101);  // y luego TARIFAS
   assert(alm.listasRecibidas_ == 1 && alm.listas_.versionDesde == 0x0A && alm.listas_.versionHasta == 0x0C &&
          alm.listas_.n == 2);
   assert(alm.listas_.entradas[0].tipo == sp::BLOQUEO && alm.listas_.entradas[0].a == 4242);
@@ -308,6 +310,119 @@ void listasYTarifasAlAlmacen() {
          alm.listas_.entradas[1].b == 3 && alm.listas_.entradas[1].c == 500);
   assert(alm.tarifasRecibidas_ == 1 && alm.tarifas_.n == 2 && alm.tarifas_.tarifas[0].precio == 130 &&
          strcmp(alm.tarifas_.tarifas[1].nombre, "estudiante") == 0);
+}
+
+// --- Firmas del servidor comprobadas en otra tarea (#129) ----------------------------------
+
+// Un TrabajoEnFondo que no hace nada hasta que el test lo dice
+struct FondoFalso : TrabajoEnFondo {
+  Trabajo trabajo = nullptr;
+  void *arg = nullptr;
+  bool rechazar = false;
+  int lanzados = 0;
+  bool lanzar(Trabajo t, void *a) override {
+    if (rechazar || trabajo) return false;
+    trabajo = t;
+    arg = a;
+    ++lanzados;
+    return true;
+  }
+  bool hayTrabajo() const { return trabajo != nullptr; }
+  void terminar() {
+    Trabajo t = trabajo;
+    trabajo = nullptr;
+    t(arg);
+  }
+};
+
+void firmasEnOtraTarea() {
+  AlmacenFalso alm;
+  alm.guardarViajes(100);
+  CanalFalso canal;
+  FondoFalso fondo;
+  ConfigSyncV2 cfg = config();
+  cfg.verificador = &fondo;
+  {
+    SincronizadorV2 s(alm, cfg);
+    s.atender(&canal, 0);
+    while (canal.enviados()) sacar(canal);
+
+    // El ACUSE llega: la firma va a la otra tarea y atender() vuelve sin procesarlo, ni sacar el siguiente
+    servidorDice(canal, ACUSE_107_HASTA_60);
+    servidorDice(canal, ACUSE_107_HASTA_30);
+    s.atender(&canal, 500);
+    assert(fondo.lanzados == 1 && fondo.hayTrabajo() && s.verificando());
+    assert(alm.acusado_ == 0 && canal.porRecibir() == 1);
+    s.atender(&canal, 510);  // aún sin terminar: nada cambia
+    assert(alm.acusado_ == 0 && canal.porRecibir() == 1 && fondo.lanzados == 1);
+    // Terminó: en la vuelta siguiente se procesa (con la hora de esa vuelta) y se lanza el que esperaba
+    fondo.terminar();
+    s.atender(&canal, 520);
+    assert(alm.acusado_ == 60 && s.pendientes() == 40 && s.verificadasEnFondo() == 1);
+    assert(s.horaServidor() == HORA_SERVIDOR_PRUEBA && s.millisHora() == 520);
+    assert(fondo.lanzados == 2 && canal.porRecibir() == 0);
+    fondo.terminar();
+    s.atender(&canal, 530);
+    assert(alm.acusado_ == 60 && s.verificadasEnFondo() == 2);  // el viejo, comprobado, no hace retroceder nada
+
+    // Una firma mala comprobada en la otra tarea: se rechaza igual que en el acto
+    servidorDice(canal, ACUSE_107_FIRMA_ROTA);
+    s.atender(&canal, 600);
+    fondo.terminar();
+    s.atender(&canal, 610);
+    assert(s.rechazados() == 1 && s.ultimoRechazo() == sp::Motivo::FIRMA && alm.acusado_ == 60);
+
+    // Si el canal deja de estar listo a mitad, el paquete se procesa igual al terminar
+    servidorDice(canal, ACUSE_107_HASTA_60);
+    s.atender(&canal, 700);
+    assert(s.verificando());
+    canal.ponerListo(false);
+    fondo.terminar();
+    s.atender(&canal, 710);
+    assert(!s.verificando() && s.verificadasEnFondo() == 4);
+    canal.ponerListo(true);
+
+    // Si no se puede lanzar (la tarea ocupada o sin memoria), se comprueba en el acto
+    fondo.rechazar = true;
+    servidorDice(canal, ACUSE_107_HASTA_30);
+    s.atender(&canal, 800);
+    assert(!s.verificando() && s.verificadasEnFondo() == 4 && s.paquetesRecibidos() >= 5);
+  }
+  // Los LISTAS también: llegan al almacén solo tras comprobar la firma
+  AlmacenFalso alm2;
+  CanalFalso canal2;
+  FondoFalso fondo2;
+  ConfigSyncV2 cfg2 = config();
+  cfg2.verificador = &fondo2;
+  SincronizadorV2 s2(alm2, cfg2);
+  s2.atender(&canal2, 0);
+  canal2.vaciar();
+  servidorDice(canal2, LISTAS_107);
+  s2.atender(&canal2, 100);
+  assert(alm2.listasRecibidas_ == 0);
+  fondo2.terminar();
+  s2.atender(&canal2, 110);
+  assert(alm2.listasRecibidas_ == 1 && alm2.listas_.n == 2);
+
+  // Lo que trae un vecino (entregar()) también va a la otra tarea, y se procesa como relevado: la hora del ACUSE se
+  // compensa con RETRASO_RELE_S aunque el canal sea WiFi
+  AlmacenFalso alm3;
+  alm3.guardarViajes(100);
+  CanalFalso canal3;
+  FondoFalso fondo3;
+  ConfigSyncV2 cfg3 = config();
+  cfg3.verificador = &fondo3;
+  SincronizadorV2 s3(alm3, cfg3);
+  s3.atender(&canal3, 0);
+  s3.entregar(ACUSE_107_HASTA_60, sizeof(ACUSE_107_HASTA_60), 50);
+  assert(s3.verificando() && alm3.acusado_ == 0 && fondo3.lanzados == 1);
+  // con el verificador ocupado, otro del vecino se comprueba en el acto
+  s3.entregar(ACUSE_107_HASTA_30, sizeof(ACUSE_107_HASTA_30), 60);
+  assert(fondo3.lanzados == 1 && alm3.acusado_ == 30);
+  fondo3.terminar();
+  s3.atender(&canal3, 70);
+  assert(alm3.acusado_ == 60 && s3.horaServidor() == HORA_SERVIDOR_PRUEBA + SincronizadorV2::RETRASO_RELE_S);
+  printf("  firmas del servidor en otra tarea: un paquete a la vez, el resultado se aplica después, firma mala, sin canal, sin tarea y por un vecino OK\n");
 }
 
 // --- Paquetes de otros buses ------------------------------------------------------------
@@ -542,6 +657,7 @@ int main() {
   sinCanalLosEventosSeConservan();
   paquetesInvalidosSeRechazan();
   listasYTarifasAlAlmacen();
+  firmasEnOtraTarea();
   paquetesAjenosSeReenvianSinTocar();
   servidorSabeMasDeLoQueSeCreia();
   horaDelAcuse();

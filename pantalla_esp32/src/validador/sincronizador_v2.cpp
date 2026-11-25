@@ -8,6 +8,7 @@ const uint8_t *sinClavesDeValidadores(uint16_t) { return nullptr; }
 }  // namespace
 
 void SincronizadorV2::atender(CanalPaquetes *canal, uint32_t ahoraMs) {
+  if (verificando_) recogerVerificacion(ahoraMs);  // aunque el canal ya no esté: el paquete llegó y vale lo que diga
   if (canal == nullptr || !canal->listo()) {
     // Sin canal no se pierde nada: los eventos siguen en la cola local hasta que haya uno.
     // Lo que iba en vuelo se da por perdido y se reenvía al volver.
@@ -126,12 +127,53 @@ void SincronizadorV2::enviarAjenos(CanalPaquetes &canal, uint32_t ahoraMs) {
   ajenoSiguiente_++;
 }
 
+// Un paquete por vuelta (#129): cada uno del servidor lleva su firma ECDSA, que tarda ~67 ms en comprobarse, y una
+// foto de listas son muchos seguidos. Con un verificador, la firma se comprueba en otra tarea y el paquete se procesa
+// en una vuelta siguiente (recogerVerificacion); hasta entonces no se saca otro. El canal no pierde nada mientras:
+// CanalMqtt deja de leer del broker con su cola llena, y TCP lo frena.
 void SincronizadorV2::recibir(CanalPaquetes &canal, uint32_t ahoraMs) {
-  size_t n;
-  while ((n = canal.recibir(bufRx_, sizeof(bufRx_))) > 0) procesar(bufRx_, n, ahoraMs);
+  if (verificando_) return;
+  const size_t n = canal.recibir(bufRx_, sizeof(bufRx_));
+  if (n == 0) return;
+  if (lanzarVerificacion(n, false)) return;
+  procesar(bufRx_, n, ahoraMs);  // sin verificador, o no se pudo lanzar: en el acto
+}
+
+bool SincronizadorV2::lanzarVerificacion(size_t n, bool relevado) {
+  if (!cfg_.verificador || !cfg_.clavePublicaServidor || !sp::esDelServidor(bufRx_, n)) return false;
+  verificacion_.datos = bufRx_;
+  verificacion_.largo = n;
+  verificacion_.clave = cfg_.clavePublicaServidor;
+  verificacion_.valida.store(false, std::memory_order_relaxed);
+  verificacion_.terminada.store(false, std::memory_order_release);
+  if (!cfg_.verificador->lanzar(&SincronizadorV2::verificarEnFondo, &verificacion_)) return false;
+  verificando_ = true;
+  verificandoRelevado_ = relevado;
+  largoVerificando_ = n;
+  return true;
+}
+
+void SincronizadorV2::verificarEnFondo(void *arg) {
+  Verificacion &v = *static_cast<Verificacion *>(arg);
+  v.valida.store(sp::firmaServidorValida(v.datos, v.largo, v.clave), std::memory_order_relaxed);
+  v.terminada.store(true, std::memory_order_release);  // lo último: después la otra tarea ya no toca nada
+}
+
+void SincronizadorV2::recogerVerificacion(uint32_t ahoraMs) {
+  if (!verificacion_.terminada.load(std::memory_order_acquire)) return;
+  verificando_ = false;
+  verificadasEnFondo_++;
+  const bool valida = verificacion_.valida.load(std::memory_order_relaxed);
+  procesar(bufRx_, largoVerificando_, ahoraMs, verificandoRelevado_,
+           valida ? sp::FirmaServidor::VALIDA : sp::FirmaServidor::INVALIDA);
 }
 
 void SincronizadorV2::entregar(const uint8_t *datos, size_t largo, uint32_t ahoraMs) {
+  // Uno del servidor con el verificador libre: a bufRx_ (que entonces no se usa) y a la otra tarea
+  if (!verificando_ && largo <= sizeof(bufRx_) && sp::esDelServidor(datos, largo) && cfg_.verificador) {
+    memcpy(bufRx_, datos, largo);
+    if (lanzarVerificacion(largo, true)) return;
+  }
   procesar(datos, largo, ahoraMs, true);
 }
 
@@ -148,7 +190,8 @@ size_t SincronizadorV2::empaquetarEventos(uint32_t desdeId, uint8_t *buf, size_t
   return largo;
 }
 
-void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado) {
+void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado,
+                               sp::FirmaServidor firma) {
   recibidos_++;
   // Un EVENTOS de otro bus (solo por un vecino): su firma HMAC es de ese bus y no se puede comprobar aquí; se guarda
   // para llevarlo al servidor, que sí la comprueba. Solo se mira que tenga la forma de un EVENTOS.
@@ -161,7 +204,7 @@ void SincronizadorV2::procesar(const uint8_t *datos, size_t largo, uint32_t ahor
     }
   }
   sp::Motivo motivo = sp::Motivo::OK;
-  if (!sp::desempaquetar(datos, largo, sinClavesDeValidadores, cfg_.clavePublicaServidor, rx_, &motivo)) {
+  if (!sp::desempaquetar(datos, largo, sinClavesDeValidadores, cfg_.clavePublicaServidor, rx_, &motivo, firma)) {
     rechazados_++;
     ultimoRechazo_ = motivo;
     // Regla 5 de C1 5.5: un LISTAS del servidor con la firma mala se descarta y queda como incidencia

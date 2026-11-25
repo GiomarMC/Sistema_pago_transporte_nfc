@@ -62,4 +62,6 @@ class CanalMqtt final : public CanalPaquetes {
   uint32_t inicioConexion_ = 0, ultimaConexionMs_ = 0;
   struct Mensaje { uint16_t largo = 0; uint8_t datos[MAX_PAQUETE] = {}; } recibidos_[2];
   uint8_t cabeza_ = 0, cola_ = 0, cantidad_ = 0;
+  uint32_t llenaDesde_ = 0;  // millis() desde que la cola está llena; 0 si no lo está
+  static constexpr uint32_t COLA_LLENA_MAX_MS = 5000;
 };

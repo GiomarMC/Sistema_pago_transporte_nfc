@@ -116,6 +116,30 @@ void icono(char tipo, int x, int y, uint8_t color) {
 
 bool enEspera() { return oledLista && volverAEsperaEn == 0 && !informacionFija; }
 
+// Lo último que se mandó a la OLED, por filas de 8 px (8 filas de 128 bytes, como el búfer de U8g2). Mandar el búfer
+// entero por I2C a 400 kHz son ~40 ms; con esto solo van las filas que cambiaron (#129): un cambio en las dos líneas de
+// la espera son 3 filas, y si no cambió nada, ninguna.
+constexpr int FILAS = ALTO / 8;
+uint8_t enviado[FILAS * ANCHO];
+bool enviadoValido = false;  // tras begin() la pantalla está en blanco y no coincide con la copia
+
+void enviarCambios() {
+  const uint8_t *buf = pantalla.getBufferPtr();
+  if (!enviadoValido) {
+    pantalla.sendBuffer();
+    memcpy(enviado, buf, sizeof(enviado));
+    enviadoValido = true;
+    return;
+  }
+  for (int f = 0; f < FILAS; f++) {
+    uint8_t *antes = enviado + f * ANCHO;
+    const uint8_t *ahora = buf + f * ANCHO;
+    if (memcmp(antes, ahora, ANCHO) == 0) continue;
+    pantalla.updateDisplayArea(0, f, ANCHO / 8, 1);
+    memcpy(antes, ahora, ANCHO);
+  }
+}
+
 void dibujarGiro() {
   pantalla.setDrawColor(0);
   pantalla.drawBox(GIRO_BLOQUE_X * 8, GIRO_BLOQUE_Y * 8, 8, 8);
@@ -130,6 +154,9 @@ void dibujarGiro() {
 void enviarGiro() {
   dibujarGiro();
   pantalla.updateDisplayArea(GIRO_BLOQUE_X, GIRO_BLOQUE_Y, 1, 1);
+  // la copia de lo enviado, al día en ese bloque (8 columnas de la fila)
+  const size_t desde = GIRO_BLOQUE_Y * ANCHO + GIRO_BLOQUE_X * 8;
+  memcpy(enviado + desde, pantalla.getBufferPtr() + desde, 8);
 }
 
 void pantallaResultado(char tipo, const String lineas[3]) {
@@ -149,7 +176,7 @@ void pantallaResultado(char tipo, const String lineas[3]) {
   if (lineas[0].length() > 0) y += texto(lineas[0], y, FUENTES_L1) + 2;
   if (lineas[1].length() > 0) y += texto(lineas[1], y, FUENTES_L2) + 2;
   if (lineas[2].length() > 0) texto(lineas[2], y, FUENTES_L3);
-  pantalla.sendBuffer();
+  enviarCambios();
 
   volverAEsperaEn = millis() + TIEMPO_RESULTADO_MS;
   if (volverAEsperaEn == 0) volverAEsperaEn = 1;
@@ -175,7 +202,7 @@ void pantallaEspera() {
   texto(esperaLinea1, 41, FUENTES_PEQUENA);
   texto(esperaLinea2, 52, FUENTES_PEQUENA);
   dibujarGiro();
-  pantalla.sendBuffer();
+  enviarCambios();
   volverAEsperaEn = 0;
 }
 
@@ -193,6 +220,7 @@ bool intentarArrancar() {
 
   pantalla.setI2CAddress(OLED_DIRECCION << 1);   // U8g2 pide la dirección en 8 bits
   pantalla.begin();
+  enviadoValido = false;
   pantalla.setBusClock(VELOCIDAD_I2C);
   pantalla.enableUTF8Print();
   pantalla.setFontMode(1);   // texto transparente: así se puede escribir en negativo sobre la barra
@@ -278,7 +306,7 @@ void informacion(const String &titulo, const String lineas[], int n) {
       y += texto(lineas[i], y, FUENTE_NORMAL) + 1;
     }
   }
-  pantalla.sendBuffer();
+  enviarCambios();
 }
 
 void cerrarInformacion() {

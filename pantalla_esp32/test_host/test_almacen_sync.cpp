@@ -95,11 +95,13 @@ struct Banco {
       assert(p->cola.agregar(e));
     }
   }
-  // El servidor manda estos paquetes y el sincronizador los procesa (una vuelta de atender())
+  // El servidor manda estos paquetes y el sincronizador los procesa (una vuelta de atender() por paquete: #129)
   void servidor(std::initializer_list<Bytes> paquetes) {
     for (const Bytes &b : paquetes) canal.inyectar(b.data(), b.size());
-    ms += 10;
-    sinc->atender(&canal, ms);
+    for (size_t i = 0; i < paquetes.size(); i++) {
+      ms += 10;
+      sinc->atender(&canal, ms);
+    }
   }
   // Lo que el validador mandó desde la última vez: cuántos paquetes por tipo y origen
   struct Salida {
