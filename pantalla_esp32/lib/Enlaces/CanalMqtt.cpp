@@ -57,6 +57,16 @@ void CanalMqtt::atender() {
     terminarConexion();
     if (!mqtt_.connected()) return;
   }
+  // Con la cola llena no se lee del broker (#129): lo que llegue espera en TCP, que lo frena, en vez de descartarse.
+  // Pasa mientras el sincronizador comprueba una firma en otra tarea. Si nadie la vacía en 5 s, se vuelve a leer
+  // (y a descartar) para no perder la conexión por falta de keepalive.
+  if (cantidad_ == 2) {
+    const uint32_t ahora = millis();
+    if (!llenaDesde_) llenaDesde_ = ahora ? ahora : 1;
+    if ((uint32_t)(ahora - llenaDesde_) < COLA_LLENA_MAX_MS) return;
+  } else {
+    llenaDesde_ = 0;
+  }
   if (!mqtt_.loop()) { enlace_.cerrar(); reintentar(millis()); }
 }
 

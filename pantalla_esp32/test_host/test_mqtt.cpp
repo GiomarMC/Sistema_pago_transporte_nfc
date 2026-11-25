@@ -145,6 +145,42 @@ void conectar_en_fondo() {
   puts("M15 MQTT: conectar en otra tarea (atender no espera, suspender y fallo a mitad, sin tarea en el acto) OK");
 }
 
+// #129: con la cola llena no se lee del broker (TCP lo frena) hasta que se saque algo, o pasados 5 s
+void colaLlenaNoLee() {
+  Client cliente;
+  EnlaceFalso enlace("wifi", 1);
+  enlace.ponerCliente(&cliente);
+  enlace.ponerEstado(EstadoEnlace::Listo);
+  relojFalso = 10000;
+  CanalMqtt canal(enlace, "mqtt.example.test", 105, "clave");
+  canal.atender();
+  assert(canal.listo());
+  const uint8_t paquete[] = {5, 0, 1, 0};
+  uint8_t recibido[4];
+  PubSubClient::ultimo->inyectar("sp/v/105/baja", paquete, sizeof(paquete));
+  canal.atender();
+  const int conUno = PubSubClient::vueltas;
+  PubSubClient::ultimo->inyectar("sp/v/105/baja", paquete, sizeof(paquete));  // la cola, llena
+  relojFalso += 100;
+  canal.atender();
+  relojFalso += 100;
+  canal.atender();
+  assert(PubSubClient::vueltas == conUno + 0 && canal.descartados() == 0);  // no lee: lo que venga espera en TCP
+  assert(canal.recibir(recibido, sizeof(recibido)) == 4);
+  canal.atender();
+  assert(PubSubClient::vueltas == conUno + 1);  // con sitio, vuelve a leer
+  // Si nadie la vacía, a los 5 s vuelve a leer (para no perder la conexión por el keepalive)
+  PubSubClient::ultimo->inyectar("sp/v/105/baja", paquete, sizeof(paquete));
+  canal.atender();
+  relojFalso += 4900;
+  canal.atender();
+  assert(PubSubClient::vueltas == conUno + 1);
+  relojFalso += 200;
+  canal.atender();
+  assert(PubSubClient::vueltas == conUno + 2 && canal.listo());
+  puts("M15 MQTT: con la cola llena no lee del broker hasta que se saque algo o pasen 5 s OK");
+}
+
 int main() {
   EnlaceFalso wifi("wifi", 1);
   verificar(wifi, "mqtt-wifi", 1);
@@ -158,4 +194,5 @@ int main() {
   assert(sinCliente.aperturas() == 2);  // respeta la espera tras fallo TLS
   puts("M15 MQTT: EnlaceFalso WiFi, TLS, tópicos, will, cola y reconexión OK");
   conectar_en_fondo();
+  colaLlenaNoLee();
 }

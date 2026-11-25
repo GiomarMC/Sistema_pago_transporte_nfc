@@ -14,6 +14,9 @@
 //     LISTAS y TARIFAS (se entregan al almacén, que las aplica: AplicadorListas, M4-02). Un LISTAS
 //     con firma inválida se descarta y se registra como incidencia "lista firma invalida".
 //   - Toma la hora del servidor de cada ACUSE válido (M4-03).
+//   - Saca un paquete del canal por vuelta. Con un verificador (ConfigSyncV2), la firma ECDSA de los del servidor
+//     (~67 ms) se comprueba en otra tarea y el paquete se procesa en una vuelta siguiente; mientras, no se saca otro
+//     (#129: loop() < 60 ms).
 //
 // OJO con la memoria: el objeto lleva dentro sus búferes de paquete (unos 10 KB) y la pila de loop() en la ESP32 es de
 // 8 KB: se crea como variable global o en el montón, nunca como local (medido: en la pila se reinicia por desbordamiento).
@@ -25,7 +28,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <atomic>
+
 #include <CanalPaquetes.h>
+#include <TrabajoEnFondo.h>
 #include <ProtocoloSP.h>
 
 #include "correccion_hora.h"
@@ -105,6 +111,9 @@ struct ConfigSyncV2 {
   // Eventos cobrados con la hora estimada: no salen hasta que se puedan corregir, y salen corregidos. nullptr = no se
   // retiene ni se corrige nada
   const CorreccionHora *correccion = nullptr;
+  // Comprueba en otra tarea la firma ECDSA de lo que llega del servidor, por el canal o por un vecino (#129).
+  // nullptr = en el acto
+  TrabajoEnFondo *verificador = nullptr;
 };
 
 class SincronizadorV2 {
@@ -125,6 +134,13 @@ class SincronizadorV2 {
   static constexpr const char *DETALLE_LISTA_FALSA = "lista firma invalida";
 
   SincronizadorV2(AlmacenSync &almacen, const ConfigSyncV2 &config) : almacen_(almacen), cfg_(config) {}
+  // Si hay una firma comprobándose en otra tarea, espera a que acabe (escribe en este objeto)
+  ~SincronizadorV2() {
+    while (verificando_ && !verificacion_.terminada.load(std::memory_order_acquire)) {
+    }
+  }
+  SincronizadorV2(const SincronizadorV2 &) = delete;
+  SincronizadorV2 &operator=(const SincronizadorV2 &) = delete;
 
   // Señal y consumo de datos que se anuncian en el HOLA (los da el gestor de enlaces)
   void telemetria(int8_t senal, uint32_t bytesTx, uint32_t bytesRx) {
@@ -138,7 +154,8 @@ class SincronizadorV2 {
   //   - ACUSE, LISTAS y TARIFAS del servidor: se verifican (ECDSA) igual que si vinieran del servidor. Los
   //     LISTAS y TARIFAS valen aunque vayan dirigidos a otro validador: su contenido es el mismo para todos y la
   //     firma cubre el paquete entero. La hora de un ACUSE relevado se compensa con RETRASO_RELE_S.
-  // Cuenta en rechazados() lo que no se acepta.
+  // Cuenta en rechazados() lo que no se acepta. Con un verificador libre, la firma de los del servidor se comprueba
+  // en otra tarea, como los del canal (se copian a bufRx_); si está ocupado, en el acto.
   void entregar(const uint8_t *datos, size_t largo, uint32_t ahoraMs);
   // Arma un paquete EVENTOS propio, firmado, con hasta 30 eventos de id mayor que `desdeId`, para entregarlo a un
   // vecino. Devuelve su largo (0 si no hay eventos o no cabe) y en `ultimoId` el id del último evento que lleva.
@@ -188,6 +205,8 @@ class SincronizadorV2 {
   // El evento no puede salir todavía: lleva la hora estimada y aún no hay hora real para corregirla
   bool retenido(uint32_t idEvento) const { return cfg_.correccion && cfg_.correccion->retenido(idEvento); }
   uint32_t listasRechazadasPorFirma() const { return listasFirmaMala_; }
+  uint32_t verificadasEnFondo() const { return verificadasEnFondo_; }  // firmas del servidor comprobadas en otra tarea
+  bool verificando() const { return verificando_; }
   sp::Motivo ultimoRechazo() const { return ultimoRechazo_; }
 
  private:
@@ -198,7 +217,19 @@ class SincronizadorV2 {
 
   void alPasarAListo(CanalPaquetes *canal, uint32_t ahoraMs);
   void recibir(CanalPaquetes &canal, uint32_t ahoraMs);
-  void procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado = false);
+  void procesar(const uint8_t *datos, size_t largo, uint32_t ahoraMs, bool relevado = false,
+                sp::FirmaServidor firma = sp::FirmaServidor::COMPROBAR);
+  // La firma de bufRx_ que se comprueba en otra tarea: lo que lee y lo que deja
+  struct Verificacion {
+    const uint8_t *datos = nullptr;
+    size_t largo = 0;
+    const uint8_t *clave = nullptr;
+    std::atomic<bool> valida{false}, terminada{false};
+  };
+  static void verificarEnFondo(void *arg);
+  // Lanza la comprobación de la firma de bufRx_ (n bytes); false si no hay verificador o no se pudo lanzar
+  bool lanzarVerificacion(size_t n, bool relevado);
+  void recogerVerificacion(uint32_t ahoraMs);  // si terminó, procesa el paquete con su resultado
   void enviarHola(CanalPaquetes &canal, uint32_t ahoraMs);
   bool enviarEventos(CanalPaquetes &canal, uint32_t ahoraMs);
   void enviarAjenos(CanalPaquetes &canal, uint32_t ahoraMs);
@@ -210,6 +241,11 @@ class SincronizadorV2 {
 
   AlmacenSync &almacen_;
   ConfigSyncV2 cfg_;
+  Verificacion verificacion_;
+  bool verificando_ = false;  // bufRx_ tiene un paquete cuya firma se está comprobando en otra tarea
+  bool verificandoRelevado_ = false;  // y llegó por un vecino
+  size_t largoVerificando_ = 0;
+  uint32_t verificadasEnFondo_ = 0;
   int8_t senal_ = 0;
   uint32_t bytesTx_ = 0, bytesRx_ = 0;
   uint32_t listasFirmaMala_ = 0, ultimaIncidenciaMs_ = 0, ajenosRecibidos_ = 0;

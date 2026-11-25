@@ -60,12 +60,26 @@ static const char *volatile pasoActual = "arranque";
 // Al medir el loop también se anota qué paso fue el más largo (el que va desde que se marca hasta el siguiente PASO)
 static uint32_t pasoDesdeUs = 0, pasoMaxUs = 0;
 static const char *pasoMaxNombre = "";
-static void marcarPaso(const char *texto) {
-  const uint32_t ahora = micros();
-  if (pasoDesdeUs && ahora - pasoDesdeUs > pasoMaxUs) {
-    pasoMaxUs = ahora - pasoDesdeUs;
+// Los pasos de la vuelta en curso: si pasa de 50 ms, se imprimen todos (#129)
+constexpr uint8_t MAX_PASOS_VUELTA = 24;
+static const char *pasosVuelta[MAX_PASOS_VUELTA];
+static uint32_t usVuelta[MAX_PASOS_VUELTA];
+static uint8_t nPasosVuelta = 0;
+static void cerrarPaso(uint32_t ahora) {
+  if (!pasoDesdeUs) return;
+  const uint32_t dt = ahora - pasoDesdeUs;
+  if (dt > pasoMaxUs) {
+    pasoMaxUs = dt;
     pasoMaxNombre = pasoActual;
   }
+  if (nPasosVuelta < MAX_PASOS_VUELTA) {
+    pasosVuelta[nPasosVuelta] = pasoActual;
+    usVuelta[nPasosVuelta++] = dt;
+  }
+}
+static void marcarPaso(const char *texto) {
+  const uint32_t ahora = micros();
+  cerrarPaso(ahora);
   pasoDesdeUs = ahora;
   pasoActual = texto;
 }
@@ -179,6 +193,9 @@ struct SyncV2 {
 };
 std::unique_ptr<SyncV2> v2;
 TareaFondo tareaMqtt("mqtt");
+// Comprueba la firma ECDSA de lo que llega del servidor (~67 ms) sin parar loop() (#129). Aparte de la de MQTT: con
+// ella ocupada conectando, la firma se comprobaría en el acto. SHA-256 y micro-ecc piden poca pila
+TareaFondo tareaEcdsa("ecdsa", 3072);  // usa ~1,5 KB (medido en la 106)
 constexpr uint32_t BUSCAR_TARJETA_MS = 0;  // esperarTarjeta(): con 0, un solo intento  // conecta MQTT/TLS sin parar loop() (#129)
 uint8_t canalEspNowConfigurado = 1;  // espnow_canal: el de ESP-NOW sin WiFi
 void alCanalDelWifi(uint8_t canal);  // más abajo, con el gestor ya creado
@@ -204,10 +221,20 @@ uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
 #ifdef M15_MEDIR_LOOP
 struct MedirLoop {
   uint32_t inicio = micros();
+  MedirLoop() { nPasosVuelta = 0; }
   ~MedirLoop() {
     static uint32_t maximoUs = 0, ultimoReporte = 0;
-    const uint32_t duracion = micros() - inicio;
+    const uint32_t ahora = micros();
+    const uint32_t duracion = ahora - inicio;
     if (duracion > maximoUs) maximoUs = duracion;
+    if (duracion > 50000) {  // una vuelta lenta: de qué pasos se compone (el último, hasta aquí)
+      cerrarPaso(ahora);
+      pasoDesdeUs = ahora;
+      String s = "# M15 vuelta de " + String(duracion) + " us:";
+      for (uint8_t i = 0; i < nPasosVuelta; i++)
+        if (usVuelta[i] >= 1000) s += String(" [") + pasosVuelta[i] + " " + String(usVuelta[i] / 1000) + " ms]";
+      Serial.println(s);
+    }
     if (millis() - ultimoReporte >= 10000) {
       // Con la memoria libre y el mayor bloque: TLS necesita decenas de KB seguidos (#129)
       Serial.println("# M15 loop_max_us=" + String(maximoUs) + " paso_max_us=" + String(pasoMaxUs) + " (" + pasoMaxNombre +
@@ -661,6 +688,7 @@ void iniciarSyncV2() {
   c.versionFirmware = VERSION_FIRMWARE;
   c.ahoraUnix = ahoraUnix;
   c.correccion = &correccionHora;
+  c.verificador = &tareaEcdsa;
   nuevo->sinc.reset(new SincronizadorV2(*nuevo->almacenSync, c));
   if (nuevo->radio) {
     nuevo->intercambio.reset(new IntercambioVecinos(*nuevo->radio, *nuevo->sinc, *nuevo->almacenSync, almacen.validador()));
@@ -706,8 +734,11 @@ void servicioSyncV2() {
   v2->sinc->atender(canal, ahora);
   if (v2->sinc->horaServidor() && v2->sinc->horaServidor() != v2->horaVista) {
     v2->horaVista = v2->sinc->horaServidor();
+    const bool sinHora = !ahoraUnix();
     fijarHora(v2->sinc->horaServidor(), v2->sinc->millisHora());
-    pantallaEspera();
+    // La pantalla solo cambia si no había hora ("Sin hora"): cada respuesta del servidor trae la suya, y redibujarla
+    // entera son ~40 ms (#129)
+    if (sinHora) pantallaEspera();
   }
   PASO("loop: sync v2, intercambio con vecinos");
   if (v2->intercambio) v2->intercambio->atender(ahora, canal != nullptr, !horaReal);
@@ -729,7 +760,9 @@ void servicioSyncV2() {
         String(v2->sinc->horaServidor()) +
         (enlaceWifi.estado() == EstadoEnlace::Listo ? ", WiFi en el canal " + String(WiFi.channel()) : String("")) +
         ", última conexión MQTT " + String(v2->canal->ultimaConexionMs()) + " ms" +
-        (v2->canal->conectando() ? " (conectando)" : "") + ", pila libre de la tarea " + String(tareaMqtt.pilaLibre()) + " B");
+        (v2->canal->conectando() ? " (conectando)" : "") + ", pila libre de la tarea " + String(tareaMqtt.pilaLibre()) +
+        " B, firmas comprobadas aparte " + String(v2->sinc->verificadasEnFondo()) + " (pila libre " +
+        String(tareaEcdsa.pilaLibre()) + " B)");
     if (v2->intercambio) {
       const IntercambioVecinos::Cuenta &c = v2->intercambio->cuenta();
       log("ESP-NOW: canal " + String(v2->vecinos->canal()) +
