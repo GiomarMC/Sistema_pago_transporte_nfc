@@ -1,0 +1,78 @@
+{
+  "configuracion": {
+    "validadores": 50,
+    "cada_s": 10.0,
+    "duracion_s": 1800.0,
+    "hola_cada_s": 300
+  },
+  "eventos": {
+    "enviados": 9000,
+    "con_acuse": 9000,
+    "sin_acuse": 0
+  },
+  "latencia_ms": {
+    "p50": 108.7,
+    "p95": 252.4,
+    "p99": 330.4,
+    "max": 484.2,
+    "media": 133.6
+  },
+  "paquetes_recibidos": {
+    "acuse": 9350,
+    "listas": 50,
+    "tarifas": 50,
+    "invalido": 0
+  },
+  "desconexiones": 0,
+  "sin_conectar": [],
+  "recursos": {
+    "muestras": 372,
+    "servicios": {
+      "db": {
+        "cpu_media_pct": 23.52,
+        "cpu_p95_pct": 27.54,
+        "cpu_max_pct": 41.04,
+        "ram_media_mib": 98.7,
+        "ram_max_mib": 113.6,
+        "swap_max_mib": 0.0,
+        "muestras_con_swap": 0
+      },
+      "mosquitto": {
+        "cpu_media_pct": 0.2,
+        "cpu_p95_pct": 0.28,
+        "cpu_max_pct": 0.94,
+        "ram_media_mib": 3.8,
+        "ram_max_mib": 5.1,
+        "swap_max_mib": 0.0,
+        "muestras_con_swap": 0
+      },
+      "puente": {
+        "cpu_media_pct": 13.29,
+        "cpu_p95_pct": 15.32,
+        "cpu_max_pct": 22.67,
+        "ram_media_mib": 54.4,
+        "ram_max_mib": 55.8,
+        "swap_max_mib": 0.0,
+        "muestras_con_swap": 0
+      },
+      "web": {
+        "cpu_media_pct": 0.02,
+        "cpu_p95_pct": 0.03,
+        "cpu_max_pct": 0.04,
+        "ram_media_mib": 151.2,
+        "ram_max_mib": 151.5,
+        "swap_max_mib": 0.0,
+        "muestras_con_swap": 0
+      }
+    },
+    "total": {
+      "cpu_media_pct": 37.03,
+      "cpu_p95_pct": 42.7,
+      "cpu_max_pct": 64.1,
+      "ram_media_mib": 308.2,
+      "ram_max_mib": 324.1,
+      "swap_max_mib": 0.0,
+      "muestras_con_swap": 0
+    }
+  }
+}

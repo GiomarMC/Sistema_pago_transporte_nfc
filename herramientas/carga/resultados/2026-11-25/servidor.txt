@@ -1,0 +1,5 @@
+viajes registrados: 9000
+eventos recibidos por MQTT: 9000
+alertas: {}
+Libro mayor: cuadra (suma cero y todos los saldos coinciden)
+fallos al procesar en el puente: 0

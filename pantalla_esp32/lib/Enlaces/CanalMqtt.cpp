@@ -9,8 +9,9 @@ constexpr uint32_t REINTENTO_MAX_MS = 30000;
 constexpr char URGENTE[] = "sp/todos/urgente";
 }
 
-CanalMqtt::CanalMqtt(Enlace &enlace, const char *servidor, uint16_t validador, const char *clave)
-    : enlace_(enlace), servidor_(servidor ? servidor : ""), clave_(clave ? clave : "") {
+CanalMqtt::CanalMqtt(Enlace &enlace, const char *servidor, uint16_t validador, const char *clave,
+                     TrabajoEnFondo *fondo)
+    : enlace_(enlace), servidor_(servidor ? servidor : ""), clave_(clave ? clave : ""), fondo_(fondo) {
   snprintf(usuario_, sizeof(usuario_), "%u", static_cast<unsigned>(validador));
   snprintf(idCliente_, sizeof(idCliente_), "subepe-%u", static_cast<unsigned>(validador));
   snprintf(sube_, sizeof(sube_), "sp/v/%u/sube", static_cast<unsigned>(validador));
@@ -23,12 +24,16 @@ CanalMqtt::CanalMqtt(Enlace &enlace, const char *servidor, uint16_t validador, c
   });
 }
 
-CanalMqtt::~CanalMqtt() { desconectar(); }
+CanalMqtt::~CanalMqtt() {
+  while (fase_.load() == CONECTANDO) delay(10);  // la otra tarea usa mqtt_ y el flujo: no se pueden destruir
+  if (fase_.load() == TERMINADO) terminarConexion();
+  desconectar();
+}
 
 const char *CanalMqtt::nombre() const { return "mqtt-wifi"; }
 
 bool CanalMqtt::listo() const {
-  return !suspendido_ && enlace_.estado() == EstadoEnlace::Listo && mqtt_.connected();
+  return fase_.load() == LIBRE && !suspendido_ && enlace_.estado() == EstadoEnlace::Listo && mqtt_.connected();
 }
 
 void CanalMqtt::reintentar(uint32_t ahora) {
@@ -37,6 +42,8 @@ void CanalMqtt::reintentar(uint32_t ahora) {
 }
 
 void CanalMqtt::atender() {
+  if (fase_.load() == CONECTANDO) return;  // la otra tarea está con mqtt_ y el flujo
+  if (fase_.load() == TERMINADO) terminarConexion();
   if (suspendido_ || enlace_.estado() != EstadoEnlace::Listo || !bufferListo_ ||
       servidor_.length() == 0 || clave_.length() == 0) {
     if (mqtt_.connected()) desconectar();
@@ -45,24 +52,73 @@ void CanalMqtt::atender() {
   if (!mqtt_.connected()) {
     const uint32_t ahora = millis();
     if (proximoIntento_ && (int32_t)(ahora - proximoIntento_) < 0) return;
-    Client *flujo = enlace_.abrir(servidor_.c_str(), PUERTO_MQTT_TLS);
-    if (!flujo) { reintentar(ahora); return; }
-    mqtt_.setClient(*flujo).setServer(servidor_.c_str(), PUERTO_MQTT_TLS);
-    if (!mqtt_.connect(idCliente_, usuario_, clave_.c_str(), conexion_, 0, true, "0", true)) {
-      enlace_.cerrar();
-      reintentar(ahora);
-      return;
-    }
-    if (!mqtt_.subscribe(baja_, 0) || !mqtt_.subscribe(URGENTE, 0) ||
-        !mqtt_.publish(conexion_, "1", true)) {
-      desconectar();
-      reintentar(ahora);
-      return;
-    }
-    espera_ = 1000;
-    proximoIntento_ = 0;
+    empezarConexion(ahora);
+    if (fase_.load() == CONECTANDO) return;  // sigue en la otra tarea; se recoge en un atender() siguiente
+    terminarConexion();
+    if (!mqtt_.connected()) return;
+  }
+  // Con la cola llena no se lee del broker (#129): lo que llegue espera en TCP, que lo frena, en vez de descartarse.
+  // Pasa mientras el sincronizador comprueba una firma en otra tarea. Si nadie la vacía en 5 s, se vuelve a leer
+  // (y a descartar) para no perder la conexión por falta de keepalive.
+  if (cantidad_ == 2) {
+    const uint32_t ahora = millis();
+    if (!llenaDesde_) llenaDesde_ = ahora ? ahora : 1;
+    if ((uint32_t)(ahora - llenaDesde_) < COLA_LLENA_MAX_MS) return;
+  } else {
+    llenaDesde_ = 0;
   }
   if (!mqtt_.loop()) { enlace_.cerrar(); reintentar(millis()); }
+}
+
+void CanalMqtt::empezarConexion(uint32_t ahora) {
+  inicioConexion_ = ahora;
+  exito_ = false;
+  enlace_.prestarFlujo(true);
+  fase_.store(CONECTANDO);
+  if (fondo_ && fondo_->lanzar(&CanalMqtt::conectarEnFondo, this)) return;
+  exito_ = conectar();  // sin otra tarea: en el acto
+  fase_.store(TERMINADO);
+}
+
+void CanalMqtt::conectarEnFondo(void *yo) {
+  CanalMqtt &c = *static_cast<CanalMqtt *>(yo);
+  c.exito_ = c.conectar();
+  c.fase_.store(TERMINADO);  // después de exito_: quien vea TERMINADO ve también el resultado
+}
+
+// Todo lo que espera a la red. Solo toca mqtt_ y el flujo del enlace (y lo cierra si falla).
+bool CanalMqtt::conectar() {
+  Client *flujo = enlace_.abrir(servidor_.c_str(), PUERTO_MQTT_TLS);
+  if (!flujo) return false;
+  mqtt_.setClient(*flujo).setServer(servidor_.c_str(), PUERTO_MQTT_TLS);
+  if (!mqtt_.connect(idCliente_, usuario_, clave_.c_str(), conexion_, 0, true, "0", true)) {
+    enlace_.cerrar();
+    return false;
+  }
+  if (!mqtt_.subscribe(baja_, 0) || !mqtt_.subscribe(URGENTE, 0) || !mqtt_.publish(conexion_, "1", true)) {
+    mqtt_.disconnect();
+    enlace_.cerrar();
+    return false;
+  }
+  return true;
+}
+
+void CanalMqtt::terminarConexion() {
+  fase_.store(LIBRE);
+  ultimaConexionMs_ = millis() - inicioConexion_;
+  enlace_.prestarFlujo(false);  // si el enlace quiso cerrar el flujo mientras tanto (red perdida), lo cierra ahora
+  if (cerrarAlTerminar_) {
+    cerrarAlTerminar_ = false;
+    desconectar();
+    return;
+  }
+  if (exito_ && mqtt_.connected()) {
+    espera_ = 1000;
+    proximoIntento_ = 0;
+  } else {
+    if (mqtt_.connected()) desconectar();
+    reintentar(millis());
+  }
 }
 
 bool CanalMqtt::enviar(const uint8_t *paquete, size_t largo) {
@@ -99,7 +155,20 @@ void CanalMqtt::suspender(bool si) {
 }
 
 void CanalMqtt::desconectar() {
-  if (mqtt_.connected()) mqtt_.publish(conexion_, "0", true);
-  mqtt_.disconnect();
+  if (fase_.load() == CONECTANDO) {  // no se toca mqtt_ ni el flujo mientras los usa la otra tarea
+    cerrarAlTerminar_ = true;
+    return;
+  }
+  if (fase_.load() == TERMINADO) {  // la otra tarea acabó y atender() aún no lo recogió: se recoge cerrando
+    cerrarAlTerminar_ = true;
+    terminarConexion();  // con la fase ya LIBRE vuelve a llamar a desconectar()
+    return;
+  }
+  // PubSubClient::disconnect() usa su cliente sin mirar si lo tiene: si nunca se conectó (sin WiFi desde el
+  // arranque) es NULL y la placa se reinicia. Solo se desconecta si hay conexión; el TLS lo cierra enlace_.cerrar()
+  if (mqtt_.connected()) {
+    mqtt_.publish(conexion_, "0", true);
+    mqtt_.disconnect();
+  }
   enlace_.cerrar();
 }

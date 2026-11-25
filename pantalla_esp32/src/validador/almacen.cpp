@@ -1,13 +1,18 @@
 #include "almacen.h"
 
+#include <EventosTexto.h>
 #include <SD.h>
 #include <SPI.h>
+#include <esp_task_wdt.h>
 #include <time.h>
 
 namespace {
 
 // microSD en el segundo bus SPI (HSPI), para no interferir con la pantalla
 constexpr int8_t SD_SCK = 14, SD_MOSI = 13, SD_MISO = 27, SD_CS = 26;
+#ifndef MAX_ARCHIVOS_ABIERTOS
+#define MAX_ARCHIVOS_ABIERTOS 7
+#endif
 SPIClass spiSD(HSPI);
 
 String leerArchivo(const char *ruta) {
@@ -40,24 +45,6 @@ void porLinea(const String &texto, F f) {
   }
 }
 
-String fechaIso(uint32_t unix) {
-  time_t t = unix;
-  struct tm tm;
-  gmtime_r(&t, &tm);
-  char b[32];
-  strftime(b, sizeof(b), "%Y-%m-%dT%H:%M:%S+00:00", &tm);
-  return b;
-}
-
-String jsonTexto(const String &s) {
-  String r = "\"";
-  for (char c : s) {
-    if (c == '"' || c == '\\') r += '\\';
-    if (c >= 32) r += c;
-  }
-  return r + "\"";
-}
-
 bool deHex32(const String &s, uint8_t out[32]) {
   if (s.length() != 64) return false;
   for (int i = 0; i < 32; i++) {
@@ -71,24 +58,90 @@ bool deHex32(const String &s, uint8_t out[32]) {
 
 }  // namespace
 
+bool Almacen::montar() {
+#ifdef MONTAJE_FALLA_PRUEBA
+  // Solo para comprobar los reintentos (-DMONTAJE_FALLA_PRUEBA=N): los N primeros montajes fallan
+  static uint32_t llamadas = 0;
+  if (llamadas++ < MONTAJE_FALLA_PRUEBA) return false;
+#endif
+  // Si un intento anterior falló, se suelta el bus y se vuelve a abrir: la tarjeta puede haber
+  // quedado a mitad de una orden tras un reinicio brusco y solo contesta al volver a empezar
+  //
+  // Reloj del bus (#51): primero a 20 MHz, el máximo que admite la microSD en SPI con los divisores de la ESP32. Con
+  // 50 000 tarjetas bloqueadas la consulta baja de 20-36 ms (a 4 MHz) a 6-19 ms según la tarjeta. Si a 20 MHz no
+  // monta (cables largos, tarjeta lenta) se vuelve a los 4 MHz de antes. -DSD_HZ=N al compilar fija uno solo.
+#ifdef SD_HZ
+  const uint32_t relojes[] = {SD_HZ};
+#else
+  const uint32_t relojes[] = {20000000, 4000000};
+#endif
+  // Los archivos que se quedan abiertos entre guardados (#129) se cierran antes de desmontar: un File viejo que se
+  // cerrara después podría cerrar otro abierto tras el montaje nuevo con el mismo número
+  estado_.soltar();
+  recargas_.soltar();
+  tarifasBin_.soltar();
+  consumo_.soltar();
+  for (uint32_t hz : relojes) {
+    SD.end();
+    spiSD.end();
+    spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+    // Hasta 7 archivos abiertos a la vez (por defecto 5): el estado y el consumo se quedan abiertos entre guardados
+    // (#129) y quedan los 5 de antes para lo demás. Cada hueco reserva 4 KB al montar: con 10, a TLS no le quedaba
+    // memoria para conectar
+    if (SD.begin(SD_CS, spiSD, hz, "/sd", MAX_ARCHIVOS_ABIERTOS)) {
+      relojSd_ = hz;
+      Serial.printf("microSD: montada a %lu MHz\n", (unsigned long)(hz / 1000000));
+      return true;
+    }
+  }
+  return false;
+}
+
 bool Almacen::iniciar() {
-  spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-  listo_ = SD.begin(SD_CS, spiSD, 4000000);
+  for (uint8_t intento = 1; intento <= INTENTOS_MONTAJE; intento++) {
+    listo_ = montar();
+    if (listo_) break;
+    Serial.printf("microSD: intento %u de %u sin respuesta\n", intento, INTENTOS_MONTAJE);
+    if (intento < INTENTOS_MONTAJE) delay(ESPERA_MONTAJE_MS);
+  }
+  ultimoIntentoMontaje_ = millis();
   if (!listo_) return false;
+  cargarDatos();
+  return true;
+}
+
+bool Almacen::reintentarMontaje() {
+  if (listo_ || millis() - ultimoIntentoMontaje_ < REINTENTO_MONTAJE_MS) return false;
+  ultimoIntentoMontaje_ = millis();
+  if (!montar()) return false;
+  listo_ = true;
+  Serial.println("microSD: montada al reintentar");
+  cargarDatos();
+  return true;
+}
+
+void Almacen::cargarDatos() {
   cargarConfig();
-  String estado = leerArchivo("/estado.txt");
-  porLinea(estado, [&](const String &l) {
-    if (l.startsWith("siguiente_id=")) siguienteId_ = l.substring(13).toInt();
-    if (l.startsWith("ultimo_subido=")) ultimoSubido_ = l.substring(14).toInt();
-  });
-  if (siguienteId_ < 1) siguienteId_ = 1;
+  // Eventos y estado en binario. Si hay un /eventos.txt de una versión anterior, antes de abrir la cola se deja el
+  // estado (siguiente_id, ultimo_subido) como lo tenía, para que los ids sigan donde iban
+  const bool hayTexto = SD.exists("/eventos.txt") || SD.exists("/estado.txt");
+  estado_.cargar();  // sin copia válida (validador nuevo) arranca con el estado inicial
+  if (hayTexto) prepararMigracion();
+  if (!cola_.iniciar()) Serial.println("ERROR: no se pudo abrir /eventos.bin en la microSD");
+  if (hayTexto) migrarEventosDeTexto();
   porLinea(leerArchivo("/ultima_op.txt"), [&](const String &l) {
     int sp = l.indexOf(' ');
     if (sp > 0) ultimaOp_[l.substring(0, sp).toInt()] = l.substring(sp + 1).toInt();
   });
+  dudosos_.deTexto(leerArchivo("/cobros_dudosos.txt").c_str());
   cargarListas();
+  v2_ = config("sync") == "v2";
+  if (v2_ && !listaNegraBin_.iniciar()) Serial.println("microSD: sin lista negra binaria todavía (arranca vacía)");
   cargarRedes();
-  return true;
+  // Sin ellos el validador sigue cobrando: solo no puede guardar paquetes de otros buses
+  if (!ajenos_.iniciar()) Serial.println("AVISO: no se pudo preparar /ajenos en la microSD");
+  if (!firmados_.iniciar()) Serial.println("AVISO: no se pudo preparar /firmados en la microSD");
+  consumo_.iniciar();  // sin historial todavía la primera vez
 }
 
 void Almacen::cargarConfig() {
@@ -104,28 +157,65 @@ void Almacen::cargarConfig() {
     }
   });
   validador_ = config("validador").toInt();
-  tieneClave_ = deHex32(config("clave_maestra"), clave_);
+  // Solo una config.txt de una versión anterior trae la clave maestra (main.cpp la pasa a la NVS y la borra de aquí).
+  // Si no la trae, se conserva la que se puso desde la NVS (cargarConfig() se repite al guardar o al volver a montar)
+  if (config("clave_maestra").length()) tieneClave_ = deHex32(config("clave_maestra"), clave_);
+}
+
+void Almacen::ponerClaveMaestra(const uint8_t clave[32]) {
+  memcpy(clave_, clave, sizeof(clave_));
+  tieneClave_ = true;
+}
+
+bool Almacen::borrarClaveMaestraDeConfig() {
+  String texto = leerArchivo("/config.txt");
+  const int inicio = texto.indexOf("clave_maestra=");
+  if (inicio < 0) return true;
+  int fin = texto.indexOf('\n', inicio);
+  if (fin < 0) fin = texto.length();
+  for (int i = inicio + 14; i < fin; i++) texto.setCharAt(i, '0');
+  // "r+": se escribe encima, sin truncar, así que va a los mismos sectores que tenían la clave
+  File f = SD.open("/config.txt", "r+");
+  if (!f) return false;
+  const bool encima = f.print(texto) == texto.length();
+  f.flush();
+  f.close();
+  if (!encima) return false;
+  config_.erase("clave_maestra");
+  String limpio = "# Configuración del validador (generada por puente_nfc.py --configurar)\n";
+  for (auto &kv : config_) limpio += kv.first + "=" + kv.second + "\n";
+  return escribirArchivo("/config.txt", limpio);
 }
 
 void Almacen::cargarListas() {
   // Se recargan enteras en cada sincronización: el servidor manda la lista completa
-  tarifas_.clear();
   listaNegra_.clear();
-  recargas_.clear();
-  const String tarifas = leerArchivo("/tarifas.txt");
-  if (tarifas.length() == 0) {  // por defecto, hasta la primera sincronización
-    tarifas_[1] = {"general", 130};
-    tarifas_[2] = {"estudiante", 80};
-  }
-  porLinea(tarifas, [&](const String &l) {
-    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
-    if (a > 0 && b > a) tarifas_[l.substring(0, a).toInt()] = {l.substring(a + 1, b), (int32_t)l.substring(b + 1).toInt()};
-  });
+  const bool hayRecargas = recargas_.iniciar();
+  const bool hayTarifas = tarifasBin_.iniciar();
+  migrarListasDeTexto(hayRecargas, hayTarifas);
   porLinea(leerArchivo("/lista_negra.txt"), [&](const String &l) { listaNegra_[l.toInt()] = true; });
-  porLinea(leerArchivo("/recargas.txt"), [&](const String &l) {
-    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
-    if (a > 0 && b > a) recargas_.push_back({(uint32_t)l.substring(0, a).toInt(), (uint32_t)l.substring(a + 1, b).toInt(), (int32_t)l.substring(b + 1).toInt()});
-  });
+}
+
+// Un validador que ya tenía datos de una versión anterior los conserva: lo que haya en los
+// archivos de texto pasa a los binarios (una sola vez; el texto se borra al conseguirlo).
+void Almacen::migrarListasDeTexto(bool hayRecargas, bool hayTarifas) {
+  if (!hayRecargas && SD.exists("/recargas.txt")) {
+    std::vector<Recarga> r;
+    porLinea(leerArchivo("/recargas.txt"), [&](const String &l) {
+      int a = l.indexOf(' '), b = l.lastIndexOf(' ');
+      if (a > 0 && b > a) r.push_back({(uint32_t)l.substring(0, a).toInt(), (uint32_t)l.substring(a + 1, b).toInt(), (int32_t)l.substring(b + 1).toInt()});
+    });
+    if (recargas_.reemplazar(std::move(r))) {
+      SD.remove("/recargas.txt");
+      Serial.println("microSD: /recargas.txt migrado a /recargas.bin");
+    }
+  }
+  if (!hayTarifas && SD.exists("/tarifas.txt")) {
+    if (guardarTarifasDeTexto(leerArchivo("/tarifas.txt"))) {
+      SD.remove("/tarifas.txt");
+      Serial.println("microSD: /tarifas.txt migrado a /tarifas.bin");
+    }
+  }
 }
 
 String Almacen::config(const String &clave) const {
@@ -149,12 +239,21 @@ bool Almacen::guardarConfig(const String &pares) {
   return configurado();
 }
 
-bool Almacen::bloqueada(uint32_t idTarjeta) const { return listaNegra_.count(idTarjeta) > 0; }
+bool Almacen::bloqueada(uint32_t idTarjeta) {
+  if (v2_) return listaNegraBin_.bloqueada(idTarjeta);  // 6-19 ms a 20 MHz y 20-36 ms a 4 MHz (#51); los urgentes van en RAM
+  return listaNegra_.count(idTarjeta) > 0;
+}
 
 bool Almacen::tarifa(uint8_t codigo, Tarifa &t) const {
-  auto it = tarifas_.find(codigo);
-  if (it == tarifas_.end()) return false;
-  t = it->second;
+  if (tarifasBin_.cantidad() == 0) {  // sin sincronizar todavía: las de siempre
+    if (codigo == 1) t = {"general", 130};
+    else if (codigo == 2) t = {"estudiante", 80};
+    else return false;
+    return true;
+  }
+  sp::Tarifa c;
+  if (!tarifasBin_.tarifa(codigo, c)) return false;
+  t = {String(c.nombre), static_cast<int32_t>(c.precio)};
   return true;
 }
 
@@ -165,49 +264,41 @@ uint32_t Almacen::ultimaOperacion(uint32_t idTarjeta) const {
 
 void Almacen::recargasPendientes(uint32_t idCuenta, uint32_t ultima, int32_t &total,
                                  uint32_t &hasta) const {
-  total = 0;
-  hasta = ultima;
-  bool avanzo = true;
-  while (avanzo) {  // solo correlativas: no se salta ninguna
-    avanzo = false;
-    for (auto &r : recargas_) {
-      if (r.cuenta == idCuenta && r.seq == hasta + 1) {
-        total += r.monto;
-        hasta = r.seq;
-        avanzo = true;
-      }
-    }
-  }
+  recargas_.pendientes(idCuenta, ultima, total, hasta);  // solo correlativas: no se salta ninguna
 }
 
+// Un viaje ya registrado aquí: registrarViaje() anota la operación de la tarjeta DESPUÉS de guardar el evento, así
+// que "ya la vi" equivale a "ya está guardado" (con la cola compactada tras el acuse, buscarlo en ella ya no vale)
 bool Almacen::existeViaje(uint32_t idTarjeta, uint16_t operacion) {
-  String a = "\"tarjeta_id\":" + String(idTarjeta) + ",";
-  String b = "\"operacion\":" + String(operacion) + ",";
-  bool hay = false;
-  File f = SD.open("/eventos.txt", FILE_READ);
-  if (!f) return false;
-  while (f.available() && !hay) {
-    String l = f.readStringUntil('\n');
-    hay = l.indexOf("\"tipo\":\"viaje\"") >= 0 && l.indexOf(a) >= 0 && l.indexOf(b) >= 0;
-  }
-  f.close();
-  return hay;
+  auto it = ultimaOp_.find(idTarjeta);
+  return it != ultimaOp_.end() && it->second >= operacion;
 }
 
-bool Almacen::agregarEvento(const String &json) {
-  File f = SD.open("/eventos.txt", FILE_APPEND);
-  if (!f) return false;
-  size_t n = f.println(json);
-  f.close();
-  if (n < json.length()) return false;
-  siguienteId_++;
-  guardarEstado();
+void Almacen::guardarCobrosDudosos() {
+  char texto[CobrosDudosos::MAXIMO * 80];
+  dudosos_.aTexto(texto, sizeof(texto));
+  escribirArchivo("/cobros_dudosos.txt", texto);
+}
+
+void Almacen::anotarCobroDudoso(const CobroDudoso &c) {
+  dudosos_.anotar(c);
+  guardarCobrosDudosos();
+}
+
+CobrosDudosos::Resultado Almacen::resolverCobroDudoso(uint32_t idTarjeta, uint16_t operacion,
+                                                     uint16_t validadorTarjeta, CobroDudoso &c) {
+  const CobrosDudosos::Resultado r = dudosos_.resolver(idTarjeta, operacion, validadorTarjeta, validador_, c);
+  if (r != CobrosDudosos::Resultado::NINGUNO) guardarCobrosDudosos();
+  return r;
+}
+
+void Almacen::avisarCola(const char *texto) { Serial.printf("AVISO cola de eventos: %s\n", texto); }
+
+// El evento se da por guardado solo cuando ya está vaciado a la microSD (ColaEventos::agregar)
+bool Almacen::guardarEvento(sp::Evento &e) {
+  if (!cola_.agregar(e)) return false;
+  if (alGuardar_) alGuardar_(e);
   return true;
-}
-
-void Almacen::guardarEstado() {
-  escribirArchivo("/estado.txt", "siguiente_id=" + String(siguienteId_) + "\nultimo_subido=" +
-                                     String(ultimoSubido_) + "\n");
 }
 
 void Almacen::guardarUltimasOperaciones() {
@@ -219,13 +310,18 @@ void Almacen::guardarUltimasOperaciones() {
 bool Almacen::registrarViaje(uint32_t fecha, uint32_t idTarjeta, const String &uid, int32_t monto,
                              int32_t saldoFinal, uint16_t operacion, uint32_t contador,
                              uint32_t recargaHasta) {
-  String j = "{\"id\":" + String(siguienteId_) + ",\"tipo\":\"viaje\",\"fecha\":\"" +
-             fechaIso(fecha) + "\",\"tarjeta_id\":" + String(idTarjeta) + ",\"uid\":\"" + uid +
-             "\",\"monto\":" + String(monto) + ",\"saldo_final\":" + String(saldoFinal) +
-             ",\"operacion\":" + String(operacion) + ",\"contador\":" + String(contador) +
-             ",\"recarga_hasta\":" + (recargaHasta ? String(recargaHasta) : String("null")) +
-             ",\"detalle\":null}";
-  if (!agregarEvento(j)) return false;
+  sp::Evento e;
+  memset(&e, 0, sizeof(e));
+  e.tipo = sp::VIAJE;
+  e.fecha = fecha;
+  e.idTarjeta = idTarjeta;
+  eventos_texto::uidDeHex(uid.c_str(), e);
+  e.monto = monto;
+  e.saldoFinal = saldoFinal;
+  e.operacion = operacion;
+  e.contador = contador;
+  e.recargaHasta = recargaHasta;
+  if (!guardarEvento(e)) return false;
   if (operacion > ultimaOperacion(idTarjeta)) {
     ultimaOp_[idTarjeta] = operacion;
     guardarUltimasOperaciones();
@@ -235,43 +331,136 @@ bool Almacen::registrarViaje(uint32_t fecha, uint32_t idTarjeta, const String &u
 
 bool Almacen::registrarIncidencia(uint32_t fecha, uint32_t idTarjeta, const String &uid,
                                   const String &detalle, bool fraude) {
-  String j = "{\"id\":" + String(siguienteId_) + ",\"tipo\":\"" +
-             (fraude ? "fraude" : "incidencia") + "\",\"fecha\":\"" + fechaIso(fecha) +
-             "\",\"tarjeta_id\":" + String(idTarjeta) + ",\"uid\":\"" + uid +
-             "\",\"monto\":null,\"saldo_final\":null,\"operacion\":null,\"contador\":null," +
-             "\"recarga_hasta\":null,\"detalle\":" + jsonTexto(detalle) + "}";
-  return agregarEvento(j);
+  sp::Evento e;
+  memset(&e, 0, sizeof(e));
+  e.tipo = fraude ? sp::FRAUDE : sp::INCIDENCIA;
+  e.fecha = fecha;
+  e.idTarjeta = idTarjeta;
+  eventos_texto::uidDeHex(uid.c_str(), e);
+  e.contador = sp::SIN_CONTADOR;
+  eventos_texto::ponerDetalle(e, detalle.c_str());  // C1: 20 caracteres ASCII
+  return guardarEvento(e);
 }
 
+// Los eventos sin confirmar, como el JSON de siempre (sincronizador v1)
 String Almacen::eventosPendientes(size_t max, std::vector<uint32_t> &ids) {
   ids.clear();
   String json = "[";
-  File f = SD.open("/eventos.txt", FILE_READ);
-  if (!f) return "[]";
-  while (f.available() && ids.size() < max) {
-    String l = f.readStringUntil('\n');
-    l.trim();
-    // Una línea cortada (corte de corriente al escribirla) no se envía
-    if (!l.startsWith("{\"id\":") || !l.endsWith("}")) continue;
-    uint32_t id = l.substring(6).toInt();
-    if (id <= ultimoSubido_) continue;
-    if (ids.size()) json += ",";
-    json += l;
-    ids.push_back(id);
+  sp::Evento lote[8];
+  uint32_t desde = cola_.ultimoAcusado();
+  while (ids.size() < max) {
+    const size_t pedir = max - ids.size() < 8 ? max - ids.size() : 8;
+    const size_t n = cola_.leerDesde(desde, lote, pedir);
+    if (n == 0) break;
+    for (size_t i = 0; i < n; i++) {
+      char linea[512];
+      if (eventos_texto::aJson(lote[i], linea, sizeof(linea)) == 0) continue;
+      if (ids.size()) json += ",";
+      json += linea;
+      ids.push_back(lote[i].idEvento);
+    }
+    desde = lote[n - 1].idEvento;
   }
-  f.close();
   return json + "]";
 }
 
+// Solo guarda el acuse (una escritura del estado). Compactar la cola cuesta ~1,5 s en la microSD: lo hace
+// mantenimiento() cuando el lector está libre, no aquí
 void Almacen::marcarSubidos(uint32_t hastaId) {
-  if (hastaId <= ultimoSubido_) return;
-  ultimoSubido_ = hastaId;
-  guardarEstado();
+  fallosCompactar_ = 0;
+  cola_.acusarHasta(hastaId, false);
+}
+
+// Desde loop(), solo con el lector libre (sin tarjeta delante): un paso (una operación en la microSD, ~0,8 s como
+// mucho) de la compactación pendiente de la cola. true si hizo algo.
+bool Almacen::mantenimiento() {
+  if (!listo_ || !cola_.compactacionPendiente() || fallosCompactar_ >= 3) return false;
+  if (!cola_.compactarPaso()) {
+    fallosCompactar_++;
+    Serial.println("AVISO: no se pudo compactar la cola de eventos");
+  }
+  return true;
+}
+
+// Un validador que ya tenía eventos de una versión anterior los conserva. Primero (antes de abrir la cola) el
+// estado: los ids siguen desde ultimo_subido + 1, que es lo que el servidor espera.
+void Almacen::prepararMigracion() {
+  uint32_t subido = 0;
+  porLinea(leerArchivo("/estado.txt"), [&](const String &l) {
+    if (l.startsWith("ultimo_subido=")) subido = l.substring(14).toInt();
+  });
+  if (subido > estado_.estado().hastaAcusado) estado_.fijarHastaAcusado(subido);
+  if (subido + 1 > estado_.estado().siguienteId) estado_.fijarSiguienteId(subido + 1);
+}
+
+// Luego los eventos pendientes (los ya subidos se dejan), uno a uno a la cola. Un corte a mitad se retoma sin duplicar:
+// lo que ya está en la cola se salta. Al terminar el texto pasa a *.migrado (se conserva por si algo salió mal).
+void Almacen::migrarEventosDeTexto() {
+  uint32_t migrados = 0, saltados = 0, malos = 0;
+  bool completo = true;
+  File f = SD.open("/eventos.txt", FILE_READ);
+  if (f) {
+    const uint32_t subido = estado_.estado().hastaAcusado;
+    while (f.available()) {
+      String l = f.readStringUntil('\n');
+      l.trim();
+      if (!l.startsWith("{\"id\":")) continue;
+      const uint32_t id = l.substring(6).toInt();
+      if (id <= subido || id <= cola_.ultimoId()) {
+        saltados++;
+        continue;
+      }
+      sp::Evento e;
+      if (!eventos_texto::deJson(l.c_str(), e)) {  // una línea cortada por un corte de energía
+        malos++;
+        continue;
+      }
+      esp_task_wdt_reset();  // con muchos pendientes tarda: cada agregar() vacía a la microSD
+      if (!cola_.agregar(e)) {
+        completo = false;
+        break;
+      }
+      if (e.idEvento != id) Serial.printf("AVISO migración: el evento %lu quedó con el id %lu\n", (unsigned long)id, (unsigned long)e.idEvento);
+      migrados++;
+    }
+    f.close();
+  }
+  Serial.printf("microSD: eventos.txt -> eventos.bin: %lu migrados, %lu ya subidos o repetidos, %lu líneas dañadas%s\n",
+                (unsigned long)migrados, (unsigned long)saltados, (unsigned long)malos, completo ? "" : " (INCOMPLETO: se reintenta al arrancar)");
+  if (!completo) return;
+  for (const char *r : {"/eventos.txt", "/estado.txt"}) {
+    if (!SD.exists(r)) continue;
+    String destino = String(r).substring(0, String(r).length() - 4) + ".migrado";
+    if (SD.exists(destino.c_str())) SD.remove(destino.c_str());
+    SD.rename(r, destino.c_str());
+  }
+}
+
+// Las tarifas del texto "código nombre precio" (una por línea) a TARIFAS de C1. El servidor no manda
+// aquí una versión, así que queda en 0.
+bool Almacen::guardarTarifasDeTexto(const String &texto) {
+  std::unique_ptr<sp::Tarifas> t(new sp::Tarifas());
+  memset(t.get(), 0, sizeof(*t));
+  porLinea(texto, [&](const String &l) {
+    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
+    if (a <= 0 || b <= a || t->n >= sp::MAX_TARIFAS) return;
+    sp::Tarifa &x = t->tarifas[t->n++];
+    x.codigo = l.substring(0, a).toInt();
+    x.precio = max<int32_t>(0, l.substring(b + 1).toInt());
+    strncpy(x.nombre, l.substring(a + 1, b).c_str(), 16);
+    x.nombre[16] = 0;
+  });
+  return tarifasBin_.guardar(*t);
 }
 
 bool Almacen::guardarListas(const String &listaNegra, const String &tarifas, const String &recargas) {
-  bool ok = escribirArchivo("/lista_negra.txt", listaNegra) && escribirArchivo("/tarifas.txt", tarifas) &&
-            escribirArchivo("/recargas.txt", recargas);
+  std::vector<Recarga> r;
+  porLinea(recargas, [&](const String &l) {
+    int a = l.indexOf(' '), b = l.lastIndexOf(' ');
+    if (a > 0 && b > a) r.push_back({(uint32_t)l.substring(0, a).toInt(), (uint32_t)l.substring(a + 1, b).toInt(), (int32_t)l.substring(b + 1).toInt()});
+  });
+  bool ok = escribirArchivo("/lista_negra.txt", listaNegra) && guardarTarifasDeTexto(tarifas) &&
+            recargas_.reemplazar(std::move(r));
   cargarListas();
   return ok;
 }

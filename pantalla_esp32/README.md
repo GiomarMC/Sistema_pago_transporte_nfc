@@ -95,11 +95,13 @@ y la microSD van cada una en su propio bus SPI; el PN532, en el bus I2C.
 |---|---|---|
 | GND | GND | Derecho, 1.º |
 | VCC | 3V3 | Izquierdo, 1.º |
-| SCL | P22 (el mismo que el SCL del PN532) | Derecho, 3.º |
-| SDA | P21 (el mismo que el SDA del PN532) | Derecho, 6.º |
+| SCL | P33 | Izquierdo, 8.º |
+| SDA | P25 | Izquierdo, 9.º |
 
-La OLED comparte el bus I2C con el PN532 (direcciones 0x3C y 0x24, no chocan) y
-no usa pines nuevos. **El orden de sus pines es GND, VCC, SCL, SDA**, distinto
+La OLED va en **su propio bus I2C** (SDA en P25, SCL en P33), no en el del PN532. Hasta el 24 nov
+compartía P21/P22, pero si la ESP32 se reiniciaba con los módulos encendidos, la
+OLED podía quedarse reteniendo SCL y dejaba también sin lector a la placa (#200).
+Con un bus para ella, en ese caso solo se pierde la pantalla. **El orden de sus pines es GND, VCC, SCL, SDA**, distinto
 al de muchos módulos: conecta por el rótulo. Si el escáner I2C (`prueba_oled`)
 ve 0x3D en vez de 0x3C, compila con `-DOLED_DIRECCION=0x3D`. Si la imagen sale
 corrida 2 píxeles o con ruido en un borde, el controlador es el otro: usa los
@@ -169,6 +171,7 @@ Todos se compilan y cargan desde esta carpeta. El puerto puede indicarse con
 |---|---|---|
 | `esp32dev` | Pantalla del modo A: muestra lo que le envía `validador.py` | `pio run -e esp32dev -t upload` |
 | `prueba` | Prueba de componentes: colores de la pantalla, escritura y lectura de la microSD, eco por USB | `pio run -e prueba -t upload` y después `pio device monitor` |
+| `prueba_espnow` | Prueba de ESP-NOW entre buses (M8-01 y M8-02). Se carga en **dos** placas, sin pantalla, WiFi ni microSD: se descubren con balizas (`vecino ... detectado` / `perdido`) y la de número más bajo envía 10 rondas de 20 mensajes de 2 KB que la otra comprueba byte a byte. El receptor le devuelve su resultado al emisor, así que basta una placa conectada al ordenador (la de número más bajo) para probar a distancia. Al final escribe `PRUEBA M8-02 COMPLETA`. El LED azul se enciende mientras vea a un vecino | `pio run -e prueba_espnow -t upload` en cada placa y después `pio device monitor` |
 | `validador` | Validador autónomo del modo B, con el PN532 y la **LCD SSD1283A** | `pio run -e validador -t upload` |
 | `validador_oled` | Lo mismo con la **OLED de 1,3"** (I2C, controlador SH1106) en lugar de la LCD | `pio run -e validador_oled -t upload` |
 | `validador_oled_ssd1306` | Igual que el anterior para módulos OLED con controlador SSD1306 | `pio run -e validador_oled_ssd1306 -t upload` |
@@ -239,7 +242,8 @@ tarjetas).
 2. La ESP32 necesita su número de validador y **la misma clave maestra con la
    que se emitieron las tarjetas** (`transporte/claves/clave_maestra.bin`; ver
    la sección 7.5 del README principal). Con la ESP32 conectada por USB al
-   ordenador que tiene la clave (no hace falta el ACR122U):
+   ordenador que tiene la clave (no hace falta el ACR122U). La clave viaja por
+   el cable y se guarda en la NVS de la ESP32, nunca en la microSD:
 
    ```bash
    cd transporte
@@ -354,13 +358,65 @@ solo la página para elegir la red (aunque tenga datos móviles). Guarda hasta 5
 redes y las prueba en orden. El portal no muestra ni cambia la clave maestra ni
 el token.
 
+### 7.6 Sincronización v2 y el servidor C1 falso (en desarrollo)
+
+El validador sincroniza hoy con el protocolo v1 (JSON sobre HTTP, apartado 7.5). El **SincronizadorV2**
+(`src/validador/sincronizador_v2.cpp`), que usa paquetes binarios firmados C1 por cualquier canal, está
+escrito y probado en el ordenador, pero **todavía no está conectado a `main.cpp`**: falta el
+almacenamiento binario (M3), las claves en la NVS (M2) y el gestor de enlaces (#129). Mientras tanto
+se prueba contra un servidor falso, sin tocar el servidor real.
+
+**`herramientas/servidor_c1_falso.py`** expone `POST /api/v2/paquetes/` como el servidor de verdad. Recibe
+paquetes C1 concatenados, los verifica y decodifica con el módulo del servidor
+(`servidor_api/transporte/sync_v2/paquetes.py`), los **imprime**, y contesta con paquetes firmados:
+
+| Recibe | Contesta |
+|---|---|
+| `HOLA` | `ACUSE`, y `LISTAS` y `TARIFAS` si el validador lleva otras versiones |
+| `EVENTOS` | `ACUSE` hasta el último evento contiguo recibido |
+
+No usa Django ni base de datos (el estado se pierde al cerrarlo) y no pide el token. Solo para pruebas.
+
+1. **Arrancarlo.** Necesita la clave HMAC del validador (la misma que `manage.py clave_validador 107` en el servidor real):
+
+   ```
+   python3 herramientas/servidor_c1_falso.py --clave 107=<64 caracteres hex> --bloquear 4242
+   ```
+
+   Escucha en el puerto 8001 de todas las interfaces, para que la ESP32 llegue por la red local. Opciones útiles:
+   `--puerto`, `--tarifa 1:130:general` (se puede repetir), `--bloquear ID_TARJETA` (lista negra), `--claves-json` y `--silencioso`.
+   Cada paquete sale por pantalla, por ejemplo `← EVENTOS de validador 107 ...: 30 evento(s), ids 1..30` y
+   `→ ACUSE para el validador 107: confirma hasta el evento 30`.
+2. **La clave del servidor falso.** Firma con una clave ECDSA propia, que crea la primera vez en
+   `herramientas/c1_falso_clave.pem` (no se sube al repositorio). El firmware solo acepta paquetes firmados
+   con la clave pública que lleva en `src/validador/clave_servidor.h`, así que para probar contra el falso
+   hay que poner esa clave pública, sin subirla:
+
+   ```
+   python3 herramientas/servidor_c1_falso.py --imprimir-clave-publica
+   ```
+
+   Escribe la clave en hexadecimal y como array de C. Para volver al servidor real, restaura `clave_servidor.h` (`git checkout`).
+3. **Usarlo con el validador.** Hoy no se puede conectar una placa: el firmware sigue en v1. La comprobación de
+   que el firmware y el servidor se entienden se hace en el ordenador, con el código del validador compilado
+   allí (necesita `g++`, `mbedtls` y `curl`):
+
+   ```
+   sh pantalla_esp32/test_host/e2e_servidor_falso.sh
+   ```
+
+   Levanta el servidor falso, hace que el SincronizadorV2 suba 100 eventos y compruebe `LISTAS`, `TARIFAS` y la hora,
+   y verifica que el servidor decodificó cada paquete. Cuando el v2 esté integrado en `main.cpp`, el validador apuntará al
+   servidor falso con `servidor=http://IP-DEL-ORDENADOR:8001` en `config.txt`.
+4. **Pruebas del propio servidor falso:** `python3 -m unittest herramientas.test_servidor_c1_falso -v`.
+
 ## 8. Datos en la microSD
 
 Archivos de texto, para poder revisarlos en un ordenador si hace falta:
 
 | Archivo | Contenido |
 |---|---|
-| `config.txt` | `validador=103`, `clave_maestra=<64 caracteres hex>`, `servidor`, `token` y la red WiFi configurada con el puente |
+| `config.txt` | `validador=103`, `servidor`, `token` y la red WiFi configurada con el puente. **La clave maestra no va aquí**: va en la NVS de la ESP32, junto a la clave HMAC y la contraseña MQTT (#44). Una `clave_maestra` de una versión anterior se pasa sola a la NVS al arrancar y se borra del archivo, sobrescrita con ceros |
 | `redes.txt` | Redes WiFi guardadas desde el portal (`nombre<TAB>contraseña`, una por línea) |
 | `eventos.txt` | Un JSON por línea: cada viaje, incidencia o fraude, en el formato que espera `/api/sync/` |
 | `estado.txt` | Siguiente n.º de evento y último subido al servidor |
@@ -432,7 +488,7 @@ En `transporte/`:
 |---|---|
 | La pantalla queda en blanco tras reconectarla | Reinicia la ESP32 (botón EN o desconectar y conectar el USB): la pantalla solo se configura al arrancar. Desconecta el USB antes de tocar cables. |
 | Todas las tarjetas salen "No emitida por el sistema" | La clave maestra de la ESP32 no es la de las tarjetas. Configura de nuevo (7.1) desde el PC que tiene la clave correcta. |
-| La pantalla dice "Sin lector" | El PN532 no responde. Revisa el interruptor (I2C: 1 en ON, 2 en OFF; se lee al encender, así que desconecta y conecta el USB tras cambiarlo) y los cables SDA→P21, SCL→P22, IRQ→P32. |
+| La pantalla dice "Sin lector / Desenchufe 15 s" | El PN532 no responde. **Casi siempre está colgado**: pasa cuando la ESP32 se reinicia con él encendido (al cargar firmware, abrir el monitor serie o el puente, pulsar EN o saltar el watchdog), porque el PN532 no se reinicia con ella y se queda reteniendo el bus I2C (#200). **Desenchufa el USB 15 s.** Si sigue igual, revisa el interruptor (I2C: 1 en ON, 2 en OFF; se lee al encender, así que desconecta y conecta el USB tras cambiarlo) y los cables SDA→P21, SCL→P22, IRQ→P32. |
 | La ESP32 se reinicia en bucle o no se puede cargar el firmware (`flash read err`, `Failed to communicate with the flash chip`) | Un cable de algún módulo está en P12 o en SD0-SD3/CMD/CLK, o hay un falso contacto en el protoboard. Quita los módulos y conéctalos de uno en uno. |
 | La pantalla dice "Sin hora" | No ha sincronizado con el servidor desde que arrancó. Revisa el WiFi y el servidor. |
 | El puente dice "No se encontró la ESP32", aunque la placa está encendida y la pantalla funciona | El ordenador no reconoce la placa por USB. En Linux, `journalctl -k` muestra `device descriptor read error -71`. Casi siempre es **un cable USB que solo carga** (alimenta, pero no transmite datos): usa otro cable de datos. Si no, prueba a girar el conector USB-C y otro puerto. Ningún comando con `sudo` lo arregla. |
@@ -442,6 +498,7 @@ En `transporte/`:
 | "Error microSD" en la pantalla | Tarjeta no insertada, de más de 32 GB o no FAT32, o cableado de la microSD (prueba con el firmware `prueba`). |
 | Cobra pero el saldo de la cuenta no baja en el servidor | Los viajes suben al sincronizar (cada 30 s con WiFi). Mira el estado en la pantalla y los mensajes (`pio device monitor`). |
 | La pantalla dice "Sin WiFi" | La red no es de 2,4 GHz, la contraseña es incorrecta o no hay señal. Corrígela con el portal (botón BOOT 3 s). |
+| La pantalla se queda en "Iniciando..." o se reinicia sola cada 45 s | El programa se bloqueó y el **watchdog** (45 s) reinició la placa. Con el monitor serie abierto, el mensaje `#WATCHDOG: el programa se bloqueó en el paso: ...` dice dónde se quedó, y al arrancar se anota `#Arranque: WATCHDOG...`. Si se repite en `setup: ui::iniciar` (la OLED, por I2C), **corta la corriente** de toda la placa y los módulos (desenchufa el USB 15 s): un simple reinicio no lo quita. Revisa también los cables de SDA y SCL (P21/P22 del PN532; P25/P33 de la OLED). Abrir el monitor serie reinicia la placa. |
 | La pantalla dice "Sin servidor" | Los mensajes de la ESP32 muestran el motivo: `HTTP 401` es un token que no es de ese servidor (vuelve a configurar con `--servidor`); un error `TLS` es un certificado que no es de Let's Encrypt; `connection refused` o un tiempo agotado, el servidor caído o una URL mal escrita. |
 
 ## 12. Estado y pendientes

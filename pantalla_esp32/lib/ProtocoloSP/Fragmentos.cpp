@@ -12,7 +12,70 @@ uint32_t lee32(const uint8_t *p) {
   return p[0] | (uint32_t(p[1]) << 8) | (uint32_t(p[2]) << 16) | (uint32_t(p[3]) << 24);
 }
 
+void escribe16(uint8_t *p, uint16_t v) {
+  p[0] = v;
+  p[1] = v >> 8;
+}
+
+void escribe32(uint8_t *p, uint32_t v) {
+  for (int i = 0; i < 4; i++) p[i] = v >> (8 * i);
+}
+
 }  // namespace
+
+size_t armarBaliza(const Baliza &b, uint8_t trama[TAM_TRAMA_MAXIMO]) {
+  trama[0] = 'E';
+  trama[1] = 'N';
+  trama[2] = BALIZA;
+  trama[3] = 0;
+  escribe16(trama + 4, b.validador);
+  escribe32(trama + 6, b.versionListas);
+  escribe32(trama + 10, b.versionTarifas);
+  escribe16(trama + 14, b.pendientes);
+  escribe16(trama + 16, b.ajenos);
+  trama[18] = b.flags;
+  trama[19] = b.canal;
+  return TAM_BALIZA_CON_CANAL;
+}
+
+bool leerBaliza(const uint8_t *trama, size_t largo, Baliza &b) {
+  if (largo < TAM_BALIZA || largo > TAM_TRAMA_MAXIMO || trama[0] != 'E' || trama[1] != 'N' ||
+      trama[2] != BALIZA)
+    return false;
+  const uint16_t validador = lee16(trama + 4);
+  if (validador == 0) return false;
+  b.validador = validador;
+  b.versionListas = lee32(trama + 6);
+  b.versionTarifas = lee32(trama + 10);
+  b.pendientes = lee16(trama + 14);
+  b.ajenos = lee16(trama + 16);
+  b.flags = trama[18];
+  b.canal = largo >= TAM_BALIZA_CON_CANAL ? trama[19] : 0;
+  return true;
+}
+
+size_t armarPedido(const Pedido &p, uint8_t trama[TAM_TRAMA_MAXIMO]) {
+  trama[0] = 'E';
+  trama[1] = 'N';
+  trama[2] = PEDIDO;
+  trama[3] = 0;
+  escribe16(trama + 4, p.validador);
+  trama[6] = p.que;
+  escribe32(trama + 7, p.x);
+  return TAM_PEDIDO;
+}
+
+bool leerPedido(const uint8_t *trama, size_t largo, Pedido &p) {
+  if (largo < TAM_PEDIDO || largo > TAM_TRAMA_MAXIMO || trama[0] != 'E' || trama[1] != 'N' || trama[2] != PEDIDO)
+    return false;
+  const uint16_t validador = lee16(trama + 4);
+  const uint8_t que = trama[6];
+  if (validador == 0 || que < PEDIDO_LISTAS || que > PEDIDO_HORA) return false;
+  p.validador = validador;
+  p.que = que;
+  p.x = lee32(trama + 7);
+  return true;
+}
 
 uint8_t contarFragmentos(size_t largo) {
   if (largo == 0) return 0;
