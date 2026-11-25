@@ -23,6 +23,8 @@ class Secretos {
 
   // false si no hay una clave HMAC guardada
   bool claveHmac(uint8_t salida[TAM_CLAVE_HMAC]);
+  // Si hay una clave HMAC guardada, sin leerla (para mostrar "Clave de validador: OK/falta", #45)
+  bool tieneClaveHmac();
   bool guardarClaveHmac(const uint8_t clave[TAM_CLAVE_HMAC]);
   // Desde 64 caracteres hexadecimales; false si no lo son
   bool guardarClaveHmacHex(const String &hex);

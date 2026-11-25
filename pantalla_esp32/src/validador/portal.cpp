@@ -34,7 +34,8 @@ main{padding:16px;max-width:480px;margin:auto}section{background:#fff;border-rad
 label{display:block;font-weight:bold;margin:12px 0 4px}input,select{width:100%;box-sizing:border-box;padding:10px;font-size:16px;border:1px solid #9ab;border-radius:6px}
 button{width:100%;padding:12px;font-size:16px;border:0;border-radius:6px;background:#00285a;color:#fff;margin-top:16px}
 .sec{background:#678}.aviso{background:#dfd;padding:10px;border-radius:6px}.red{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dde;padding:8px 0}
-.red form button{width:auto;margin:0;padding:6px 10px;font-size:14px;background:#a33}small{color:#567}</style>)";
+.red form button{width:auto;margin:0;padding:6px 10px;font-size:14px;background:#a33}small{color:#567}
+.ok{color:#173;font-weight:bold}.falta{color:#a33;font-weight:bold}</style>)";
 
 }  // namespace
 
@@ -174,7 +175,15 @@ void PortalWifi::paginaPrincipal(const String &aviso) {
          "</span><form method=\"post\" action=\"/olvidar\"><input type=\"hidden\" name=\"red\" value=\"" + html(r.ssid) +
          "\"><button>Olvidar</button></form></div>";
   }
-  p += "</section><form method=\"post\" action=\"/terminar\"><button class=\"sec\">Terminar sin cambios</button>"
+  p += "</section>";
+
+  // Solo si la clave está o no; su contenido no sale nunca de la placa (#45)
+  const bool clave = tieneClaveValidador_ && tieneClaveValidador_();
+  p += String("<section><b>Clave de validador:</b> ") +
+       (clave ? "<span class=\"ok\">OK</span>"
+              : "<span class=\"falta\">falta</span><br><small>Se carga por el cable USB con puente_nfc.py "
+                "--configurar --clave-hmac.</small>") +
+       "</section><form method=\"post\" action=\"/terminar\"><button class=\"sec\">Terminar sin cambios</button>"
        "</form></main></html>";
   web.send(200, "text/html; charset=utf-8", p);
 }

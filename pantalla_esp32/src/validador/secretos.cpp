@@ -42,6 +42,14 @@ bool Secretos::guardarClaveMaestra(const uint8_t clave[TAM_CLAVE_MAESTRA]) {
 
 bool Secretos::claveHmac(uint8_t salida[TAM_CLAVE_HMAC]) { return leerBytes(K_HMAC, salida, TAM_CLAVE_HMAC); }
 
+bool Secretos::tieneClaveHmac() {
+  Preferences p;
+  if (!p.begin(ESPACIO, true)) return false;
+  const size_t largo = p.getBytesLength(K_HMAC);
+  p.end();
+  return largo == TAM_CLAVE_HMAC;
+}
+
 bool Secretos::guardarClaveHmac(const uint8_t clave[TAM_CLAVE_HMAC]) { return guardarBytes(K_HMAC, clave, TAM_CLAVE_HMAC); }
 
 bool Secretos::guardarClaveHmacHex(const String &hex) {

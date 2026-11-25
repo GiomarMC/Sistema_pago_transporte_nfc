@@ -157,8 +157,9 @@ void log(const String &texto) {
 const std::vector<RedWifi> &redesGuardadas() { return almacen.redes(); }
 EnlaceWifi enlaceWifi(redesGuardadas, log, RAICES_TLS);
 Sincronizador sincronizador(almacen, log, enlaceWifi);
-PortalWifi portal(almacen, log);
 Secretos secretos;
+bool tieneClaveValidador() { return secretos.tieneClaveHmac(); }
+PortalWifi portal(almacen, log, tieneClaveValidador);
 
 // --- Modo sync=v2 (M15): SincronizadorV2 + GestorEnlaces sobre CanalMqtt. Solo si config.txt lo pide Y están las
 // claves en la NVS; si no, sigue el v1. Los objetos son grandes (SincronizadorV2 lleva ~9 KB de búferes): van en
@@ -197,6 +198,7 @@ class CanalSinServidor : public CanalPaquetes {
 };
 CanalSinServidor canalSinServidor;
 String estadoMostrado;      // estado del WiFi que se ve en la pantalla de espera
+String avisoClaves;         // "Falta clave validador"... en la pantalla de espera (ver revisarClaves())
 uint32_t botonDesde = 0, ultimoSaludo = 0, ultimoIntentoLector = 0;
 
 #ifdef M15_MEDIR_LOOP
@@ -432,6 +434,23 @@ const String &estadoSync() {
   if (wifiApagado) return apagado;
   return v2 ? v2->estado : sincronizador.estado();
 }
+// Con sync=v2 en config.txt y sin la clave HMAC (o sin la contraseña MQTT) en la NVS, iniciarSyncV2() se queda en v1
+// y eso solo se veía en el registro: se avisa también en la segunda línea de la pantalla de espera (#45). Nunca se
+// muestra la clave, solo si está. Se llama al arrancar, al montar la microSD y al recibir la configuración.
+void revisarClaves() {
+  const bool hmac = secretos.tieneClaveHmac();
+  const bool pideV2 = almacen.listo() && almacen.config("sync") == "v2";
+  String aviso;
+  if (pideV2 && !hmac) aviso = "Falta clave validador";
+  else if (pideV2 && !secretos.tieneClaveMqtt()) aviso = "Falta clave MQTT";
+  static bool primeraVez = true;  // se anota al arrancar y luego solo si cambia
+  if (primeraVez || aviso != avisoClaves) {
+    log(String("Clave de validador: ") + (hmac ? "OK" : "falta") + (aviso.length() ? " (pantalla: " + aviso + ")" : ""));
+  }
+  primeraVez = false;
+  avisoClaves = aviso;
+}
+
 uint32_t horaDelServidor() { return v2 ? v2->sinc->horaServidor() : sincronizador.horaServidor(); }
 
 void pantallaEspera() {
@@ -447,11 +466,12 @@ void pantallaEspera() {
   } else if (!almacen.configurado()) {
     ui::espera("Sin configurar", "puente --configurar");
   } else if (!ahoraUnix()) {
-    ui::espera("Bus " + String(almacen.validador()) + "  Sin hora", "Esperando el WiFi");
+    ui::espera("Bus " + String(almacen.validador()) + "  Sin hora",
+               avisoClaves.length() ? avisoClaves : String("Esperando el WiFi"));
   } else {
     const String &wifi = estadoSync();
     ui::espera("Bus " + String(almacen.validador()) + (wifi.length() ? "  " + wifi : ""),
-               "Sin subir: " + String(almacen.pendientes()));
+               avisoClaves.length() ? avisoClaves : "Sin subir: " + String(almacen.pendientes()));
   }
 }
 
@@ -512,6 +532,7 @@ void guardarConfig(const String &configRecibida) {
   const String config = separarSecretos(configRecibida);
   log(almacen.guardarConfig(config) ? "Configuración guardada en la microSD"
                                     : "ERROR: no se pudo guardar la configuración");
+  revisarClaves();
 }
 
 // El ordenador es opcional: con puente_nfc.py abierto envía la configuración
@@ -823,6 +844,7 @@ void setup() {
   wifiApagado = true;  // compilación de prueba (-DWIFI_APAGADO_PRUEBA): sin tocar la configuración de la microSD
 #endif
   if (wifiApagado) log("wifi=off: el WiFi no se enciende; solo se cobra (se guarda todo para subirlo después)");
+  revisarClaves();
   iniciarSyncV2();
   PASO("setup: pantalla de espera");
   pantallaEspera();
@@ -886,6 +908,7 @@ void loop() {
   if (almacen.reintentarMontaje()) {
     log("microSD montada tras reintentar");
     prepararClaveMaestra();
+    revisarClaves();
     pantallaEspera();
     if (almacen.configurado() && almacen.redes().empty()) abrirPortal();  // como en setup()
   }
