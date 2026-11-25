@@ -40,6 +40,7 @@ constexpr uint8_t PENDIENTE = 1, APLICADA = 2;   // op de RECARGA
 // Enlace del HOLA (C1 5.4). El 2 queda reservado (era 4G; el validador no lleva módem).
 constexpr uint8_t WIFI = 1, BLE = 3, REENVIADO = 4;
 
+constexpr size_t TAM_EVENTO = 64;  // un evento en el cable (y en /eventos.bin)
 constexpr size_t MAX_EVENTOS = 30;
 constexpr size_t MAX_ENTRADAS = 120;
 // Tope por tamaño: 20 + 8 + 81 × 24 + 64 = 2036 <= 2048
@@ -147,11 +148,27 @@ size_t codificar(const Paquete &p, uint8_t *salida, size_t capacidad);
 size_t empaquetar(const Paquete &p, const uint8_t claveHmac[TAM_CLAVE_HMAC], uint8_t *salida,
                   size_t capacidad);
 
+// La firma ECDSA de un paquete del servidor ya comprobada aparte (#129: en otra tarea, porque tarda ~67 ms), o
+// COMPROBAR para que la compruebe desempaquetar()
+enum class FirmaServidor : uint8_t { COMPROBAR, VALIDA, INVALIDA };
+
 // Valida magia, versión, largo, tipo, origen y firma, en ese orden, y recién entonces lee
 // el cuerpo. Si devuelve false, `salida` queda a medias y no se debe usar.
 bool desempaquetar(const uint8_t *datos, size_t largo, ClaveHmacDe claveHmacDe,
                    const uint8_t clavePublica[TAM_CLAVE_PUBLICA], Paquete &salida,
-                   Motivo *motivo = nullptr);
+                   Motivo *motivo = nullptr, FirmaServidor firma = FirmaServidor::COMPROBAR);
+
+// Si `datos` tiene la forma de un paquete del servidor (magia y origen 0) y el largo que dice su cabecera; no mira
+// la firma
+bool esDelServidor(const uint8_t *datos, size_t largo);
+// Si la firma ECDSA de un paquete completo del servidor es válida. Sin estado compartido (a diferencia de
+// ecdsaValida, que guarda la clave ya comprobada): se puede llamar desde otra tarea
+bool firmaServidorValida(const uint8_t *datos, size_t largo, const uint8_t clavePublica[TAM_CLAVE_PUBLICA]);
+
+// Un evento suelto en su forma de 64 B de C1 5.3 (la misma que va dentro de EVENTOS y que se
+// guarda en /eventos.bin). eventoABytes devuelve 64, o 0 si el UID es más largo de 10 B.
+size_t eventoABytes(const Evento &e, uint8_t salida[TAM_EVENTO]);
+bool eventoDeBytes(const uint8_t entrada[TAM_EVENTO], Evento &e);
 
 // Tamaño total del primer paquete de `datos` según su cabecera (para separar paquetes
 // concatenados). 0 si no hay cabecera completa, la magia no es 'SP' o el paquete se corta.

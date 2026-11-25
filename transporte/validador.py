@@ -26,7 +26,7 @@ from tarjeta import claves, formato
 from tarjeta.base import (ErrorTarjeta, TarjetaAjena, TarjetaFisica, TipoNoSoportado,
                           abrir_tarjeta, esperar_retirada)
 from tarjeta.lector import esperar_conexion
-from validador_local import BDValidador
+from validador_local import GRABADO, INCIERTO, BDValidador
 
 # Un segundo toque en este mismo validador dentro de este margen no se cobra
 MARGEN_DOBLE_TOQUE = timedelta(seconds=60)
@@ -90,6 +90,23 @@ def cobrar(t: TarjetaFisica, bdv: BDValidador):
     nombre_tarifa, precio = tarifa
 
     ahora = datetime.now(timezone.utc).replace(microsecond=0)
+    # Un cobro de este validador que se escribió sin poder comprobarlo (#240): el registro de la tarjeta dice si llegó
+    # a grabarse. Va antes del doble toque: así se recupera aunque hayan pasado más de 60 s
+    resultado, dudoso = bdv.resolver_cobro_dudoso(cab.id_tarjeta, reg.operacion, reg.validador)
+    if resultado == GRABADO:
+        # Sin contador NFC: el de esta lectura es de otro uso de la tarjeta, y el servidor toma un contador
+        # repetido por un clon. Con la fecha del intento
+        bdv.registrar_viaje(cab.id_tarjeta, uid_hex, dudoso["monto"], dudoso["saldo_final"], dudoso["operacion"],
+                            None, dudoso["recarga_hasta"], fecha=dudoso["fecha"])
+        print(f"  [!] cobro recuperado: la operación {dudoso['operacion']} de {uid_hex} sí se grabó; "
+              "viaje registrado")
+    elif resultado == INCIERTO:
+        # La tarjeta pasó por otro validador o punto antes de volver: el servidor lo resuelve con los números de
+        # operación
+        bdv.registrar_incidencia(cab.id_tarjeta, uid_hex, f"cobro dudoso op {dudoso['operacion']}")
+        print(f"  [!] cobro dudoso de {uid_hex} (operación {dudoso['operacion']}) sin resolver: la tarjeta ya "
+              f"va por la {reg.operacion}")
+
     if reg.validador == bdv.id and ahora - reg.fecha_hora < MARGEN_DOBLE_TOQUE:
         # Ya cobrado aquí hace un momento. Si la verificación de aquel cobro falló
         # (tarjeta retirada justo al final), el viaje se registra ahora.
@@ -109,7 +126,11 @@ def cobrar(t: TarjetaFisica, bdv: BDValidador):
     try:
         t.escribir_registro(est.ranura_libre, nuevo.a_bytes(t.uid, clave, cab))
     except ErrorTarjeta:
-        # El registro anterior sigue intacto: no se cobró
+        # No se sabe si la escritura terminó (puede que solo fallara la relectura). Se anota y, en la próxima
+        # lectura de esta tarjeta, su registro dirá si quedó cobrada (#240). Si no terminó, el registro anterior
+        # sigue válido
+        bdv.anotar_cobro_dudoso(cab.id_tarjeta, nuevo.operacion, ahora.isoformat(), precio, nuevo.saldo,
+                                recarga_hasta if abono else None)
         raise Rechazo("Acerque de nuevo", "Lectura interrumpida", aviso=True)
 
     bdv.registrar_viaje(cab.id_tarjeta, uid_hex, precio, nuevo.saldo, nuevo.operacion, contador,

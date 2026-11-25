@@ -41,7 +41,8 @@ def resumen(request):
         ultimo = Movimiento.objects.filter(tarjeta_id=tarjeta.pk, tipo="viaje").order_by(
             "-fecha").values_list("fecha", flat=True).first()
         salida_tarjetas.append({
-            "id": tarjeta.pk, "numero_impreso": numero_impreso(tarjeta),
+            # C4: los 9 dígitos seguidos; los espacios son solo para imprimirlo
+            "id": tarjeta.pk, "numero_impreso": numero_impreso(tarjeta).replace(" ", ""),
             "estado": tarjeta.estado, "emitida": tarjeta.emitida.isoformat(),
             "ultimo_uso": ultimo.isoformat() if ultimo else None,
         })

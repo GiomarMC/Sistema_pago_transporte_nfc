@@ -270,3 +270,165 @@ class IdentidadAPITests(TestCase):
         self.assertLessEqual(self.client.session.get_expiry_age(), 30)
         self.assertEqual(self.client.get("/api/v1/sesion/", **self.host).status_code, 200)
         self.assertGreaterEqual(self.client.session.get_expiry_age(), 890)
+
+    # --- #105 (M12-03): criterios de la activación que faltaban -------------------------
+
+    def datos_activacion(self, **cambios):
+        return {"documento": self.cuenta.documento,
+                "numero_tarjeta": numero_impreso(self.tarjeta).replace(" ", ""),
+                "codigo": "ABCD1234", **cambios}
+
+    def test_activacion_rechaza_numero_con_luhn_invalido(self):
+        correcto = numero_impreso(self.tarjeta).replace(" ", "")
+        # Mismo id de tarjeta (8 primeros dígitos), dígito de control cambiado
+        alterado = correcto[:8] + str((int(correcto[8]) + 1) % 10)
+        respuesta = self.post("activacion/", self.datos_activacion(numero_tarjeta=alterado))
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.json()["error"]["codigo"], "activacion_invalida")
+        self.assertNotIn("token_activacion", respuesta.json())
+        # El número correcto sí pasa: el rechazo vino del dígito de control
+        self.assertEqual(self.post("activacion/", self.datos_activacion()).status_code, 200)
+
+    def test_activacion_rechaza_codigo_vencido_sin_estar_bloqueada(self):
+        self.codigo.expira = timezone.now() - timedelta(seconds=1)
+        self.codigo.save(update_fields=["expira"])
+        respuesta = self.post("activacion/", self.datos_activacion())
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.json()["error"]["codigo"], "activacion_invalida")
+
+    def test_activacion_rechaza_codigo_ya_usado(self):
+        self.activar()
+        respuesta = self.post("activacion/", self.datos_activacion(), cliente=Client())
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.json()["error"]["codigo"], "activacion_invalida")
+
+    def test_activacion_rechaza_cuenta_que_ya_tiene_cliente(self):
+        usuario = get_user_model().objects.create_user(username="cli-71234567", password="x")
+        Cliente.objects.create(usuario=usuario, cuenta=self.cuenta,
+                               correo="ana@example.test", correo_verificado=True)
+        respuesta = self.post("activacion/", self.datos_activacion())
+        self.assertEqual(respuesta.status_code, 400)
+        self.assertEqual(respuesta.json()["error"]["codigo"], "activacion_invalida")
+        self.assertEqual(Cliente.objects.filter(cuenta=self.cuenta).count(), 1)
+
+    def test_token_obtenido_antes_de_que_la_cuenta_tenga_cliente_ya_no_sirve(self):
+        token = self.token()
+        usuario = get_user_model().objects.create_user(username="cli-71234567", password="x")
+        Cliente.objects.create(usuario=usuario, cuenta=self.cuenta,
+                               correo="otra@example.test", correo_verificado=True)
+        correo = self.post("activacion/correo/", {
+            "token_activacion": token, "correo": "ana@example.test"})
+        self.assertEqual(correo.status_code, 400)
+        self.assertEqual(correo.json()["error"]["codigo"], "activacion_invalida")
+        confirmar = self.post("activacion/confirmar/", {
+            "token_activacion": token, "otp": "123456", "contrasena": "ClaveSegura2026"})
+        self.assertEqual(confirmar.status_code, 400)
+        self.assertEqual(Cliente.objects.filter(cuenta=self.cuenta).count(), 1)
+
+    # --- #107 (M12-04): límite por IP y recordar_dispositivo ----------------------------
+
+    def fallar_inicio_desde(self, cliente, veces, **extra):
+        """Fallos con documentos distintos: ninguno llega a los 5 por documento."""
+        estados = []
+        for i in range(veces):
+            estados.append(cliente.post("/api/v1/sesion/", {
+                "documento": f"{10000000 + i}", "contrasena": "incorrecta"},
+                content_type="application/json", **self.host, **extra).status_code)
+        return estados
+
+    def test_veinte_fallos_desde_una_ip_bloquean_esa_ip_y_no_las_demas(self):
+        self.activar()
+        atacante = Client(REMOTE_ADDR="203.0.113.7")
+        estados = self.fallar_inicio_desde(atacante, 20)
+        self.assertEqual(estados, [401] * 19 + [429])
+        self.assertEqual(IntentoAcceso.objects.filter(
+            ip="203.0.113.7", motivo="clave", exito=False).count(), 20)
+        # Desde esa IP ni la contraseña correcta entra mientras dure el bloqueo
+        bloqueado = self.post("sesion/", {"documento": "71234567",
+                                          "contrasena": "ClaveSegura2026"}, cliente=atacante)
+        self.assertEqual(bloqueado.status_code, 429)
+        self.assertEqual(bloqueado.json()["error"]["codigo"], "bloqueo_temporal")
+        # Otra IP no se ve afectada
+        otra = self.post("sesion/", {"documento": "71234567", "contrasena": "ClaveSegura2026"},
+                         cliente=Client(REMOTE_ADDR="198.51.100.9"))
+        self.assertEqual(otra.status_code, 200, otra.content)
+        # Pasados los 15 minutos, la IP vuelve a poder intentar
+        IntentoAcceso.objects.filter(ip="203.0.113.7").update(
+            fecha=timezone.now() - timedelta(minutes=16))
+        self.assertEqual(self.post("sesion/", {"documento": "71234567",
+                                               "contrasena": "ClaveSegura2026"},
+                                   cliente=atacante).status_code, 200)
+
+    @override_settings(IP_DESDE_PROXY=True)
+    def test_detras_de_caddy_el_limite_usa_la_ip_reenviada(self):
+        self.activar()
+        # Todas las peticiones llegan desde el contenedor de Caddy (misma REMOTE_ADDR)
+        caddy = {"REMOTE_ADDR": "172.18.0.3"}
+        atacante = Client(**caddy, HTTP_X_FORWARDED_FOR="203.0.113.7")
+        self.assertEqual(self.fallar_inicio_desde(atacante, 20)[-1], 429)
+        self.assertTrue(IntentoAcceso.objects.filter(ip="203.0.113.7").exists())
+        self.assertFalse(IntentoAcceso.objects.filter(ip="172.18.0.3").exists())
+        # Otro cliente detrás del mismo Caddy sigue pudiendo entrar
+        otro = Client(**caddy, HTTP_X_FORWARDED_FOR="198.51.100.9")
+        respuesta = self.post("sesion/", {"documento": "71234567",
+                                          "contrasena": "ClaveSegura2026"}, cliente=otro)
+        self.assertEqual(respuesta.status_code, 200, respuesta.content)
+
+    def test_sin_caddy_delante_se_ignora_la_ip_reenviada(self):
+        # Sin DJANGO_HTTPS=1 la cabecera la pondría el propio cliente: cambiarla no evita el bloqueo
+        self.activar()
+        for i in range(20):
+            Client(REMOTE_ADDR="203.0.113.7", HTTP_X_FORWARDED_FOR=f"192.0.2.{i}").post(
+                "/api/v1/sesion/", {"documento": f"{10000000 + i}", "contrasena": "incorrecta"},
+                content_type="application/json", **self.host)
+        self.assertEqual(IntentoAcceso.objects.filter(ip="203.0.113.7").count(), 20)
+        respuesta = self.post("sesion/", {"documento": "71234567", "contrasena": "ClaveSegura2026"},
+                              cliente=Client(REMOTE_ADDR="203.0.113.7",
+                                             HTTP_X_FORWARDED_FOR="192.0.2.200"))
+        self.assertEqual(respuesta.status_code, 429)
+
+    def iniciar_con_otp(self, cliente, recordar):
+        with patch("clientes.servicios.secrets.randbelow", return_value=654321):
+            inicio = self.post("sesion/", {"documento": "71234567",
+                                           "contrasena": "ClaveSegura2026"}, cliente=cliente)
+        self.assertEqual(inicio.json(), {"requiere_otp": True})
+        confirmado = self.post("sesion/otp/", {"otp": "654321",
+                                               "recordar_dispositivo": recordar}, cliente=cliente)
+        self.assertEqual(confirmado.status_code, 200, confirmado.content)
+        return confirmado
+
+    def test_sin_recordar_dispositivo_el_siguiente_inicio_vuelve_a_pedir_otp(self):
+        self.activar()
+        cliente = Client()
+        antes = Dispositivo.objects.count()
+        confirmado = self.iniciar_con_otp(cliente, recordar=False)
+        self.assertNotIn("sp_disp", confirmado.cookies)
+        self.assertEqual(Dispositivo.objects.count(), antes)
+        self.assertEqual(cliente.delete("/api/v1/sesion/", **self.host).status_code, 204)
+        otra_vez = self.post("sesion/", {"documento": "71234567",
+                                         "contrasena": "ClaveSegura2026"}, cliente=cliente)
+        self.assertEqual(otra_vez.json(), {"requiere_otp": True})
+
+    def test_recordar_dispositivo_lo_hace_confiable_90_dias_y_luego_vuelve_el_otp(self):
+        self.activar()
+        cliente = Client()
+        antes = set(Dispositivo.objects.values_list("pk", flat=True))
+        confirmado = self.iniciar_con_otp(cliente, recordar=True)
+        cookie = confirmado.cookies["sp_disp"]
+        self.assertTrue(cookie["httponly"])
+        self.assertEqual(cookie["samesite"], "Lax")
+        nuevo = Dispositivo.objects.exclude(pk__in=antes).get()
+        self.assertAlmostEqual((nuevo.confiable_hasta - timezone.now()).total_seconds(),
+                               90 * 86400, delta=60)
+        self.assertNotIn(nuevo.huella, cookie.value)  # solo se guarda el hash
+        cliente.delete("/api/v1/sesion/", **self.host)
+        self.assertEqual(self.post("sesion/", {"documento": "71234567",
+                                               "contrasena": "ClaveSegura2026"},
+                                   cliente=cliente).json(), {"requiere_otp": False})
+        # Vencidos los 90 días deja de ser confiable
+        cliente.delete("/api/v1/sesion/", **self.host)
+        nuevo.confiable_hasta = timezone.now() - timedelta(seconds=1)
+        nuevo.save(update_fields=["confiable_hasta"])
+        self.assertEqual(self.post("sesion/", {"documento": "71234567",
+                                               "contrasena": "ClaveSegura2026"},
+                                   cliente=cliente).json(), {"requiere_otp": True})

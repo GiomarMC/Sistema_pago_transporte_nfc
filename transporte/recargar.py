@@ -65,6 +65,10 @@ def recargar_tarjeta(t: TarjetaFisica, monto: int):
                              datetime.now(timezone.utc).replace(microsecond=0),
                              PUNTO_RECARGA, hasta)
     try:
+        # La autenticación de antes no sirve: mientras se esperaba al servidor, el ACR122U (o pcscd) volvió a
+        # seleccionar la tarjeta y la perdió (medido: pasa a los 2 s sin hablarle). Sin esto la escritura se rechaza
+        # con la tarjeta quieta en el lector cada vez que el servidor tarda (#240).
+        t.autenticar()
         t.escribir_registro(est.ranura_libre, nuevo.a_bytes(t.uid, clave, cab))
     except ErrorTarjeta:
         raise ErrorRecarga("la tarjeta se retiró antes de terminar. La recarga ya está abonada "

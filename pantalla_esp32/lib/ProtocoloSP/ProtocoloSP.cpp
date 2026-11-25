@@ -8,7 +8,7 @@ namespace sp {
 
 namespace {
 
-constexpr size_t TAM_EVENTO = 64, TAM_HOLA = 32, TAM_ACUSE = 8;
+constexpr size_t TAM_HOLA = 32, TAM_ACUSE = 8;
 constexpr size_t TAM_LISTAS = 12, TAM_ENTRADA = 16, TAM_TARIFAS = 8, TAM_TARIFA = 24;
 
 // --- Enteros little-endian -----------------------------------------------------------
@@ -318,9 +318,23 @@ size_t empaquetar(const Paquete &p, const uint8_t claveHmac[TAM_CLAVE_HMAC], uin
   return largo + FIRMA_HMAC;
 }
 
+bool esDelServidor(const uint8_t *datos, size_t largo) {
+  return largo >= TAM_CABECERA && datos[0] == 'S' && datos[1] == 'P' && lee16(datos + 4) == SERVIDOR &&
+         largo == TAM_CABECERA + lee16(datos + 16) + FIRMA_ECDSA;
+}
+
+bool firmaServidorValida(const uint8_t *datos, size_t largo, const uint8_t clavePublica[TAM_CLAVE_PUBLICA]) {
+  if (!clavePublica || clavePublica[0] != 0x04 || !esDelServidor(datos, largo)) return false;
+  const size_t firmado = largo - FIRMA_ECDSA;
+  uint8_t resumen[32];
+  mbedtls_md(mbedtls_md_info_from_type(MBEDTLS_MD_SHA256), datos, firmado, resumen);
+  // Sin uECC_valid_public_key: con una clave que no está en la curva la firma no verifica
+  return uECC_verify(clavePublica + 1, resumen, sizeof(resumen), datos + firmado, uECC_secp256r1()) == 1;
+}
+
 bool desempaquetar(const uint8_t *datos, size_t largo, ClaveHmacDe claveHmacDe,
                    const uint8_t clavePublica[TAM_CLAVE_PUBLICA], Paquete &salida,
-                   Motivo *motivo) {
+                   Motivo *motivo, FirmaServidor firma) {
   Motivo m = Motivo::OK;
   uint8_t tipo = 0;
   uint16_t origen = 0, largoCuerpo = 0;
@@ -347,7 +361,9 @@ bool desempaquetar(const uint8_t *datos, size_t largo, ClaveHmacDe claveHmacDe,
   const size_t firmado = TAM_CABECERA + largoCuerpo;
   if (m == Motivo::OK) {
     if (origen == SERVIDOR) {
-      if (clavePublica == nullptr || !ecdsaValida(clavePublica, datos, firmado, datos + firmado))
+      if (firma == FirmaServidor::INVALIDA ||
+          (firma == FirmaServidor::COMPROBAR &&
+           (clavePublica == nullptr || !ecdsaValida(clavePublica, datos, firmado, datos + firmado))))
         m = Motivo::FIRMA;
     } else {
       const uint8_t *claveHmac = claveHmacDe ? claveHmacDe(origen) : nullptr;
@@ -374,5 +390,13 @@ size_t medirPaquete(const uint8_t *datos, size_t largo) {
   size_t total = TAM_CABECERA + lee16(datos + 16) + tamFirma(lee16(datos + 4));
   return total <= largo ? total : 0;
 }
+
+size_t eventoABytes(const Evento &e, uint8_t salida[TAM_EVENTO]) {
+  if (e.largoUid > sizeof(e.uid)) return 0;
+  codificarEvento(e, salida);
+  return TAM_EVENTO;
+}
+
+bool eventoDeBytes(const uint8_t entrada[TAM_EVENTO], Evento &e) { return decodificarEvento(entrada, e); }
 
 }  // namespace sp

@@ -1,0 +1,11 @@
+puente-1  | 2026-11-25 15:53:19,718 ERROR Mosquitto rechazó la conexión: Not authorized
+puente-1  | 2026-11-25 15:53:19,718 WARNING sin respuesta de Mosquitto; reintento en 1 s
+puente-1  | 2026-11-25 15:53:20,720 ERROR Mosquitto rechazó la conexión: Not authorized
+puente-1  | 2026-11-25 15:53:20,721 WARNING sin respuesta de Mosquitto; reintento en 2 s
+puente-1  | 2026-11-25 15:53:22,725 ERROR Mosquitto rechazó la conexión: Not authorized
+puente-1  | 2026-11-25 15:53:22,726 WARNING sin respuesta de Mosquitto; reintento en 4 s
+puente-1  | 2026-11-25 15:53:26,728 ERROR Mosquitto rechazó la conexión: Not authorized
+puente-1  | 2026-11-25 15:53:26,728 WARNING sin respuesta de Mosquitto; reintento en 8 s
+puente-1  | 2026-11-25 15:53:31,299 INFO señal SIGTERM: deteniendo
+puente-1  | 2026-11-25 15:53:31,332 INFO puente detenido
+puente-1  | 2026-11-25 15:53:33,804 INFO conectado a mosquitto:1883, suscrito a sp/v/+/sube

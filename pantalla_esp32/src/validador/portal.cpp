@@ -5,6 +5,7 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <esp_random.h>
+#include <esp_wifi.h>
 
 namespace {
 
@@ -33,7 +34,8 @@ main{padding:16px;max-width:480px;margin:auto}section{background:#fff;border-rad
 label{display:block;font-weight:bold;margin:12px 0 4px}input,select{width:100%;box-sizing:border-box;padding:10px;font-size:16px;border:1px solid #9ab;border-radius:6px}
 button{width:100%;padding:12px;font-size:16px;border:0;border-radius:6px;background:#00285a;color:#fff;margin-top:16px}
 .sec{background:#678}.aviso{background:#dfd;padding:10px;border-radius:6px}.red{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #dde;padding:8px 0}
-.red form button{width:auto;margin:0;padding:6px 10px;font-size:14px;background:#a33}small{color:#567}</style>)";
+.red form button{width:auto;margin:0;padding:6px 10px;font-size:14px;background:#a33}small{color:#567}
+.ok{color:#173;font-weight:bold}.falta{color:#a33;font-weight:bold}</style>)";
 
 }  // namespace
 
@@ -43,6 +45,11 @@ void PortalWifi::iniciar() {
   claveRed_ = String(10000000 + esp_random() % 90000000);  // 8 cifras: el mínimo de WPA2
 
   // Las redes de alrededor se buscan antes de crear la propia (tarda unos 2 s)
+  log_("Portal: memoria libre " + String(ESP.getFreeHeap()) + " B (mayor bloque " + String(ESP.getMaxAllocHeap()) + " B)");
+  // Sin la reconexión automática: sin ninguna red guardada al alcance, el núcleo reintenta sin parar (NO_AP_FOUND) y
+  // la radio salta de canal en canal buscándolas, así que la red del portal casi no emite y el celular no la ve.
+  // EnlaceWifi la vuelve a activar al conectarse después del portal.
+  WiFi.setAutoReconnect(false);
   WiFi.disconnect();
   WiFi.mode(WIFI_AP_STA);
   const int n = WiFi.scanNetworks();
@@ -57,8 +64,25 @@ void PortalWifi::iniciar() {
   }
   WiFi.scanDelete();
 
+  WiFi.mode(WIFI_AP);  // ya buscadas las redes, solo la del portal: la radio se queda en su canal
+  // La radio guarda su protocolo en la NVS y lo carga al arrancar con cualquier firmware: tras las pruebas de ESP-NOW
+  // de largo alcance quedaba b/g/n+LR (0x0F) también en el AP, y con LR la red no la ve ningún celular ni PC.
+  // Medido en la 105: con 0x0F invisible a 20 cm; con b/g/n (0x07) el PC la ve al 100 %.
+  uint8_t protocolo = 0;
+  esp_wifi_get_protocol(WIFI_IF_AP, &protocolo);
+  if (protocolo != (WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N)) {
+    esp_wifi_set_protocol(WIFI_IF_AP, WIFI_PROTOCOL_11B | WIFI_PROTOCOL_11G | WIFI_PROTOCOL_11N);
+    log_("Portal: el AP tenía el protocolo 0x" + String(protocolo, 16) + " (8 = largo alcance); se pone b/g/n");
+  }
   WiFi.softAPConfig(IP_PORTAL, IP_PORTAL, IPAddress(255, 255, 255, 0));
-  WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
+  bool creada = WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
+  if (!creada) {  // no se ve en el celular: se anota y se reintenta una vez
+    log_("Portal: ERROR, softAP falló (memoria libre " + String(ESP.getFreeHeap()) + " B); reintentando");
+    delay(200);
+    creada = WiFi.softAP(nombreRed_.c_str(), claveRed_.c_str());
+  }
+  log_(String("Portal: softAP ") + (creada ? "creada" : "FALLÓ") + ", canal " + String(WiFi.channel()) + ", memoria libre " +
+       String(ESP.getFreeHeap()) + " B");
   dns.start(53, "*", IP_PORTAL);  // todos los nombres apuntan al portal
 
   static bool rutas = false;  // el servidor web se reutiliza si el portal se abre otra vez
@@ -151,7 +175,15 @@ void PortalWifi::paginaPrincipal(const String &aviso) {
          "</span><form method=\"post\" action=\"/olvidar\"><input type=\"hidden\" name=\"red\" value=\"" + html(r.ssid) +
          "\"><button>Olvidar</button></form></div>";
   }
-  p += "</section><form method=\"post\" action=\"/terminar\"><button class=\"sec\">Terminar sin cambios</button>"
+  p += "</section>";
+
+  // Solo si la clave está o no; su contenido no sale nunca de la placa (#45)
+  const bool clave = tieneClaveValidador_ && tieneClaveValidador_();
+  p += String("<section><b>Clave de validador:</b> ") +
+       (clave ? "<span class=\"ok\">OK</span>"
+              : "<span class=\"falta\">falta</span><br><small>Se carga por el cable USB con puente_nfc.py "
+                "--configurar --clave-hmac.</small>") +
+       "</section><form method=\"post\" action=\"/terminar\"><button class=\"sec\">Terminar sin cambios</button>"
        "</form></main></html>";
   web.send(200, "text/html; charset=utf-8", p);
 }

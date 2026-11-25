@@ -1,5 +1,6 @@
 """Primitivas de identidad: códigos persistentes, intentos y dispositivos."""
 import hashlib
+import ipaddress
 import secrets
 from datetime import timedelta
 
@@ -24,9 +25,22 @@ def nombre_dispositivo(request):
     return (request.META.get("HTTP_USER_AGENT") or "Navegador")[:120]
 
 
+def _ip_valida(valor):
+    try:
+        return str(ipaddress.ip_address(valor.strip()))
+    except (AttributeError, ValueError):
+        return None
+
+
 def ip_cliente(request):
-    valor = request.META.get("REMOTE_ADDR", "")
-    return valor if valor else None
+    # Detrás de Caddy (DJANGO_HTTPS=1) REMOTE_ADDR es la IP del contenedor de Caddy: con ella el límite de 20
+    # fallos por IP sería uno solo para todos los clientes. Caddy, sin trusted_proxies, descarta la
+    # X-Forwarded-For que mande el cliente y pone la IP que ve; se toma la última por si otro proxy la ampliara.
+    if getattr(settings, "IP_DESDE_PROXY", False):
+        reenviada = _ip_valida(request.META.get("HTTP_X_FORWARDED_FOR", "").split(",")[-1])
+        if reenviada:
+            return reenviada
+    return _ip_valida(request.META.get("REMOTE_ADDR", ""))
 
 
 def registrar_intento(request, documento, exito, motivo=""):

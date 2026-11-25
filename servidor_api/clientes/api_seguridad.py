@@ -26,7 +26,7 @@ def accesos(request):
         return error_titular
     filas = IntentoAcceso.objects.filter(documento=enlace.cuenta.documento).order_by(
         "-fecha", "-pk")[:20]
-    return JsonResponse([{"fecha": fila.fecha.isoformat(), "ip": fila.ip,
+    return JsonResponse([{"fecha": fila.fecha.isoformat(), "ip": fila.ip or "",
                           "dispositivo": fila.dispositivo, "exito": fila.exito}
                          for fila in filas], safe=False)
 

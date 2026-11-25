@@ -100,6 +100,12 @@ int LectorPN532::intercambiar(const uint8_t *cmd, size_t n, uint8_t *resp, size_
 
 bool LectorPN532::iniciar() {
   pinMode(irq_, INPUT_PULLUP);
+  // Con SCL o SDA retenidas a nivel bajo (un módulo colgado tras un reinicio de la ESP32; solo se arregla quitando la
+  // corriente) cada intento tardaba 12,5 s en agotar los tiempos de I2C: se falla enseguida y se reintenta luego
+  if (digitalRead(scl_) == 0 || digitalRead(sda_) == 0) {
+    conectado_ = false;
+    return false;
+  }
   bus_.begin(sda_, scl_, 100000);
   bus_.setTimeOut(1000);
   // Despertar: una transmisión vacía y una pausa
@@ -208,6 +214,7 @@ bool LectorPN532::escribir(uint8_t pagina, const uint8_t *datos, size_t paginas)
 }
 
 void LectorPN532::terminar() {
+  faltas_ = 0;  // empieza la espera de que retiren esta tarjeta
   uint8_t r[4];
   const uint8_t liberar[] = {IN_RELEASE, 0x00};
   intercambiar(liberar, sizeof(liberar), r, sizeof(r), ESPERA_RESPUESTA);
@@ -215,7 +222,11 @@ void LectorPN532::terminar() {
 
 bool LectorPN532::retirada(uint32_t ms) {
   // Se reinicia el campo antes de buscar: una tarjeta ya liberada (HALT) no
-  // contestaría y parecería retirada estando aún sobre el lector
+  // contestaría y parecería retirada estando aún sobre el lector.
+  // Con el campo recién reiniciado, una tarjeta que sigue delante a veces no contesta a un sondeo: con uno solo bastaba
+  // para darla por retirada, y loop() la volvía a leer enseguida ("Tarjeta no válida" un segundo después, #246). Se
+  // piden FALTAS_RETIRADA seguidos, contando también los de llamadas anteriores (loop() llama mientras devuelva false).
+  constexpr uint8_t FALTAS_RETIRADA = 3;
   const uint32_t inicio = millis();
   do {
     uint8_t uid[10];
@@ -223,7 +234,14 @@ bool LectorPN532::retirada(uint32_t ms) {
     if (!reiniciarCampo()) return false;
     const int r = activar(uid, lenUid);
     if (r < 0) return false;
-    if (r == 0) return true;
+    if (r == 0) {
+      if (++faltas_ >= FALTAS_RETIRADA) {
+        faltas_ = 0;
+        return true;
+      }
+    } else {
+      faltas_ = 0;
+    }
     delay(50);
   } while (millis() - inicio < ms);
   return false;

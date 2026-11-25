@@ -33,32 +33,43 @@ bool deHex(const String &s, uint8_t *salida, size_t &n, size_t max) {
 
 }  // namespace
 
-bool LectorPuente::pedir(const String &peticion, String &respuesta, uint32_t espera) {
+void LectorPuente::enviar(const String &peticion) {
   while (s_.available()) s_.read();  // descarta restos de respuestas anteriores
   numero_++;
-  const String prefijo = "<" + String(numero_) + " ";
+  linea_ = "";
+  saludando_ = false;  // una petición nueva deja sin efecto un saludo en curso
   s_.print('>');
   s_.print(numero_);
   s_.print(' ');
   s_.println(peticion);
-  String linea;
-  uint32_t limite = millis() + espera;
-  while ((int32_t)(millis() - limite) < 0) {
-    while (s_.available()) {
-      char c = s_.read();
-      if (c == '\n') {
-        linea.trim();
-        // Solo vale la respuesta a ESTA petición; las demás se ignoran
-        if (linea.startsWith(prefijo)) {
-          respuesta = linea.substring(prefijo.length());
-          conectado_ = true;
-          return true;
-        }
-        linea = "";
-      } else if (c != '\r' && linea.length() < 800) {
-        linea += c;
+}
+
+bool LectorPuente::recoger(String &respuesta) {
+  const String prefijo = "<" + String(numero_) + " ";
+  while (s_.available()) {
+    char c = s_.read();
+    if (c == '\n') {
+      linea_.trim();
+      // Solo vale la respuesta a ESTA petición; las demás se ignoran
+      if (linea_.startsWith(prefijo)) {
+        respuesta = linea_.substring(prefijo.length());
+        linea_ = "";
+        conectado_ = true;
+        return true;
       }
+      linea_ = "";
+    } else if (c != '\r' && linea_.length() < 800) {
+      linea_ += c;
     }
+  }
+  return false;
+}
+
+bool LectorPuente::pedir(const String &peticion, String &respuesta, uint32_t espera) {
+  enviar(peticion);
+  const uint32_t limite = millis() + espera;
+  while ((int32_t)(millis() - limite) < 0) {
+    if (recoger(respuesta)) return true;
     delay(1);
   }
   conectado_ = false;
@@ -66,10 +77,30 @@ bool LectorPuente::pedir(const String &peticion, String &respuesta, uint32_t esp
 }
 
 bool LectorPuente::saludar(String &config) {
+  empezarSaludo();
+  Saludo r;
+  while ((r = revisarSaludo(config)) == Saludo::ESPERANDO) delay(1);
+  return r == Saludo::RESPONDIO;
+}
+
+void LectorPuente::empezarSaludo(uint32_t espera) {
+  enviar("HOLA");
+  saludando_ = true;
+  saludoHasta_ = millis() + espera;
+}
+
+LectorPuente::Saludo LectorPuente::revisarSaludo(String &config) {
+  if (!saludando_) return Saludo::NINGUNO;
   String r;
-  if (!pedir("HOLA", r, 1500)) return false;
-  config = r.startsWith("CFG ") ? r.substring(4) : "";
-  return r.startsWith("OK") || r.startsWith("CFG");
+  if (recoger(r)) {
+    saludando_ = false;
+    config = r.startsWith("CFG ") ? r.substring(4) : "";
+    return r.startsWith("OK") || r.startsWith("CFG") ? Saludo::RESPONDIO : Saludo::SIN_RESPUESTA;
+  }
+  if ((int32_t)(millis() - saludoHasta_) < 0) return Saludo::ESPERANDO;
+  saludando_ = false;
+  conectado_ = false;
+  return Saludo::SIN_RESPUESTA;
 }
 
 bool LectorPuente::esperarTarjeta(uint32_t ms, uint8_t uid[10], size_t &lenUid) {
