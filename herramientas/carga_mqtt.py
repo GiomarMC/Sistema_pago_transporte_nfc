@@ -200,7 +200,7 @@ def medir(proyecto, salida, parar, cada=5.0):
     t_anterior = time.monotonic()
     t0 = t_anterior
     with open(salida, "w", newline="") as archivo:
-        csv_ = csv.writer(archivo)
+        csv_ = csv.writer(archivo, lineterminator="\n")
         csv_.writerow(["t_s", "servicio", "cpu_pct", "ram_mib", "swap_mib"])
         while not parar.wait(cada):
             ahora = time.monotonic()
@@ -307,7 +307,7 @@ def main():
         hilo_medicion.join()
 
     with open(args.salida / "latencias.csv", "w", newline="") as archivo:
-        csv_ = csv.writer(archivo)
+        csv_ = csv.writer(archivo, lineterminator="\n")
         csv_.writerow(["validador", "evento", "latencia_ms"])
         for b in buses:
             for i, s in sorted(b.latencias):
