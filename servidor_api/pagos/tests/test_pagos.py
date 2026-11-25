@@ -17,13 +17,11 @@ from libro.libro import saldo_cliente
 from libro.models import Asiento, CuentaContable
 from pagos.models import ClienteCuenta, CobroSimulado, EventoPasarela, HistorialOrden, OrdenRecarga
 from pagos.pasarelas.simulada import firmar
-from pagos.servicios import (ErrorPago, IdempotenciaConflicto, LimitePago,
+from pagos.servicios import (IdempotenciaConflicto, LimitePago,
                              TransicionInvalida, acreditar, confirmar_cobro, crear_orden,
-                             reembolsar, revisar_orden, transicion)
+                             revisar_orden, transicion)
 from transporte import servicios as transporte
-from transporte.models import Alerta, Cuenta, Movimiento, Recarga, Tarifa, Validador
-from transporte.sync_v2.paquetes import PENDIENTE, RECARGA
-from transporte.sync_v2.servicio import listas_para
+from transporte.models import Alerta, Cuenta, Recarga, Tarifa
 
 
 @override_settings(PAGOS_SECRETO_WEBHOOK="secreto-de-pruebas")
@@ -137,38 +135,25 @@ class PagosTests(TestCase):
         call_command("revisar_ordenes", stdout=io.StringIO())
         self.assertEqual(OrdenRecarga.objects.get(pk=orden.pk).estado, "acreditada")
 
-    def test_reembolso_bloqueado_antes_y_despues_de_distribucion_offline(self):
+    def test_una_orden_acreditada_no_se_reembolsa(self):
+        # #102: las recargas no son reembolsables (docs/pagos.md)
         orden = self.orden()
         self.pagar(orden)
         orden.refresh_from_db()
-        with self.assertRaisesRegex(ErrorPago, "no se puede garantizar la cancelación"):
-            reembolsar(orden, self.operador, "solicitud del cliente")
-
-        validador = Validador.objects.create(
-            numero=101, usuario=get_user_model().objects.create_user(username="validador-m11"))
-        distribuida_v1 = transporte.sincronizar(validador, [])["recargas"]
-        distribuida_v2 = [e for paquete in listas_para(0) for e in paquete.entradas]
-        self.assertTrue(any(r["cuenta_id"] == self.cuenta.pk and r["seq"] == orden.recarga.seq
-                            for r in distribuida_v1))
-        self.assertTrue(any(e.tipo == RECARGA and e.op == PENDIENTE and e.a == self.cuenta.pk
-                            and e.b == orden.recarga.seq for e in distribuida_v2))
-        with self.assertRaisesRegex(ErrorPago, "no se puede garantizar la cancelación"):
-            reembolsar(orden, self.operador, "solicitud del cliente")
-
+        self.assertEqual(orden.estado, "acreditada")
+        with self.assertRaises(TransicionInvalida):
+            transicion(orden, "reembolsada", "solicitud del cliente")
+        import pagos.servicios
+        self.assertFalse(hasattr(pagos.servicios, "reembolsar"))
         orden.refresh_from_db()
         self.cuenta.refresh_from_db()
+        self.assertEqual(orden.estado, "acreditada")
         self.assertEqual(self.cuenta.saldo, saldo_cliente(self.cuenta))
         self.assertEqual(self.cuenta.saldo, orden.monto)
-        self.assertEqual(orden.estado, "acreditada")
-        self.assertIsNone(orden.recarga.reembolsada_en)
         self.assertEqual(CobroSimulado.objects.get(orden=orden).estado, "pagado")
+        # La recarga sigue pendiente para la tarjeta, sin asiento de reverso
         self.assertEqual(transporte.recargas_para_tarjeta(self.cuenta.pk, 0), (orden.monto, 1))
         self.assertFalse(Asiento.objects.filter(tipo="reverso").exists())
-        self.assertFalse(Movimiento.objects.filter(tipo="reverso").exists())
-
-        Recarga.objects.filter(pk=orden.recarga_id).update(aplicada_en=timezone.now())
-        with self.assertRaisesRegex(ErrorPago, "requiere ajuste manual"):
-            reembolsar(orden, self.operador, "tarde")
 
     def test_api_sesion_y_propiedad(self):
         cliente = Client()

@@ -5,10 +5,8 @@ from django.db import IntegrityError, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
-from libro.libro import revertir
-from libro.models import Asiento
 from transporte import servicios as transporte
-from transporte.models import Alerta, Cuenta, Recarga
+from transporte.models import Alerta, Cuenta
 
 from .models import HistorialOrden, OrdenRecarga
 from .pasarelas import obtener_pasarela
@@ -37,7 +35,8 @@ PERMITIDAS = {
     "creada": {"pendiente"},
     "pendiente": {"pagada", "fallida", "expirada"},
     "pagada": {"acreditada"},
-    "acreditada": {"reembolsada"},
+    # Sin reembolsos (#102): una orden acreditada ya no cambia. Las recargas no se devuelven
+    # (docs/pagos.md); un error se corrige con un ajuste de saldo hecho por un operador.
 }
 
 
@@ -185,53 +184,3 @@ def revisar_orden(orden):
                 transicion(bloqueada, "fallida" if estado.estado == "fallido" else "expirada",
                            "reconsulta de pasarela")
     return OrdenRecarga.objects.get(pk=actual.pk)
-
-
-@transaction.atomic
-def _finalizar_reembolso(orden, motivo, id_reembolso):
-    Cuenta.objects.select_for_update().get(pk=orden.cuenta_id)
-    actual = OrdenRecarga.objects.select_for_update().get(pk=orden.pk)
-    if actual.estado == "reembolsada":
-        return actual
-    if actual.estado != "acreditada" or not actual.recarga_id:
-        raise TransicionInvalida("solo se reembolsa una recarga acreditada")
-    recarga = Recarga.objects.select_for_update().get(pk=actual.recarga_id)
-    _comprobar_reembolso_seguro(recarga)
-    asiento = Asiento.objects.get(ref=f"R{recarga.pk}")
-    revertir(asiento, motivo)
-    recarga.reembolsada_en = timezone.now()
-    recarga.save(update_fields=["reembolsada_en"])
-    transporte.retirar_recarga(recarga)
-    actual.datos_pasarela = {**actual.datos_pasarela, "id_reembolso": id_reembolso}
-    actual.save(update_fields=["datos_pasarela"])
-    return transicion(actual, "reembolsada", motivo)
-
-
-def _comprobar_reembolso_seguro(recarga):
-    if recarga.aplicada_en:
-        raise ErrorPago("requiere ajuste manual")
-    # La recarga pudo salir por sync v1 o v2 hacia un validador que sigue
-    # desconectado. "quitar" solo llega cuando ese validador vuelve a conectar.
-    # Hasta disponer de una confirmación fiable de retirada, no hay reverso seguro.
-    raise ErrorPago("requiere ajuste manual: no se puede garantizar la cancelación en validadores desconectados")
-
-
-def reembolsar(orden, operador, motivo):
-    if not operador or not operador.is_authenticated or not (
-            operador.is_staff or operador.groups.filter(name="operadores").exists()):
-        raise ErrorPago("solo operadores autorizados")
-    if not motivo or not motivo.strip():
-        raise ErrorPago("se requiere motivo")
-    with transaction.atomic():
-        Cuenta.objects.select_for_update().get(pk=orden.cuenta_id)
-        actual = OrdenRecarga.objects.select_for_update().get(pk=orden.pk)
-        if actual.estado == "reembolsada":
-            return actual
-        if actual.estado != "acreditada" or not actual.recarga_id:
-            raise TransicionInvalida("solo se reembolsa una recarga acreditada")
-        recarga = Recarga.objects.select_for_update().get(pk=actual.recarga_id)
-        _comprobar_reembolso_seguro(recarga)
-        # C5 simulada confirma sincrónicamente; una pasarela real requerirá confirmación
-        # verificable antes de llamar a _finalizar_reembolso.
-        id_reembolso = obtener_pasarela(actual.pasarela).reembolsar(actual.id_externo, actual.monto)
-        return _finalizar_reembolso(actual, motivo.strip(), id_reembolso)

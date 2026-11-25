@@ -1,6 +1,6 @@
 {% extends 'panel/base.html' %}{% load panel_format %}
 {% block content %}
-<div class="page-heading"><div><div class="eyebrow">PAGOS</div><h1>Órdenes de recarga</h1><p>Consulta pagos y solicitudes de reembolso.</p></div></div>
+<div class="page-heading"><div><div class="eyebrow">PAGOS</div><h1>Órdenes de recarga</h1><p>Consulta pagos y su conciliación. Las recargas no son reembolsables.</p></div></div>
 <section class="surface filters-panel"><form method="get" class="filters">
   <div><label for="estado">Estado</label><select id="estado" name="estado"><option value="">Todos</option>{% for valor, nombre in estados %}<option value="{{ valor }}" {% if estado == valor %}selected{% endif %}>{{ nombre }}</option>{% endfor %}</select></div>
   <div><label for="fecha">Fecha</label><input id="fecha" type="date" name="fecha" value="{{ fecha_texto }}"></div>

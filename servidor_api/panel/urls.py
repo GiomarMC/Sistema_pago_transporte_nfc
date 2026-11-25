@@ -20,7 +20,6 @@ urlpatterns = [
     path("validadores/", views.validadores, name="validadores"),
     path("pagos/ordenes/", views.ordenes_pago, name="ordenes_pago"),
     path("pagos/ordenes/<uuid:orden_id>/", views.orden_pago_detalle, name="orden_pago_detalle"),
-    path("pagos/ordenes/<uuid:orden_id>/reembolsar/", views.reembolsar_orden, name="reembolsar_orden"),
     path("reposiciones/", views.reposiciones, name="reposiciones"),
     path("reposiciones/<int:solicitud_id>/", views.gestionar_reposicion, name="gestionar_reposicion"),
     path("alertas/", views.alertas, name="alertas"),

@@ -109,12 +109,6 @@ def _recargas(recargas, op):
         for r in recargas])
 
 
-def retirar_recarga(recarga):
-    """Quita una recarga de las pendientes de los validadores (se reembolsó antes de
-    llegar a la tarjeta): el mismo cambio de lista que cuando se entrega."""
-    _recargas([recarga], CambioLista.APLICADA)
-
-
 def cambios_desde(version, limite=120):
     """Cambios de lista posteriores a version, en orden (como mucho limite: las
     entradas que caben en un paquete LISTAS)."""
