@@ -1,6 +1,7 @@
 // Datos locales del validador en la microSD (equivalente a validador_local.py).
 // Archivos de texto, para poder leerlos en un ordenador si hace falta:
-//   /config.txt      validador=103 / clave_maestra=<64 hex> wifi_ssid, wifi_clave, servidor, token
+//   /config.txt      validador=103, wifi_ssid, wifi_clave, servidor, token (la clave maestra va en la NVS, #44;
+//                    una clave_maestra de una versión anterior la pasa main.cpp a la NVS y la borra de aquí)
 //   /eventos.bin     viajes, incidencias y fraudes pendientes de subir (binario, ColaEventos); /estado.bin lleva
 //   /estado.bin      siguiente_id, hasta_acusado, versiones y secuencia (escritura atómica, EstadoPersistente).
 //                    Los /eventos.txt y /estado.txt de versiones anteriores se migran solos (quedan como *.migrado)
@@ -55,6 +56,12 @@ class Almacen {
   bool configurado() const { return validador_ > 0 && tieneClave_; }
   uint16_t validador() const { return validador_; }
   const uint8_t *claveMaestra() const { return clave_; }
+  // La clave maestra que guarda la NVS (Secretos): main.cpp la pone al arrancar
+  void ponerClaveMaestra(const uint8_t clave[32]);
+  // Quita clave_maestra de config.txt sin dejarla legible en la microSD: primero sobrescribe su valor con ceros en el
+  // mismo sitio del archivo (reescribirlo sin más dejaría el texto viejo en sectores libres) y luego reescribe el
+  // archivo sin la línea. false si algo falló.
+  bool borrarClaveMaestraDeConfig();
   bool guardarConfig(const String &pares);  // "clave=valor;clave=valor"
   String config(const String &clave) const;
 
