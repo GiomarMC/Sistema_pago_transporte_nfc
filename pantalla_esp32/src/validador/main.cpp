@@ -561,16 +561,21 @@ void atenderPuente() {
     if (estaba) log("Ordenador desconectado");
     return;
   }
-  if (config.length()) guardarConfig(config);
+  bool cambio = !estaba;  // la pantalla solo se redibuja si algo cambió (redibujarla entera son ~30 ms)
+  if (config.length()) {
+    guardarConfig(config);
+    cambio = true;
+  }
   if (!horaDelServidor()) {  // la del servidor tiene preferencia
     const uint32_t h = puente.horaUnix();
     if (h) {
       fijarHora(h, millis());
+      cambio = true;
     }
   }
   if (!estaba) log("Ordenador conectado. Validador " + String(almacen.validador()) + ", eventos sin subir: " +
                    String(almacen.pendientes()));
-  pantallaEspera();
+  if (cambio) pantallaEspera();
 }
 
 void avisarBusLiberado(int pulsos) {
