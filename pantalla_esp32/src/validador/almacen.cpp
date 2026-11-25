@@ -145,7 +145,34 @@ void Almacen::cargarConfig() {
     }
   });
   validador_ = config("validador").toInt();
-  tieneClave_ = deHex32(config("clave_maestra"), clave_);
+  // Solo una config.txt de una versión anterior trae la clave maestra (main.cpp la pasa a la NVS y la borra de aquí).
+  // Si no la trae, se conserva la que se puso desde la NVS (cargarConfig() se repite al guardar o al volver a montar)
+  if (config("clave_maestra").length()) tieneClave_ = deHex32(config("clave_maestra"), clave_);
+}
+
+void Almacen::ponerClaveMaestra(const uint8_t clave[32]) {
+  memcpy(clave_, clave, sizeof(clave_));
+  tieneClave_ = true;
+}
+
+bool Almacen::borrarClaveMaestraDeConfig() {
+  String texto = leerArchivo("/config.txt");
+  const int inicio = texto.indexOf("clave_maestra=");
+  if (inicio < 0) return true;
+  int fin = texto.indexOf('\n', inicio);
+  if (fin < 0) fin = texto.length();
+  for (int i = inicio + 14; i < fin; i++) texto.setCharAt(i, '0');
+  // "r+": se escribe encima, sin truncar, así que va a los mismos sectores que tenían la clave
+  File f = SD.open("/config.txt", "r+");
+  if (!f) return false;
+  const bool encima = f.print(texto) == texto.length();
+  f.flush();
+  f.close();
+  if (!encima) return false;
+  config_.erase("clave_maestra");
+  String limpio = "# Configuración del validador (generada por puente_nfc.py --configurar)\n";
+  for (auto &kv : config_) limpio += kv.first + "=" + kv.second + "\n";
+  return escribirArchivo("/config.txt", limpio);
 }
 
 void Almacen::cargarListas() {

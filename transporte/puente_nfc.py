@@ -168,7 +168,7 @@ def main():
     p.add_argument("--puerto", help="puerto de la ESP32 (por defecto se detecta solo; "
                                     "Windows: COM3, macOS: /dev/cu.usbserial-...)")
     p.add_argument("--configurar", action="store_true",
-                   help="enviar a la ESP32 el n.º de validador y la clave maestra")
+                   help="enviar a la ESP32 el n.º de validador y la clave maestra (la guarda en su NVS)")
     p.add_argument("--validador", type=int, help="n.º de validador para --configurar (1-899)")
     p.add_argument("--wifi", help="con --configurar: red WiFi de 2,4 GHz para sincronizar con "
                                   "el servidor (el token sale de api.json)")

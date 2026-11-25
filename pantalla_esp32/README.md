@@ -242,7 +242,8 @@ tarjetas).
 2. La ESP32 necesita su número de validador y **la misma clave maestra con la
    que se emitieron las tarjetas** (`transporte/claves/clave_maestra.bin`; ver
    la sección 7.5 del README principal). Con la ESP32 conectada por USB al
-   ordenador que tiene la clave (no hace falta el ACR122U):
+   ordenador que tiene la clave (no hace falta el ACR122U). La clave viaja por
+   el cable y se guarda en la NVS de la ESP32, nunca en la microSD:
 
    ```bash
    cd transporte
@@ -415,7 +416,7 @@ Archivos de texto, para poder revisarlos en un ordenador si hace falta:
 
 | Archivo | Contenido |
 |---|---|
-| `config.txt` | `validador=103`, `clave_maestra=<64 caracteres hex>`, `servidor`, `token` y la red WiFi configurada con el puente |
+| `config.txt` | `validador=103`, `servidor`, `token` y la red WiFi configurada con el puente. **La clave maestra no va aquí**: va en la NVS de la ESP32, junto a la clave HMAC y la contraseña MQTT (#44). Una `clave_maestra` de una versión anterior se pasa sola a la NVS al arrancar y se borra del archivo, sobrescrita con ceros |
 | `redes.txt` | Redes WiFi guardadas desde el portal (`nombre<TAB>contraseña`, una por línea) |
 | `eventos.txt` | Un JSON por línea: cada viaje, incidencia o fraude, en el formato que espera `/api/sync/` |
 | `estado.txt` | Siguiente n.º de evento y último subido al servidor |

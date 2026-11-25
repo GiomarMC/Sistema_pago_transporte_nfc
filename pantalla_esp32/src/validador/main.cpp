@@ -436,7 +436,28 @@ void pantallaEspera() {
   }
 }
 
-// Las claves del modo v2 (clave_hmac, mqtt_clave) van a la NVS, no a la microSD: se sacan de la configuración antes
+// La clave maestra va en la NVS, no en la microSD (#44). Si config.txt aún la trae (de una versión anterior), se copia a
+// la NVS, se comprueba la copia y se borra del archivo; luego el Almacen usa la de la NVS. Se llama al arrancar y al
+// montar la microSD más tarde (si al arrancar no montó, la migración espera a ese momento).
+void prepararClaveMaestra() {
+  uint8_t k[Secretos::TAM_CLAVE_MAESTRA], copia[Secretos::TAM_CLAVE_MAESTRA];
+  const String enConfig = almacen.config("clave_maestra");
+  if (enConfig.length()) {
+    if (!Secretos::deHex32(enConfig, k)) {
+      log("ERROR: clave_maestra de config.txt no válida; no se pasa a la NVS");
+    } else if (!secretos.guardarClaveMaestra(k) || !secretos.claveMaestra(copia) || memcmp(k, copia, sizeof(k)) != 0) {
+      log("ERROR: no se pudo copiar la clave maestra a la NVS; se sigue usando la de config.txt");
+      return;
+    } else if (almacen.borrarClaveMaestraDeConfig()) {
+      log("Clave maestra pasada de config.txt a la NVS (y borrada de la microSD)");
+    } else {
+      log("ERROR: la clave maestra ya está en la NVS, pero no se pudo borrar de config.txt");
+    }
+  }
+  if (secretos.claveMaestra(k)) almacen.ponerClaveMaestra(k);
+}
+
+// Las claves (clave_maestra, clave_hmac, mqtt_clave) van a la NVS, no a la microSD: se sacan de la configuración antes
 // de pasarla al Almacen, y no se imprimen
 String separarSecretos(const String &config) {
   String resto;
@@ -445,7 +466,15 @@ String separarSecretos(const String &config) {
     int fin = config.indexOf(';', inicio);
     if (fin < 0) fin = config.length();
     const String par = config.substring(inicio, fin);
-    if (par.startsWith("clave_hmac=")) {
+    uint8_t k[Secretos::TAM_CLAVE_MAESTRA];
+    if (par.startsWith("clave_maestra=")) {
+      if (Secretos::deHex32(par.substring(14), k) && secretos.guardarClaveMaestra(k)) {
+        almacen.ponerClaveMaestra(k);
+        log("Clave maestra guardada en la NVS");
+      } else {
+        log("ERROR: clave_maestra no válida o no se pudo guardar");
+      }
+    } else if (par.startsWith("clave_hmac=")) {
       log(secretos.guardarClaveHmacHex(par.substring(11)) ? "Clave HMAC guardada en la NVS"
                                                           : "ERROR: clave_hmac no válida o no se pudo guardar");
     } else if (par.startsWith("mqtt_clave=")) {
@@ -764,6 +793,8 @@ void setup() {
   PASO("setup: microSD");
   almacen.alGuardarEvento(anotarEvento);  // antes de iniciar: así se anota todo evento nuevo
   almacen.iniciar();
+  PASO("setup: clave maestra");
+  if (almacen.listo()) prepararClaveMaestra();
   PASO("setup: lector PN532");
   avisarBusLiberado(pulsosI2C);
   iniciarLector();
@@ -835,6 +866,7 @@ void loop() {
   PASO("loop: reintento de la microSD");
   if (almacen.reintentarMontaje()) {
     log("microSD montada tras reintentar");
+    prepararClaveMaestra();
     pantallaEspera();
     if (almacen.configurado() && almacen.redes().empty()) abrirPortal();  // como en setup()
   }
