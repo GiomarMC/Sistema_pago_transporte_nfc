@@ -20,7 +20,10 @@ class TarifasGuardadas {
   static constexpr size_t TAM_CABECERA = 8, TAM_TARIFA = 24;
   static constexpr const char *BASE = "/tarifas";
 
-  explicit TarifasGuardadas(SistemaArchivos &fs) : archivo_(fs, BASE, "TAR1") { memset(&tarifas_, 0, sizeof(tarifas_)); }
+  // Se guarda solo al llegar TARIFAS: no se queda abierto (ver ArchivoRanuras)
+  explicit TarifasGuardadas(SistemaArchivos &fs) : archivo_(fs, BASE, "TAR1", false) { memset(&tarifas_, 0, sizeof(tarifas_)); }
+  // Cierra el archivo, que queda abierto entre guardados (antes de desmontar la microSD)
+  void soltar() { archivo_.soltar(); }
 
   // Carga lo que haya en disco. false si no había ninguna copia válida: arranca sin tarifas.
   bool iniciar();

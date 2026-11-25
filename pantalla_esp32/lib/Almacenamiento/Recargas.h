@@ -33,7 +33,10 @@ class Recargas {
   static constexpr size_t MAX_RECARGAS = 4096;
   static constexpr const char *BASE = "/recargas";
 
-  explicit Recargas(SistemaArchivos &fs) : archivo_(fs, BASE, "REC1") {}
+  // Se guarda solo al llegar LISTAS: no se queda abierto (ver ArchivoRanuras)
+  explicit Recargas(SistemaArchivos &fs) : archivo_(fs, BASE, "REC1", false) {}
+  // Cierra el archivo, que queda abierto entre guardados (antes de desmontar la microSD)
+  void soltar() { archivo_.soltar(); }
 
   // Carga lo que haya en disco. false si no había ninguna copia válida: arranca vacía.
   bool iniciar();

@@ -1,4 +1,4 @@
-// M3-06: consumo de datos por canal y por día (/consumo.bin).
+// M3-06: consumo de datos por canal y por día (/consumo.ab, dos ranuras desde #129).
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
@@ -146,8 +146,8 @@ void guardarCada5Minutos() {
   assert(!c.atender(ms));  // arranca el reloj
   c.registrar(CanalDatos::WIFI, 500, 100);
   assert(c.hayCambios());
-  assert(!c.atender(ms + 4 * 60 * 1000) && !fs.existe("/consumo.bin"));  // aún no pasaron 5 minutos
-  assert(c.atender(ms + ConsumoDatos::INTERVALO_MS) && fs.existe("/consumo.bin") && !c.hayCambios());
+  assert(!c.atender(ms + 4 * 60 * 1000) && !fs.existe("/consumo.ab"));  // aún no pasaron 5 minutos
+  assert(c.atender(ms + ConsumoDatos::INTERVALO_MS) && fs.existe("/consumo.ab") && !c.hayCambios());
   ms += ConsumoDatos::INTERVALO_MS;
   // sin cambios no escribe (un corte programado en la operación 0 lo delataría)
   fs.programarCorte(0);
@@ -205,37 +205,44 @@ void reiniciarYCortes() {
   // un corte en cada operación de guardar: queda lo guardado antes o lo de ahora, nunca un archivo roto
   FsFalso base = fs;
   int cortes = 0, antes = 0, despues = 0;
-  for (long k = 0;; k++) {
-    FsFalso f = base;
-    f.programarCorte(k);
-    bool cortado = false;
-    try {
-      ConsumoDatos c(f);
-      c.iniciar();
-      c.fijarFecha(D2);
-      c.registrar(CanalDatos::WIFI, 111, 0);
-      assert(c.guardar());
-    } catch (CorteDeEnergia &) {
-      cortado = true;
+  bool terminado = false;
+  for (long k = 0; !terminado; k++) {
+    for (uint32_t semilla = 1; semilla <= 16; semilla++) {  // lo que sobrevive de lo no vaciado cambia con el azar
+      FsFalso f = base;
+      f.azar = semilla * 7919;
+      f.programarCorte(k);
+      bool cortado = false;
+      try {
+        ConsumoDatos c(f);
+        c.iniciar();
+        c.fijarFecha(D2);
+        c.registrar(CanalDatos::WIFI, 111, 0);
+        assert(c.guardar());
+      } catch (CorteDeEnergia &) {
+        cortado = true;
+      }
+      f.sinCorte();
+      if (!cortado) {
+        terminado = true;
+        break;
+      }
+      cortes++;
+      f.aplicarCorte();
+      ConsumoDatos q(f);
+      assert(q.iniciar() && q.dias() == 2);
+      const uint32_t wifi = q.dia(1).tx[0];
+      assert(wifi == 0 || wifi == 111);
+      (wifi == 0 ? antes : despues)++;
+      assert(q.dia(0).tx[0] == 1000 && q.dia(1).tx[1] == 9);
     }
-    f.sinCorte();
-    if (!cortado) break;
-    cortes++;
-    f.aplicarCorte();
-    ConsumoDatos q(f);
-    assert(q.iniciar() && q.dias() == 2);
-    const uint32_t wifi = q.dia(1).tx[0];
-    assert(wifi == 0 || wifi == 111);
-    (wifi == 0 ? antes : despues)++;
-    assert(q.dia(0).tx[0] == 1000 && q.dia(1).tx[1] == 9);
   }
-  assert(cortes >= 5 && antes > 0 && despues > 0);
+  assert(cortes >= 16 && antes > 0 && despues > 0);
 
   // archivo dañado o con datos que no valen: arranca sin historial
   FsFalso mala = base;
-  mala.archivos["/consumo.bin"].durable[5] ^= 0x01;
-  mala.archivos["/consumo.bin"].cache = mala.archivos["/consumo.bin"].durable;
-  mala.archivos.erase("/consumo.bak");
+  mala.archivos["/consumo.ab"].durable[5] ^= 0x01;  // la generación de las dos ranuras: el CRC no cuadra
+  mala.archivos["/consumo.ab"].durable[512 + 5] ^= 0x01;
+  mala.archivos["/consumo.ab"].cache = mala.archivos["/consumo.ab"].durable;
   ConsumoDatos m(mala);
   assert(!m.iniciar() && m.dias() == 0);
   printf("  reiniciar sin perder el historial, %d cortes de energía al guardar (%d viejo, %d nuevo) y archivo dañado OK\n",

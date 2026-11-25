@@ -8,7 +8,7 @@ namespace {
 
 class ArchivoSD : public Archivo {
  public:
-  ArchivoSD(File f, bool escribible) : f_(f), escribible_(escribible) {}
+  ArchivoSD(File f, Modo modo) : f_(f), modo_(modo) {}
   ~ArchivoSD() override { f_.close(); }  // cerrar vacía a la tarjeta, pero el almacenamiento no cuenta con ello
 
   // OJO: File::size() lee la entrada de directorio, que en un archivo recién creado (o con escrituras sin cerrar) trae
@@ -23,22 +23,26 @@ class ArchivoSD : public Archivo {
     return n;
   }
   bool leerEn(size_t posicion, void *destino, size_t n) override {
-    if (escribible_ || !f_.seek(posicion)) return false;  // los archivos para escribir van en modo "agregar": solo escriben
+    // los archivos NUEVO y ABRIR van en modo "agregar": solo escriben
+    if ((modo_ != Modo::LECTURA && modo_ != Modo::EDITAR) || !f_.seek(posicion)) return false;
     return f_.read(static_cast<uint8_t *>(destino), n) == n;
   }
   bool agregar(const void *origen, size_t n) override {
-    return escribible_ && f_.write(static_cast<const uint8_t *>(origen), n) == n;
+    return (modo_ == Modo::NUEVO || modo_ == Modo::ABRIR) && f_.write(static_cast<const uint8_t *>(origen), n) == n;
+  }
+  bool escribirEn(size_t posicion, const void *origen, size_t n) override {
+    return modo_ == Modo::EDITAR && f_.seek(posicion) && f_.write(static_cast<const uint8_t *>(origen), n) == n;
   }
   // flush() del framework hace fflush y fsync: lo escrito queda en la tarjeta
   bool vaciar() override {
-    if (!escribible_) return false;
+    if (modo_ == Modo::LECTURA) return false;
     f_.flush();
     return true;
   }
 
  private:
   File f_;
-  bool escribible_;
+  Modo modo_;
 };
 
 }  // namespace
@@ -56,10 +60,13 @@ bool ArchivosSD::iniciar() {
 std::unique_ptr<Archivo> ArchivosSD::abrir(const char *ruta, Modo modo) {
   char c[96];
   if (!completa(ruta, c, sizeof(c))) return nullptr;
-  // En el ESP32: FILE_WRITE crea o vacía el archivo; FILE_APPEND lo crea si no existe y escribe al final
-  File f = SD.open(c, modo == Modo::LECTURA ? FILE_READ : modo == Modo::NUEVO ? FILE_WRITE : FILE_APPEND);
+  // En el ESP32: FILE_WRITE crea o vacía el archivo; FILE_APPEND lo crea si no existe y escribe al final; "r+" lee y
+  // escribe donde se le diga, sin vaciarlo (y sin crearlo: en EDITAR debe existir)
+  const char *m = modo == Modo::LECTURA ? FILE_READ : modo == Modo::NUEVO ? FILE_WRITE
+                : modo == Modo::ABRIR   ? FILE_APPEND : "r+";
+  File f = SD.open(c, m);
   if (!f || f.isDirectory()) return nullptr;
-  return std::unique_ptr<Archivo>(new ArchivoSD(f, modo != Modo::LECTURA));
+  return std::unique_ptr<Archivo>(new ArchivoSD(f, modo));
 }
 
 bool ArchivosSD::existe(const char *ruta) {

@@ -6,7 +6,9 @@
 // que, como en FAT:
 //   - lo escrito solo sobrevive a un corte de energía después de vaciar() (flush);
 //   - renombrar falla si el destino existe, así que se borra antes;
-//   - borrar y renombrar son operaciones sueltas: un corte puede ocurrir entre dos de ellas.
+//   - borrar y renombrar son operaciones sueltas: un corte puede ocurrir entre dos de ellas;
+//   - sobrescribir en su sitio (Modo::EDITAR, escribirEn) no toca el directorio, pero un corte antes de vaciar()
+//     puede dejar escrita solo una parte.
 #pragma once
 
 #include <stddef.h>
@@ -22,6 +24,9 @@ class Archivo {
   virtual size_t tamano() = 0;
   virtual bool leerEn(size_t posicion, void *destino, size_t n) = 0;  // exactamente n bytes, o false
   virtual bool agregar(const void *origen, size_t n) = 0;             // al final del archivo
+  // Sobrescribe n bytes desde `posicion` (Modo::EDITAR; si pasa del final, el archivo crece). Sin tocar el
+  // directorio es lo más rápido que hay en la microSD (~10 ms con el archivo ya abierto, #129)
+  virtual bool escribirEn(size_t posicion, const void *origen, size_t n) = 0;
   virtual bool vaciar() = 0;  // flush: lo escrito hasta aquí resiste un corte de energía
 };
 
@@ -29,6 +34,7 @@ enum class Modo : uint8_t {
   LECTURA,  // debe existir
   NUEVO,    // lo crea, o lo vacía si existe
   ABRIR,    // lo crea si no existe; si existe, conserva su contenido y se agrega al final
+  EDITAR,   // debe existir; se lee y se sobrescribe en su sitio (leerEn y escribirEn), sin vaciarlo
 };
 
 class SistemaArchivos {

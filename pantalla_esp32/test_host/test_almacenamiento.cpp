@@ -57,8 +57,80 @@ void estadoBasico() {
   assert(otro.cargar());
   assert(otro.estado().siguienteId == 41 && otro.estado().hastaAcusado == 30 && otro.estado().versionListas == 7 &&
          otro.estado().versionTarifas == 9);
-  // Tras guardar quedan solo .bin y .bak; ningún .tmp
-  assert(fs.existe(EstadoPersistente::ARCHIVO) && fs.existe(EstadoPersistente::ANTERIOR) && !fs.existe(EstadoPersistente::TEMPORAL));
+  // Un solo archivo de dos ranuras (1 KB), sin temporales ni copias del formato anterior
+  assert(fs.existe(EstadoPersistente::RANURAS) && fs.archivos[EstadoPersistente::RANURAS].durable.size() == 1024);
+  assert(!fs.existe("/estado.abn") && !fs.existe(EstadoPersistente::ARCHIVO) && !fs.existe(EstadoPersistente::ANTERIOR) &&
+         !fs.existe(EstadoPersistente::TEMPORAL));
+  // Los guardados siguientes escriben en su sitio con el archivo ya abierto: ni lo vuelven a abrir ni tocan el
+  // directorio (#129)
+  const long aperturas = fs.aperturasEditar;
+  const size_t archivos = fs.archivos.size();
+  for (uint32_t i = 0; i < 10; i++) assert(e.fijarHastaAcusado(31 + i));
+  assert(fs.aperturasEditar == aperturas && fs.archivos.size() == archivos);
+  EstadoPersistente tras(fs);
+  assert(tras.cargar() && tras.estado().hastaAcusado == 40);
+}
+
+// El formato anterior (32 B por copia, magia EST1): para probar la migración
+std::vector<uint8_t> estadoViejo(uint32_t generacion, const Estado &e) {
+  std::vector<uint8_t> r(32);
+  const uint32_t campos[] = {generacion, e.siguienteId, e.hastaAcusado, e.versionListas, e.versionTarifas,
+                             e.secuenciaPaquetes};
+  memcpy(r.data(), "EST1", 4);
+  for (int i = 0; i < 6; i++)
+    for (int b = 0; b < 4; b++) r[4 + 4 * i + b] = campos[i] >> (8 * b);
+  const uint32_t c = crc32(r.data(), 28);
+  for (int b = 0; b < 4; b++) r[28 + b] = c >> (8 * b);
+  return r;
+}
+
+void ponerArchivo(FsFalso &fs, const char *ruta, const std::vector<uint8_t> &d) {
+  fs.archivos[ruta].durable = fs.archivos[ruta].cache = d;
+}
+
+void estadoMigraDelFormatoAnterior() {
+  Estado viejo;
+  viejo.siguienteId = 77;
+  viejo.hastaAcusado = 70;
+  viejo.versionListas = 11;
+  viejo.versionTarifas = 1794792961;
+  viejo.secuenciaPaquetes = 96;
+  Estado anterior = viejo;
+  anterior.hastaAcusado = 60;
+  {
+    FsFalso fs;
+    ponerArchivo(fs, EstadoPersistente::ARCHIVO, estadoViejo(8, viejo));
+    ponerArchivo(fs, EstadoPersistente::ANTERIOR, estadoViejo(7, anterior));
+    EstadoPersistente e(fs);
+    assert(e.cargar() && e.estado().hastaAcusado == 70 && e.estado().siguienteId == 77 &&
+           e.estado().versionTarifas == 1794792961);
+    assert(e.siguienteSecuencia() == 97);  // sigue desde lo reservado
+    assert(fs.existe(EstadoPersistente::RANURAS) && !fs.existe(EstadoPersistente::ARCHIVO) &&
+           !fs.existe(EstadoPersistente::ANTERIOR));
+    EstadoPersistente r(fs);
+    assert(r.cargar() && r.estado().hastaAcusado == 70);
+  }
+  // Un corte en cada operación de la migración: siempre arranca con el estado de antes, y la siguiente vez termina
+  int cortes = 0;
+  for (long k = 0; k < 20; k++) {
+    FsFalso fs;
+    ponerArchivo(fs, EstadoPersistente::ARCHIVO, estadoViejo(8, viejo));
+    ponerArchivo(fs, EstadoPersistente::ANTERIOR, estadoViejo(7, anterior));
+    fs.programarCorte(k);
+    try {
+      EstadoPersistente e(fs);
+      e.cargar();
+    } catch (CorteDeEnergia &) {
+      cortes++;
+      fs.sinCorte();
+      fs.aplicarCorte();
+    }
+    fs.sinCorte();
+    EstadoPersistente r(fs);
+    assert(r.cargar() && r.estado().hastaAcusado == 70 && r.estado().secuenciaPaquetes == 96);
+    assert(!fs.existe(EstadoPersistente::ARCHIVO) && !fs.existe(EstadoPersistente::ANTERIOR));
+  }
+  assert(cortes >= 4);
 }
 
 void estadoCortePorCadaOperacion() {
@@ -101,11 +173,12 @@ void estadoCaeEnLaCopiaAnterior() {
   EstadoPersistente e(fs);
   e.cargar();
   e.fijarHastaAcusado(10);
-  e.fijarHastaAcusado(20);  // .bin = 20, .bak = 10
-  fs.archivos[EstadoPersistente::ARCHIVO].durable[12] ^= 0xFF;  // se corrompe un byte de .bin
-  fs.archivos[EstadoPersistente::ARCHIVO].cache = fs.archivos[EstadoPersistente::ARCHIVO].durable;
+  e.fijarHastaAcusado(20);  // ranura 0 = 10 (generación 1), ranura 1 = 20 (generación 2)
+  auto &d = fs.archivos[EstadoPersistente::RANURAS].durable;
+  d[512 + ArchivoRanuras::TAM_CABECERA + 4] ^= 0xFF;  // se corrompe hasta_acusado en la ranura vigente
+  fs.archivos[EstadoPersistente::RANURAS].cache = d;
   EstadoPersistente r(fs);
-  assert(r.cargar() && r.estado().hastaAcusado == 10);  // el CRC no cuadra: se usa .bak
+  assert(r.cargar() && r.estado().hastaAcusado == 10);  // el CRC no cuadra: se usa la otra ranura
   assert(r.fijarHastaAcusado(30));
   EstadoPersistente r2(fs);
   assert(r2.cargar() && r2.estado().hastaAcusado == 30);
@@ -118,7 +191,7 @@ void secuenciaNuncaSeRepite50Cortes() {
   for (int ronda = 0; ronda < 50; ronda++) {
     EstadoPersistente e(fs);
     e.cargar();
-    fs.programarCorte(1 + fs.siguienteAzar() % 23);  // cien secuencias hacen ~24 operaciones de disco
+    fs.programarCorte(1 + fs.siguienteAzar() % 7);  // cien secuencias hacen ~8 operaciones de disco (4 guardados)
     try {
       for (int i = 0; i < 100; i++) {
         const uint32_t s = e.siguienteSecuencia();
@@ -462,6 +535,8 @@ int main() {
   estadoBasico();
   estadoCortePorCadaOperacion();
   estadoCaeEnLaCopiaAnterior();
+  estadoMigraDelFormatoAnterior();
+  printf("  estado en dos ranuras: guardados sin abrir ni tocar el directorio, y migración desde .bin/.bak con cortes OK\n");
   secuenciaNuncaSeRepite50Cortes();
   colaBasica();
   compactacionPorPasos();

@@ -10,6 +10,9 @@ namespace {
 
 // microSD en el segundo bus SPI (HSPI), para no interferir con la pantalla
 constexpr int8_t SD_SCK = 14, SD_MOSI = 13, SD_MISO = 27, SD_CS = 26;
+#ifndef MAX_ARCHIVOS_ABIERTOS
+#define MAX_ARCHIVOS_ABIERTOS 7
+#endif
 SPIClass spiSD(HSPI);
 
 String leerArchivo(const char *ruta) {
@@ -72,11 +75,20 @@ bool Almacen::montar() {
 #else
   const uint32_t relojes[] = {20000000, 4000000};
 #endif
+  // Los archivos que se quedan abiertos entre guardados (#129) se cierran antes de desmontar: un File viejo que se
+  // cerrara después podría cerrar otro abierto tras el montaje nuevo con el mismo número
+  estado_.soltar();
+  recargas_.soltar();
+  tarifasBin_.soltar();
+  consumo_.soltar();
   for (uint32_t hz : relojes) {
     SD.end();
     spiSD.end();
     spiSD.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
-    if (SD.begin(SD_CS, spiSD, hz)) {
+    // Hasta 7 archivos abiertos a la vez (por defecto 5): el estado y el consumo se quedan abiertos entre guardados
+    // (#129) y quedan los 5 de antes para lo demás. Cada hueco reserva 4 KB al montar: con 10, a TLS no le quedaba
+    // memoria para conectar
+    if (SD.begin(SD_CS, spiSD, hz, "/sd", MAX_ARCHIVOS_ABIERTOS)) {
       relojSd_ = hz;
       Serial.printf("microSD: montada a %lu MHz\n", (unsigned long)(hz / 1000000));
       return true;

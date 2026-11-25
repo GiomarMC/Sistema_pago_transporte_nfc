@@ -32,7 +32,7 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/ProtocoloSP -Ilib/Enlaces \
 /tmp/subepe-m8-test-emisor
 # M3-01 y M3-02: almacenamiento binario con cortes de energía simulados
 g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
-    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ColaEventos.cpp \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ArchivoRanuras.cpp lib/Almacenamiento/ColaEventos.cpp \
     lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o test_host/test_almacenamiento.cpp -lmbedcrypto \
     -o /tmp/subepe-m3-test-almacen
 /tmp/subepe-m3-test-almacen
@@ -41,9 +41,14 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento \
     lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ListaNegra.cpp test_host/test_listanegra.cpp \
     -o /tmp/subepe-m3-test-lista
 /tmp/subepe-m3-test-lista
+# #129: archivo de dos ranuras (en su sitio, crecimiento, cortes de energía) y migración desde .bin/.bak
+g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoRanuras.cpp lib/Almacenamiento/ArchivoAtomico.cpp \
+    test_host/test_ranuras.cpp -o /tmp/subepe-129-test-ranuras
+/tmp/subepe-129-test-ranuras
 # M3-04: recargas y tarifas binarias (orden, idempotencia, cuerpo de TARIFAS de C1 y cortes de energía)
 g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
-    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/Recargas.cpp \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/ArchivoRanuras.cpp lib/Almacenamiento/Recargas.cpp \
     lib/Almacenamiento/TarifasGuardadas.cpp lib/ProtocoloSP/ProtocoloSP.cpp /tmp/subepe-uecc.o \
     test_host/test_recargas_tarifas.cpp -lmbedcrypto -o /tmp/subepe-m3-test-recargas
 /tmp/subepe-m3-test-recargas
@@ -54,20 +59,20 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento -Ilib/Prot
 /tmp/subepe-m3-test-paquetes
 # M3-06: consumo de datos por canal y día (31 días, guardado cada 5 minutos, cortes de energía, contadores de enlace)
 g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Ilib/Almacenamiento lib/Almacenamiento/Crc32.cpp \
-    lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/ConsumoDatos.cpp test_host/test_consumo.cpp \
+    lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/ArchivoRanuras.cpp lib/Almacenamiento/ConsumoDatos.cpp test_host/test_consumo.cpp \
     -o /tmp/subepe-m3-test-consumo
 /tmp/subepe-m3-test-consumo
 # M4-02: las cinco reglas de LISTAS (C1 5.5) y TARIFAS con el SincronizadorV2 y el almacenamiento binario, con cortes de energía
 g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
     src/validador/sincronizador_v2.cpp lib/ProtocoloSP/ProtocoloSP.cpp lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp \
-    lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
+    lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ArchivoRanuras.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
     lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
     /tmp/subepe-uecc.o test_host/test_listas_v2.cpp -lmbedcrypto -o /tmp/subepe-m4-test-listas
 /tmp/subepe-m4-test-listas
 # AlmacenSyncBinario: el sincronizador v2 sobre el almacenamiento binario completo (solo se escribe en paso(), por pasos)
 g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
     src/validador/sincronizador_v2.cpp src/validador/almacen_sync_binario.cpp lib/ProtocoloSP/ProtocoloSP.cpp \
-    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/EstadoPersistente.cpp \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ArchivoRanuras.cpp \
     lib/Almacenamiento/ColaEventos.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
     lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
     /tmp/subepe-uecc.o test_host/test_almacen_sync.cpp -lmbedcrypto -o /tmp/subepe-m4-test-almacen-sync
@@ -81,7 +86,7 @@ g++ -std=c++17 -Wall -Wextra -Werror -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ili
 g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -Ilib/Almacenamiento -Ilib/ProtocoloSP -Ilib/micro-ecc \
     src/validador/sincronizador_v2.cpp src/validador/almacen_sync_binario.cpp src/validador/intercambio_vecinos.cpp \
     lib/ProtocoloSP/ProtocoloSP.cpp lib/ProtocoloSP/Fragmentos.cpp lib/Enlaces/TablaVecinos.cpp \
-    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/EstadoPersistente.cpp \
+    lib/Almacenamiento/Crc32.cpp lib/Almacenamiento/ArchivoAtomico.cpp lib/Almacenamiento/EstadoPersistente.cpp lib/Almacenamiento/ArchivoRanuras.cpp \
     lib/Almacenamiento/ColaEventos.cpp lib/Almacenamiento/ListaNegra.cpp lib/Almacenamiento/Recargas.cpp \
     lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
     /tmp/subepe-uecc.o test_host/test_intercambio.cpp -lmbedcrypto -o /tmp/subepe-m8-test-intercambio

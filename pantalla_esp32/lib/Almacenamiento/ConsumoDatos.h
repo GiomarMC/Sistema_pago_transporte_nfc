@@ -41,6 +41,8 @@ class ConsumoDatos {
   static constexpr const char *BASE = "/consumo";
 
   explicit ConsumoDatos(SistemaArchivos &fs) : archivo_(fs, BASE, "CON1") {}
+  // Cierra el archivo, que queda abierto entre guardados (antes de desmontar la microSD)
+  void soltar() { archivo_.soltar(); }
 
   // Carga lo que haya en disco. false si no había nada válido: arranca sin historial.
   bool iniciar();

@@ -77,7 +77,7 @@ void etapa2() {
 }
 
 void limpiar() {
-  for (const char *r : {"/consumo.bin", "/consumo.tmp", "/consumo.bak"})
+  for (const char *r : {"/consumo.bin", "/consumo.tmp", "/consumo.bak", "/consumo.ab", "/consumo.abn"})
     if (archivos.existe(r)) archivos.borrar(r);
 }
 
@@ -90,7 +90,7 @@ void setup() {
     Serial.println("RESULTADO: FALLO");
     return;
   }
-  if (!archivos.existe("/consumo.bin")) {
+  if (!archivos.existe("/consumo.ab")) {
     limpiar();
     etapa1();  // termina reiniciando
     return;
