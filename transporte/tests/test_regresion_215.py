@@ -18,6 +18,9 @@ Cambios de flujo, también deliberados:
   - en el validador, perder la comunicación durante GET_VERSION o al leer el
     UID muestra "Acerque de nuevo" (antes ese caso no existía o cerraba el
     programa).
+Y uno de develop, posterior (#240, PR #242): la recarga vuelve a autenticarse
+(PWD) justo antes de grabar, porque el ACR122U pierde la autenticación mientras
+se espera al servidor. Marcado con [#240].
 El resto de cada traza, los datos grabados y los mensajes no cambian.
 """
 
@@ -45,7 +48,7 @@ AREA_DATOS = " ".join(f"W{p}" for p in range(formato.PAG_INICIO, formato.PAG_FIN
 TRAZA_EMITIR = ("UID V R8 F8-25 F131-132 F131-132 " + AREA_DATOS +            # [M1-01]
                 " W133 W134 W132 W131 REL SEL R8 REL SEL PWD F8-25 CNT REL SEL")
 TRAZA_COBRAR = "UID V PWD F8-25 CNT W21 W22 W23 W24 W25 F21-25 REL SEL"     # [M1-01] V
-TRAZA_RECARGAR = "UID V PWD F8-25 CNT W21 W22 W23 W24 W25 F21-25 REL SEL"   # [M1-01] V
+TRAZA_RECARGAR = "UID V PWD F8-25 CNT PWD W21 W22 W23 W24 W25 F21-25 REL SEL"  # [M1-01] V · [#240] PWD
 TRAZA_LEER = "UID V R8 REL SEL PWD F8-25 CNT REL SEL"
 TRAZA_RESTABLECER = ("UID V R8 REL SEL PWD F131-132 " + AREA_DATOS +
                      " W131 W132 W133 W134 REL SEL R8 REL SEL")

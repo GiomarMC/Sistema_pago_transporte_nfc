@@ -1,6 +1,6 @@
 """recargar_tarjeta() con una NTAG215 en memoria (la TarjetaVirtual del simulador).
 
-    cd transporte && python3 -m unittest test_recargar
+    cd transporte && python3 -m unittest tests.test_recargar
 """
 
 import unittest
@@ -8,7 +8,13 @@ from unittest import mock
 
 import recargar
 from simular_tarjetas import emitir
-from tarjeta import formato
+from tarjeta import claves, formato
+from tarjeta.ntag215 import Tarjeta215
+
+
+def tarjeta(tv, **opciones):
+    """La NTAG215 virtual vista como TarjetaFisica (contrato C3, #198), igual que en los programas."""
+    return Tarjeta215(NtagVirtual(tv, **opciones), claves.contrasena)
 
 
 class NtagVirtual:
@@ -59,7 +65,7 @@ class RecargarTarjeta(unittest.TestCase):
         tv = emitir(900000101, 0, 0)
         llamar, llamadas = servidor_falso(tv)
         with mock.patch.object(recargar.api_cliente, "llamar", llamar):
-            antes, despues, abono, _ = recargar.recargar_tarjeta(NtagVirtual(tv), 500)
+            antes, despues, abono, _ = recargar.recargar_tarjeta(tarjeta(tv), 500)
         self.assertEqual((antes, despues, abono), (0, 500, 500))
         self.assertEqual(self.saldo(tv), (500, 7))
         self.assertEqual([r for _, r, _ in llamadas], ["/api/recargas/", "/api/recargas/entregas/"])
@@ -68,7 +74,7 @@ class RecargarTarjeta(unittest.TestCase):
         tv = emitir(900000102, 0, 200)
         llamar, _ = servidor_falso(tv, abono=300, pierde_autenticacion=False)
         with mock.patch.object(recargar.api_cliente, "llamar", llamar):
-            recargar.recargar_tarjeta(NtagVirtual(tv), 300)
+            recargar.recargar_tarjeta(tarjeta(tv), 300)
         self.assertEqual(self.saldo(tv), (500, 7))
 
     def test_si_se_retira_de_verdad_la_recarga_queda_pendiente(self):
@@ -77,7 +83,7 @@ class RecargarTarjeta(unittest.TestCase):
         llamar, llamadas = servidor_falso(tv)
         with mock.patch.object(recargar.api_cliente, "llamar", llamar):
             with self.assertRaises(recargar.ErrorRecarga) as e:
-                recargar.recargar_tarjeta(NtagVirtual(tv), 500)
+                recargar.recargar_tarjeta(tarjeta(tv), 500)
         self.assertIn("--aplicar", str(e.exception))
         self.assertEqual([r for _, r, _ in llamadas], ["/api/recargas/"])  # sin entrega confirmada
 
