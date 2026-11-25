@@ -1,0 +1,40 @@
+# Copia del servidor para la prueba de carga (M21-02, #156). Se usa encima de
+# servidor_api/docker-compose.yml con el proyecto "carga" (lo arma correr.sh):
+# volúmenes, red y contenedores propios, sin tocar los del servidor local.
+#
+# Límites parecidos a la VM de producción (Oracle VM.Standard.E2.1.Micro, 1 GB):
+#   - RAM: unos 750 MiB entre los cuatro contenedores; los ~250 MiB restantes
+#     son para el sistema, dockerd/containerd y Caddy, que aquí no corre.
+#   - Swap: cada contenedor puede usar hasta 512 MiB, así se ve si la necesita
+#     (memory.swap.current). Solo se usa si el contenedor llega a su límite de RAM.
+#   - CPU: todos en el mismo núcleo (CARGA_CPU): compiten por una sola CPU, como
+#     en la VM. La VM tiene además un mínimo garantizado de 1/8 de OCPU que aquí
+#     no se impone: el informe compara la CPU medida con ese mínimo.
+# CARGA_ENV es el .env de la copia (secretos propios, los genera correr.sh).
+
+services:
+  db:
+    cpuset: "${CARGA_CPU:-2}"
+    mem_limit: 300m
+    memswap_limit: 812m
+
+  web:
+    image: subepe-servidor-carga    # no pisa la imagen del servidor local
+    env_file: !override ["${CARGA_ENV:?lo define correr.sh}"]
+    ports: !override ["127.0.0.1:${CARGA_WEB_PORT:-18000}:8000"]
+    cpuset: "${CARGA_CPU:-2}"
+    mem_limit: 250m
+    memswap_limit: 762m
+
+  mosquitto:
+    ports: ["127.0.0.1:${CARGA_MQTT_PORT:-18830}:1883"]
+    cpuset: "${CARGA_CPU:-2}"
+    mem_limit: 50m
+    memswap_limit: 562m
+
+  puente:
+    image: subepe-servidor-carga
+    env_file: !override ["${CARGA_ENV:?lo define correr.sh}"]
+    cpuset: "${CARGA_CPU:-2}"
+    mem_limit: 150m
+    memswap_limit: 662m
