@@ -537,18 +537,27 @@ void guardarConfig(const String &configRecibida) {
 
 // El ordenador es opcional: con puente_nfc.py abierto envía la configuración
 // (--configurar) y la hora. Se le saluda mientras falte alguna de las dos o
-// mientras conteste; cada saludo sin respuesta espera 1,5 s.
+// mientras conteste. El saludo no espera (#129): se envía el HOLA y la respuesta
+// se recoge en las vueltas siguientes (hasta 1,5 s), sin parar el cobro.
+bool puenteEstaba = false;  // si el puente contestaba antes del saludo en curso
 void atenderPuente() {
-  // Los primeros segundos tras arrancar siempre se saluda: con la hora guardada (cobrar sin WiFi) ya no falta nada y,
-  // si no, el puente no podría reconfigurar una placa que ya está configurada
-  const bool ventanaInicial = millis() < 30000;
-  const bool falta = !almacen.configurado() || !ahoraUnix() || ventanaInicial;
-  if (!falta && !puente.conectado()) return;
-  if (millis() - ultimoSaludo < (puente.conectado() ? 3000 : 10000)) return;
-  ultimoSaludo = millis();
-  const bool estaba = puente.conectado();
   String config;
-  if (!puente.saludar(config)) {
+  const LectorPuente::Saludo saludo = puente.revisarSaludo(config);
+  if (saludo == LectorPuente::Saludo::ESPERANDO) return;
+  if (saludo == LectorPuente::Saludo::NINGUNO) {
+    // Los primeros segundos tras arrancar siempre se saluda: con la hora guardada (cobrar sin WiFi) ya no falta nada
+    // y, si no, el puente no podría reconfigurar una placa que ya está configurada
+    const bool ventanaInicial = millis() < 30000;
+    const bool falta = !almacen.configurado() || !ahoraUnix() || ventanaInicial;
+    if (!falta && !puente.conectado()) return;
+    if (millis() - ultimoSaludo < (puente.conectado() ? 3000 : 10000)) return;
+    ultimoSaludo = millis();
+    puenteEstaba = puente.conectado();
+    puente.empezarSaludo();
+    return;
+  }
+  const bool estaba = puenteEstaba;
+  if (saludo != LectorPuente::Saludo::RESPONDIO) {
     if (estaba) log("Ordenador desconectado");
     return;
   }
@@ -805,6 +814,9 @@ void activarWatchdog() {
 }  // namespace
 
 void setup() {
+  // Con un búfer de salida grande, un log() deja el texto en él y vuelve: sin él, cada línea esperaba a salir por el
+  // cable a 115200 baudios (el informe de cada minuto, ~650 B, paraba loop() 64 ms; #129)
+  Serial.setTxBufferSize(2048);
   Serial.begin(115200);
   activarWatchdog();  // desde el principio: también vigila un cuelgue durante setup()
   registrarMotivoReinicio();
@@ -872,11 +884,15 @@ void loop() {
       botonDesde = 0;
       reiniciarWifi();
       pantallaEspera();
-    } else if (puente.conectado() && millis() - ultimoSaludo > 3000) {
-      // El puente reinicia la placa si deja de oírla: se le saluda de vez en cuando
+    } else {
+      // El puente reinicia la placa si deja de oírla: se le saluda de vez en cuando (sin esperar la respuesta; la
+      // configuración que mande aquí se ignora, como antes)
       String config;
-      puente.saludar(config);
-      ultimoSaludo = millis();
+      if (puente.revisarSaludo(config) == LectorPuente::Saludo::NINGUNO && puente.conectado() &&
+          millis() - ultimoSaludo > 3000) {
+        puente.empezarSaludo();
+        ultimoSaludo = millis();
+      }
     }
     delay(2);
     return;
