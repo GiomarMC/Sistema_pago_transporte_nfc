@@ -10,17 +10,28 @@ GetFileSettings, ChangeFileSettings sin SDM y ChangeKey. Reglas de acceso de
 DS §8.2.3.3-§8.2.3.5 (pp. 11-13) y códigos de error de DS §10.3 (p. 45) y de
 cada comando.
 
-No implementado todavía (M1-03b, depende de la decisión SDMMACInput): SDM/SUN,
-GetFileCounters e ISOReadBinary; lanzan NotImplementedError para que ninguna
-prueba dependa de un comportamiento inventado. Tampoco AuthenticateEV2NonFirst,
-LRP ni el contador de autenticaciones fallidas (decisión F).
+Implementado (parte b, SDM/SUN del archivo 02, docs/ntag424-personalizacion.md §8):
+ChangeFileSettings con SDM, GetFileSettings con sus campos, ISOSelectFile por
+FileID, ISOReadBinary, GetFileCounters y el contador SDMReadCtr. Solo la
+configuración que usa SubePe (AN12196 Tabla 18): PICCData cifrado con
+SDMMetaRead (UID y contador, PICCDataTag C7), SDMMAC con SDMFileRead y espejo en
+ASCII. El resto (espejo en claro, SDMENCFileData, SDMReadCtrLimit, SDM en otro
+archivo) lanza NotImplementedError para que ninguna prueba dependa de un
+comportamiento inventado. Tampoco AuthenticateEV2NonFirst, LRP ni el contador de
+autenticaciones fallidas (decisión F).
+
+Simplificaciones de la parte b, sin contrastar con una tarjeta real:
+  - SDMReadCtr sube con la primera lectura sin autenticar del archivo 02 tras
+    acercar la tarjeta o seleccionar un archivo; las siguientes lecturas de esa
+    misma selección devuelven el mismo espejo (un celular lee varias veces por toque).
+  - Con sesión abierta, leer el archivo 02 devuelve lo grabado, sin espejo.
 
 Estado de fábrica: DS Tabla 5 (p. 10), Tabla 8 (p. 12) y Tabla 13 (p. 14);
 claves a cero (AN12196 Tabla 14).
 """
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable
 
 from tarjeta import apdu424 as a
@@ -30,10 +41,36 @@ LIBRE, SIN_ACCESO = 0xE, 0xF
 COMM_PLAIN, COMM_MAC, COMM_FULL = 0b00, 0b01, 0b11
 _OPCION_SDM = 0x40
 _OPCION_RFU = 0xBC
+# SDMOptions (DS §10.7.1, Tabla 69)
+_SDM_UID, _SDM_CONTADOR, _SDM_LIMITE, _SDM_ENC_DATOS, _SDM_ASCII = 0x80, 0x40, 0x20, 0x10, 0x01
+_SDM_RFU = 0x0E
+_ETIQUETA_SV_SDM_MAC = bytes.fromhex("3CC300010080")  # DS §9.3.9.1, p. 41
+_PICC_DATA_TAG = 0xC7                                 # UID de 7 B y contador en el espejo
+_TAM_PICC_ASCII, _TAM_MAC_ASCII = 32, 16
+_CONTADOR_SDM_MAXIMO = 0xFFFFFF
+# FileID de ISO de los tres archivos de la aplicación (DS Tabla 5, p. 10)
+_FILE_ID = {0xE103: 1, 0xE104: 2, 0xE105: 3}
+_SW_ISO_SIN_EF = 0x6986
+_SW_ISO_SEGURIDAD = 0x6982
+_SW_ISO_FUERA_DE_RANGO = 0x6B00
+_SW_ISO_LONGITUD = 0x6700
 _NUM_CLAVES = 5
 _TAM_CABECERA_DATOS = 7  # FileNo, Offset(3), Length(3)
 _VERSION_FIJA = (bytes.fromhex("04040830001105"), bytes.fromhex("04040201011105"))
 _LOTE_Y_FECHA = bytes.fromhex("CD65935D402118")  # AN12196 Tabla 12, solo de muestra
+
+
+@dataclass(frozen=True)
+class ConfigSdm:
+    """Campos SDM de ChangeFileSettings que usa SubePe (DS §10.7.1, AN12196 Tabla 18)."""
+    opciones: int
+    meta_read: int        # clave del PICCData cifrado
+    file_read: int        # clave del SDMMAC
+    ctr_ret: int          # quién lee el contador con GetFileCounters
+    picc_offset: int
+    mac_input_offset: int
+    mac_offset: int
+    crudo: bytes          # SDMOptions en adelante, tal como llegó (lo devuelve GetFileSettings)
 
 
 @dataclass
@@ -41,6 +78,7 @@ class Archivo:
     opcion: int        # FileOption: bit 6 SDM, bits 1-0 CommMode
     derechos: int      # Read<<12 | Write<<8 | ReadWrite<<4 | Change (DS Tabla 7)
     datos: bytearray
+    sdm: ConfigSdm | None = field(default=None)
 
     @property
     def comm_mode(self) -> int:
@@ -100,6 +138,9 @@ class Simulador424:
         self.sesion: ev2.Sesion | None = None
         self.clave_sesion: int | None = None
         self._pendiente = None
+        self.contador_sdm = 0                 # SDMReadCtr del archivo 02 (24 bits)
+        self.ef: int | None = None            # archivo seleccionado por FileID (ISOReadBinary)
+        self._espejo: bytes | None = None     # contenido con SUN de la selección actual
 
     # --- Ciclo de vida ------------------------------------------------------------
 
@@ -107,6 +148,8 @@ class Simulador424:
         """La tarjeta vuelve al campo: se reinicia (sin selección ni autenticación)."""
         self.presente = True
         self.aplicacion = False
+        self.ef = None
+        self._espejo = None
         self._perder_autenticacion()
 
     def con_sesion(self, sesion: ev2.Sesion, clave: int) -> None:
@@ -139,12 +182,23 @@ class Simulador424:
         return a.SW_ISO_CLA_NO_SOPORTADA.to_bytes(2, "big")
 
     def _iso(self, apdu: bytes) -> bytes:
+        if apdu[1] == a.INS_READ_BINARY:
+            return self._iso_read_binary(apdu)
         if apdu[1] != a.INS_SELECT:
             return a.SW_ISO_INS_NO_SOPORTADA.to_bytes(2, "big")
-        if apdu[2] != 0x04:
-            raise NotImplementedError("selección por FileID e ISOReadBinary: M1-03b")
         nombre = apdu[5:5 + apdu[4]] if len(apdu) > 5 else b""
+        self._espejo = None
+        if apdu[2] in (0x00, 0x02) and len(nombre) == 2:
+            # FileID de un archivo de la aplicación: no toca la autenticación
+            numero = _FILE_ID.get(int.from_bytes(nombre, "big"))
+            if not self.aplicacion or numero is None:
+                return a.SW_ISO_NO_ENCONTRADO.to_bytes(2, "big")
+            self.ef = numero
+            return a.SW_ISO_OK.to_bytes(2, "big")
+        if apdu[2] != 0x04:
+            raise NotImplementedError(f"ISOSelectFile con P1 = {apdu[2]:02X}h")
         self._perder_autenticacion()
+        self.ef = None
         if nombre == a.DF_APLICACION_NDEF:
             self.aplicacion = True
         elif nombre == a.DF_PICC:
@@ -152,6 +206,78 @@ class Simulador424:
         else:
             return a.SW_ISO_NO_ENCONTRADO.to_bytes(2, "big")
         return a.SW_ISO_OK.to_bytes(2, "big")
+
+    def _iso_read_binary(self, apdu: bytes) -> bytes:
+        """ISOReadBinary del archivo seleccionado por FileID (DS §10.9.2): 00 B0 P1 P2 Le,
+        offset en P1-P2 (P1 < 80h), Le = 00 hasta el final. Solo archivos de lectura libre."""
+        if len(apdu) != 5:
+            return _SW_ISO_LONGITUD.to_bytes(2, "big")
+        if self.ef is None:
+            return _SW_ISO_SIN_EF.to_bytes(2, "big")
+        if apdu[2] & 0x80:
+            raise NotImplementedError("ISOReadBinary con ShortFileID en P1")
+        archivo = self.archivos[self.ef]
+        if LIBRE not in archivo.lectura:
+            return _SW_ISO_SEGURIDAD.to_bytes(2, "big")
+        offset = int.from_bytes(apdu[2:4], "big")
+        if offset >= len(archivo.datos):
+            return _SW_ISO_FUERA_DE_RANGO.to_bytes(2, "big")
+        contenido = self._contenido(self.ef, archivo)
+        longitud = apdu[4] or len(contenido) - offset
+        if offset + longitud > len(contenido):
+            return _SW_ISO_FUERA_DE_RANGO.to_bytes(2, "big")
+        return contenido[offset:offset + longitud] + a.SW_ISO_OK.to_bytes(2, "big")
+
+    # --- SDM / SUN (DS §9.3, pp. 35-42) --------------------------------------------
+
+    def _contenido(self, numero: int, archivo: Archivo) -> bytes:
+        """Lo que lee quien no está autenticado: con SDM, el archivo con el SUN en el espejo."""
+        if archivo.sdm is None or self.sesion is not None:
+            return bytes(archivo.datos)
+        if self._espejo is None:
+            if self.contador_sdm < _CONTADOR_SDM_MAXIMO:
+                self.contador_sdm += 1
+            self._espejo = self._con_sun(archivo)
+        return self._espejo
+
+    def _con_sun(self, archivo: Archivo) -> bytes:
+        sdm = archivo.sdm
+        contador = self.contador_sdm.to_bytes(3, "little")
+        datos = bytearray(archivo.datos)
+        picc = bytes([_PICC_DATA_TAG]) + self.uid + contador + self._rng(5)
+        cifrado = ev2.aes_cbc_cifrar(self.claves[sdm.meta_read], ev2.IV_CERO, picc)
+        datos[sdm.picc_offset:sdm.picc_offset + _TAM_PICC_ASCII] = cifrado.hex().upper().encode()
+        clave_sesion = ev2.cmac(self.claves[sdm.file_read], _ETIQUETA_SV_SDM_MAC + self.uid + contador)
+        mac = ev2.mac_truncado(clave_sesion, bytes(datos[sdm.mac_input_offset:sdm.mac_offset]))
+        datos[sdm.mac_offset:sdm.mac_offset + _TAM_MAC_ASCII] = mac.hex().upper().encode()
+        return bytes(datos)
+
+    def _leer_sdm(self, archivo: Archivo, cuerpo: bytes) -> ConfigSdm:
+        """Campos SDM de ChangeFileSettings, desde SDMOptions (DS §10.7.1, Tabla 69)."""
+        if len(cuerpo) < 3:
+            raise _Error(a.LENGTH_ERROR)
+        opciones = cuerpo[0]
+        derechos = int.from_bytes(cuerpo[1:3], "little")
+        # En el cable: RFU|SDMCtrRet, SDMMetaRead|SDMFileRead (AN12196 Tabla 18: F121)
+        meta_read, file_read = (derechos >> 12) & 0xF, (derechos >> 8) & 0xF
+        rfu, ctr_ret = (derechos >> 4) & 0xF, derechos & 0xF
+        if opciones & _SDM_RFU or not opciones & _SDM_ASCII or rfu != 0xF:
+            raise _Error(a.PARAMETER_ERROR)
+        if any(5 <= c < LIBRE for c in (meta_read, file_read, ctr_ret)):
+            raise _Error(a.PARAMETER_ERROR)
+        if (opciones & (_SDM_LIMITE | _SDM_ENC_DATOS) or meta_read > 4 or file_read > 4
+                or opciones & (_SDM_UID | _SDM_CONTADOR) != _SDM_UID | _SDM_CONTADOR):
+            raise NotImplementedError("SDM distinto del de SubePe (PICCData cifrado + SDMMAC)")
+        if self.archivos.get(2) is not archivo:
+            raise NotImplementedError("SDM solo en el archivo 02")
+        if len(cuerpo) != 3 + 9:
+            raise _Error(a.LENGTH_ERROR)
+        picc, mac_input, mac = (int.from_bytes(cuerpo[i:i + 3], "little") for i in (3, 6, 9))
+        tamano = len(archivo.datos)
+        if (picc + _TAM_PICC_ASCII > tamano or mac + _TAM_MAC_ASCII > tamano or mac_input > mac
+                or picc < mac + _TAM_MAC_ASCII and mac < picc + _TAM_PICC_ASCII):
+            raise _Error(a.PARAMETER_ERROR)
+        return ConfigSdm(opciones, meta_read, file_read, ctr_ret, picc, mac_input, mac, bytes(cuerpo))
 
     def _nativo(self, apdu: bytes) -> bytes:
         ins = apdu[1]
@@ -175,9 +301,8 @@ class Simulador424:
             return a.sw_nativo(a.PERMISSION_DENIED)
         if ins == a.INS_AUTH_EV2_FIRST:
             return self._autenticar_1(datos)
-        if ins == a.INS_GET_FILE_COUNTERS:
-            raise NotImplementedError("GetFileCounters (SDMReadCtr): M1-03b")
         comandos = {
+            a.INS_GET_FILE_COUNTERS: (1, self._prep_get_file_counters, self._get_file_counters),
             a.INS_GET_FILE_SETTINGS: (1, self._prep_get_file_settings, self._get_file_settings),
             a.INS_READ_DATA: (_TAM_CABECERA_DATOS, self._prep_read_data, self._read_data),
             a.INS_WRITE_DATA: (_TAM_CABECERA_DATOS, self._prep_write_data, self._write_data),
@@ -318,7 +443,24 @@ class Simulador424:
             raise _Error(a.LENGTH_ERROR)
         archivo = self._archivo(cabecera[0])
         tamano = len(archivo.datos).to_bytes(3, "little")
-        return bytes([0x00, archivo.opcion]) + derechos_en_cable(archivo.derechos) + tamano, False
+        sdm = archivo.sdm.crudo if archivo.sdm else b""
+        return bytes([0x00, archivo.opcion]) + derechos_en_cable(archivo.derechos) + tamano + sdm, False
+
+    # --- GetFileCounters (DS §10.7.3) -----------------------------------------------
+
+    def _prep_get_file_counters(self, cabecera: bytes) -> int:
+        """CommMode.Full con la clave SDMCtrRet; libre (E) en claro (DS §10.7.3)."""
+        archivo = self._archivo(cabecera[0])
+        if archivo.sdm is None:
+            raise _Error(a.PERMISSION_DENIED)
+        if self.sesion is not None and self.clave_sesion == archivo.sdm.ctr_ret:
+            return COMM_FULL
+        return self._modo_acceso(archivo, (archivo.sdm.ctr_ret,))
+
+    def _get_file_counters(self, cabecera: bytes, cuerpo: bytes):
+        if cuerpo:
+            raise _Error(a.LENGTH_ERROR)
+        return self.contador_sdm.to_bytes(3, "little") + bytes(2), False  # + 2 B reservados
 
     @staticmethod
     def _rango(cabecera: bytes, archivo: Archivo, *, escritura: bool) -> tuple[int, int]:
@@ -347,7 +489,8 @@ class Simulador424:
             raise _Error(a.LENGTH_ERROR)
         archivo = self._archivo(cabecera[0])
         offset, longitud = self._rango(cabecera, archivo, escritura=False)
-        return bytes(archivo.datos[offset:offset + longitud]), False
+        contenido = self._contenido(cabecera[0] & 0x1F, archivo)
+        return contenido[offset:offset + longitud], False
 
     def _prep_write_data(self, cabecera: bytes) -> int:
         archivo = self._archivo(cabecera[0])
@@ -359,6 +502,7 @@ class Simulador424:
         if len(cuerpo) != longitud:
             raise _Error(a.LENGTH_ERROR)
         archivo.datos[offset:offset + longitud] = cuerpo
+        self._espejo = None
         return b"", False
 
     def _prep_change_file_settings(self, cabecera: bytes) -> int:
@@ -371,16 +515,23 @@ class Simulador424:
 
     def _change_file_settings(self, cabecera: bytes, cuerpo: bytes):
         archivo = self._archivo(cabecera[0])
-        if cuerpo and cuerpo[0] & _OPCION_SDM:
-            raise NotImplementedError("ChangeFileSettings con SDM: M1-03b")
-        if len(cuerpo) != 3:
+        if len(cuerpo) < 3:
             raise _Error(a.LENGTH_ERROR)
         derechos = int.from_bytes(cuerpo[1:3], "little")
         condiciones = [(derechos >> d) & 0xF for d in (12, 8, 4, 0)]
         if cuerpo[0] & _OPCION_RFU or any(5 <= c < LIBRE for c in condiciones):
             raise _Error(a.PARAMETER_ERROR)  # clave inexistente (DS Tabla 71)
+        sdm = None
+        if cuerpo[0] & _OPCION_SDM:
+            sdm = self._leer_sdm(archivo, cuerpo[3:])
+        elif len(cuerpo) != 3:
+            raise _Error(a.LENGTH_ERROR)
         archivo.opcion = cuerpo[0]
         archivo.derechos = derechos
+        if sdm is not None and archivo.sdm is None:
+            self.contador_sdm = 0  # al activar SDM el contador vuelve a 0 (DS §9.3.1, p. 35)
+        archivo.sdm = sdm
+        self._espejo = None
         return b"", False
 
     # --- ChangeKey (DS §10.6.1, p. 62) --------------------------------------------------

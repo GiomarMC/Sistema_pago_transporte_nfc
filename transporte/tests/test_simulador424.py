@@ -295,13 +295,18 @@ class TearingTests(Base):
 
 
 class NoImplementadoTests(Base):
-    def test_sdm_y_contadores_quedan_para_m1_03b(self):
+    def test_sdm_distinto_del_de_subepe(self):
+        # El SDM de SubePe está en test_simulador424_sdm.py; el resto no se emula
         tarjeta = self.nueva()
-        with self.assertRaises(NotImplementedError):
-            tarjeta.transmitir(a.nativo(a.INS_GET_FILE_COUNTERS, b"\x02"))
         sesion = autenticar(tarjeta, 0, bytes(16))
+        espejo_en_claro = h("4000E0C1F1EE") + bytes(9)          # SDMMetaRead = E
         with self.assertRaises(NotImplementedError):
-            enviar(tarjeta, sesion, a.INS_CHANGE_FILE_SETTINGS, b"\x02", h("4000E0C1F121"), FULL)
+            enviar(tarjeta, sesion, a.INS_CHANGE_FILE_SETTINGS, b"\x02", espejo_en_claro, FULL)
+        tarjeta = self.nueva()
+        sesion = autenticar(tarjeta, 0, bytes(16))
+        con_datos_cifrados = h("4000E0D1F121") + bytes(9)       # SDMENCFileData
+        with self.assertRaises(NotImplementedError):
+            enviar(tarjeta, sesion, a.INS_CHANGE_FILE_SETTINGS, b"\x02", con_datos_cifrados, FULL)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ CLA_ISO = 0x00
 
 # Códigos de instrucción (DS Tabla 22, p. 44)
 INS_SELECT = 0xA4
+INS_READ_BINARY = 0xB0     # ISOReadBinary (CLA 00)
 INS_GET_VERSION = 0x60
 INS_AUTH_EV2_FIRST = 0x71
 INS_FRAME_ADICIONAL = 0xAF
