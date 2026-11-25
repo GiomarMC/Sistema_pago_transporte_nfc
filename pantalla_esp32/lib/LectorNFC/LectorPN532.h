@@ -44,5 +44,7 @@ class LectorPN532 : public LectorNFC {
   int8_t sda_, scl_;
   uint8_t irq_;
   bool conectado_ = false;
+  // Sondeos seguidos sin tarjeta desde el último cobro: retirada() pide FALTAS_RETIRADA (#246)
+  uint8_t faltas_ = 0;
   String version_;
 };
