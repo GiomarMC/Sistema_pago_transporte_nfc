@@ -246,6 +246,11 @@ PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
 # "manage.py generar_clave_listas". Nunca se sube al repositorio.
 LISTAS_CLAVE_PRIVADA = os.environ.get("LISTAS_CLAVE_PRIVADA", "")
 
+# Verificación SUN de la NTAG 424 DNA (página /t, transporte/sun.py). Vacías = no
+# disponible. SUN_K4_MAESTRAS: "versión:maestra,..." en hexadecimal.
+SUN_K3 = os.environ.get("SUN_K3", "")
+SUN_K4_MAESTRAS = os.environ.get("SUN_K4_MAESTRAS", "")
+
 # Contraseña del usuario "puente" de Mosquitto (sincronización v2 por MQTT)
 MQTT_PUENTE_CLAVE = os.environ.get("MQTT_PUENTE_CLAVE", "")
 # Broker al que se conecta el puente (dentro de Docker, el servicio "mosquitto")
