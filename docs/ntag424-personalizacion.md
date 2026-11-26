@@ -1,9 +1,8 @@
 # Personalización de la NTAG 424 DNA (M1-02)
 
-> **Estado: decisiones A, B, D, F y C' cerradas (25 nov 2026).** Queda
-> **PENDIENTE** solo SDMCtrRet (§8.3) y la conformidad de firmware con la
-> entrada M de AN10922 (M2-04, #47); ver [§12](#12-decisiones). Lo que dependa
-> de algo pendiente no se debe implementar hasta que se cierre.
+> **Estado: decisiones A, B, D, F, C' y SDMCtrRet cerradas (25 nov 2026).**
+> Queda **PENDIENTE** solo la conformidad de firmware con la entrada M de
+> AN10922 (M2-04, #47); ver [§12](#12-decisiones).
 > Nada de lo que hay aquí se ha probado todavía con una tarjeta NTAG 424 real.
 
 Objetivo: que `personalizar_424.py` (M1-06), el controlador Python (M1-04), el
@@ -350,20 +349,19 @@ Campos que fijan las decisiones de §6.1 y §8.2:
 | SDMMACInputOffset | `3C 00 00` | Decisión D: igual a SDMMACOffset |
 
 SDMAccessRights en el cable (AN12196 Tabla 18, `F121`): primer byte = `RFU(F) ‖
-SDMCtrRet`, segundo = `SDMMetaRead ‖ SDMFileRead`. Para SubePe: `F? 34`.
+SDMCtrRet`, segundo = `SDMMetaRead ‖ SDMFileRead`. Para SubePe: `FF 34`.
 
 Comando (CmdData de 15 B, CommMode.Full con K0):
 
 ```
 FileNo  FileOption AccessRights SDMOptions SDMAccessRights PICCDataOffset SDMMACInputOffset SDMMACOffset
-02      40         00 E0        C1         F? 34           19 00 00       3C 00 00          3C 00 00
+02      40         00 E0        C1         FF 34           19 00 00       3C 00 00          3C 00 00
 ```
 
-**PENDIENTE: SDMCtrRet** (el nibble `?`), quién puede leer el contador con
-GetFileCounters. Nadie lo necesita: el servidor lee el contador del PICCData
-descifrado (C'). Se propone `F` (sin acceso), que no expone nada nuevo; las
-pruebas del simulador usan `2` solo como ejemplo. Hasta que se decida, el
-comando completo **no está definido**.
+**SDMCtrRet = F (cerrada, 25 nov): nadie** puede leer el contador con
+GetFileCounters (responde `919D`). Nadie lo necesita: el servidor lee el
+contador del PICCData descifrado (C'). Las pruebas del simulador que usan `2`
+lo hacen solo como ejemplo.
 
 ## 9. Archivo 03: área lógica de C3
 
@@ -421,10 +419,10 @@ es propio de SubePe.
 | §7 | Tamaño de trama del ACR122U/PN532 | Cerrada (25 nov) |
 | §8.2 | D: SDMMACInput vacío | Cerrada (#203) |
 | §8.2 | C': `contador_sdm` estrictamente creciente por UID | Cerrada (#203) |
-| §8.3 | SDMCtrRet | **Pendiente** (se propone `F`); bloquea M1-06 |
+| §8.3 | SDMCtrRet = `F` (nadie) | Cerrada (25 nov) |
 | §9 | B: AccessRights del archivo 03 (`20 12`, Full) | Cerrada (25 nov) |
 | §10 | F: contador de autenticaciones fallidas sin activar | Cerrada (25 nov) |
-| §13 | Orden completo de la personalización | Cerrado, salvo el byte de SDMCtrRet |
+| §13 | Orden completo de la personalización | Cerrado (25 nov) |
 
 ## 13. Orden de la personalización
 
