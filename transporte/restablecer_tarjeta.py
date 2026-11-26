@@ -14,9 +14,7 @@ import sys
 
 import api_cliente
 from api_cliente import ErrorAPI, SinConexion
-from tarjeta import claves, formato
-from tarjeta.ntag215 import (CFGLCK, NFC_CNT_EN, NFC_CNT_PWD_PROT, PAG_CFG0, PAG_CFG1,
-                             PAG_PACK, PAG_PWD, PROT, ErrorTarjeta, NTAG215)
+from tarjeta.base import ErrorTarjeta, TipoNoSoportado, esperar_tarjeta
 
 
 def main():
@@ -24,34 +22,27 @@ def main():
     p.add_argument("--si", action="store_true", help="no pedir confirmación")
     args = p.parse_args()
 
-    t = NTAG215.esperar()
+    try:
+        t = esperar_tarjeta()
+    except TipoNoSoportado as e:
+        print(f"Tarjeta detectada: UID {e.uid.hex().upper()}")
+        sys.exit(f"[X] No se pudo restablecer: {e}")
     uid_hex = t.uid.hex().upper()
     print(f"Tarjeta detectada: UID {uid_hex}")
     if not args.si and input("¿Borrar los datos del sistema de esta tarjeta? (s/N) ").lower() != "s":
+        t.cerrar()
         sys.exit("Cancelado")
     try:
-        if not t.es_ntag215():
-            raise ErrorTarjeta("no es una NTAG215")
-        pwd, pack = claves.contrasena(t.uid)
-        if not t.puede_leer(formato.PAG_INICIO):
+        if t.protegida():
             try:
-                if t.autenticar(pwd) != pack:
-                    raise ErrorTarjeta("PACK incorrecto")
+                t.autenticar()
             except ErrorTarjeta:
                 raise ErrorTarjeta("la tarjeta tiene una contraseña que no es de este sistema")
-        cfg = t.leer(PAG_CFG0, PAG_CFG1)
-        if cfg[4] & CFGLCK:
-            raise ErrorTarjeta("la configuración está bloqueada de forma permanente")
+        # Lanza ErrorTarjeta sin escribir nada si la configuración está bloqueada
+        t.restablecer()
 
-        t.escribir_paginas(formato.PAG_INICIO, bytes(formato.TAM_AREA))
-        t.escribir(PAG_CFG0, cfg[0:3] + b"\xFF")  # AUTH0 = FF: sin protección
-        access = cfg[4] & ~(PROT | NFC_CNT_EN | NFC_CNT_PWD_PROT | 0x07)
-        t.escribir(PAG_CFG1, bytes([access]) + cfg[5:8])
-        t.escribir(PAG_PWD, b"\xFF\xFF\xFF\xFF")  # valores de fábrica
-        t.escribir(PAG_PACK, b"\x00\x00\x00\x00")
-
-        t.reactivar()
-        if not t.puede_leer(formato.PAG_INICIO):
+        t.reiniciar_sesion()
+        if t.protegida():
             raise ErrorTarjeta("verificación: la tarjeta sigue protegida")
     except ErrorTarjeta as e:
         sys.exit(f"[X] No se pudo restablecer: {e}")

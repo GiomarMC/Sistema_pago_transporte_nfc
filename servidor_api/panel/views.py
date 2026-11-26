@@ -18,7 +18,6 @@ from transporte.models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, 
 from transporte.permisos import GRUPO_CONDUCTORES, GRUPO_OPERADORES, GRUPO_SOLICITUDES
 from libro.models import CuentaContable
 from pagos.models import EventoPasarela, OrdenRecarga
-from pagos.servicios import ErrorPago, reembolsar as reembolsar_pago
 from clientes.comprobante import comprobante as renderizar_comprobante
 from clientes.activacion import regenerar_codigo
 from clientes.models import Cliente
@@ -259,22 +258,6 @@ def orden_pago_detalle(request, orden_id):
         "titulo": f"Orden {orden.pk}", "orden": orden, "eventos": eventos,
         "historial": orden.historial.order_by("fecha", "pk"),
     })
-
-
-@operador_requerido
-@require_POST
-def reembolsar_orden(request, orden_id):
-    orden = get_object_or_404(OrdenRecarga, pk=orden_id)
-    motivo = request.POST.get("motivo", "").strip()[:240]
-    if not motivo:
-        return HttpResponseBadRequest("Indica el motivo del reembolso.")
-    try:
-        reembolsar_pago(orden, request.user, motivo)
-    except ErrorPago as exc:
-        messages.error(request, str(exc))
-    else:
-        messages.success(request, "Reembolso registrado.")
-    return redirect("panel:orden_pago_detalle", orden_id=orden.pk)
 
 
 @operador_requerido

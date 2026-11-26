@@ -9,6 +9,8 @@
 // Solo configura redes WiFi. La clave maestra, el token y el n.º de validador no
 // se ven ni se cambian aquí: se graban una vez al instalarlo (puente_nfc.py
 // --configurar), para que quien tenga el validador en la mano no pueda leerlos.
+// De la clave HMAC del validador solo se dice si está ("Clave de validador: OK" o
+// "falta", #45), nunca su contenido.
 #pragma once
 #include <Arduino.h>
 
@@ -17,7 +19,10 @@
 class PortalWifi {
  public:
   using Registro = void (*)(const String &);
-  PortalWifi(Almacen &almacen, Registro log) : almacen_(almacen), log_(log) {}
+  using Consulta = bool (*)();
+  // tieneClaveValidador: si la clave HMAC está en la NVS (sin leerla)
+  PortalWifi(Almacen &almacen, Registro log, Consulta tieneClaveValidador)
+      : almacen_(almacen), log_(log), tieneClaveValidador_(tieneClaveValidador) {}
 
   void iniciar();         // crea la red y muestra sus datos en la pantalla
   bool activo() const { return activo_; }
@@ -33,6 +38,7 @@ class PortalWifi {
 
   Almacen &almacen_;
   Registro log_;
+  Consulta tieneClaveValidador_;
   bool activo_ = false;
   String nombreRed_, claveRed_;
   String redesVistas_;          // <option> de las redes encontradas al abrir el portal

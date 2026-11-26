@@ -27,24 +27,19 @@ from api_cliente import ErrorAPI, SinConexion
 from config import TARIFA_POR_NOMBRE, TARIFAS, formato_soles, parsear_soles
 from recargar import ErrorRecarga, recargar_tarjeta
 from tarjeta import claves, formato
-from tarjeta.ntag215 import (CFGLCK, NFC_CNT_EN, NFC_CNT_PWD_PROT, PAG_CFG0, PAG_CFG1,
-                             PAG_PACK, PAG_PWD, PROT, ErrorTarjeta, NTAG215)
+from tarjeta.base import (ErrorTarjeta, TarjetaAjena, TarjetaPersonalizable, TipoNoSoportado,
+                          esperar_tarjeta)
 
 
-def preparar_acceso(t: NTAG215, forzar: bool):
-    """Comprueba que la tarjeta se puede emitir y deja la sesión autenticada si
-    hace falta. Devuelve los 8 bytes actuales de CFG0+CFG1."""
-    if not t.es_ntag215():
-        raise ErrorTarjeta("no es una NTAG215")
-
-    pwd, pack = claves.contrasena(t.uid)
-    if t.puede_leer(formato.PAG_INICIO):
-        ya_emitida = t.leer(formato.PAG_INICIO, formato.PAG_INICIO)[:2] == formato.MARCA
+def preparar_acceso(t: TarjetaPersonalizable, forzar: bool):
+    """Comprueba que la tarjeta (TarjetaFisica y Personalizable) se puede emitir y
+    deja la sesión autenticada si hace falta."""
+    if not t.protegida():
+        ya_emitida = t.leer_area()[:2] == formato.MARCA
     else:
         # Protegida: solo seguimos si es nuestra (responde con el PACK esperado)
         try:
-            if t.autenticar(pwd) != pack:
-                raise ErrorTarjeta("PACK incorrecto")
+            t.autenticar()
         except ErrorTarjeta:
             raise ErrorTarjeta("la tarjeta tiene una contraseña que no es de este sistema")
         ya_emitida = True
@@ -52,37 +47,24 @@ def preparar_acceso(t: NTAG215, forzar: bool):
     if ya_emitida and not forzar:
         raise ErrorTarjeta("la tarjeta ya está emitida (usa --forzar para reemitirla)")
 
-    cfg = t.leer(PAG_CFG0, PAG_CFG1)
-    if cfg[4] & CFGLCK:
+    if t.configuracion_bloqueada():
         raise ErrorTarjeta("la configuración de la tarjeta está bloqueada de forma permanente")
-    return cfg
 
 
-def grabar(t: NTAG215, area: bytes, cfg: bytes):
-    pwd, pack = claves.contrasena(t.uid)
-    t.escribir_paginas(formato.PAG_INICIO, area)
-    # Orden importante: la contraseña primero y AUTH0 (que activa la protección) al final
-    t.escribir(PAG_PWD, pwd)
-    t.escribir(PAG_PACK, pack + b"\x00\x00")
-    access = (cfg[4] & ~(PROT | CFGLCK | NFC_CNT_EN | NFC_CNT_PWD_PROT | 0x07)) \
-        | PROT | NFC_CNT_EN | NFC_CNT_PWD_PROT   # AUTHLIM = 0: intentos ilimitados (pruebas)
-    t.escribir(PAG_CFG1, bytes([access]) + cfg[5:8])
-    t.escribir(PAG_CFG0, cfg[0:3] + bytes([formato.PAG_INICIO]))  # AUTH0
-
-
-def verificar(t: NTAG215, area: bytes):
+def verificar(t: TarjetaPersonalizable, area: bytes):
     """Relee la tarjeta en una sesión nueva, como lo haría un validador."""
-    pwd, pack = claves.contrasena(t.uid)
-    t.reactivar()
-    if t.puede_leer(formato.PAG_INICIO):
+    t.reiniciar_sesion()
+    if not t.protegida():
         raise ErrorTarjeta("verificación: la protección por contraseña no quedó activa")
-    if t.autenticar(pwd) != pack:
+    try:
+        t.autenticar()
+    except TarjetaAjena:
         raise ErrorTarjeta("verificación: PACK incorrecto")
-    leida = t.leer(formato.PAG_INICIO, formato.PAG_FIN)
+    leida = t.leer_area()
     if leida != area:
         raise ErrorTarjeta("verificación: los datos leídos no coinciden con los grabados")
     estado = formato.decodificar(leida, t.uid, claves.clave_firma(t.uid))
-    return estado, t.contador_nfc()
+    return estado, t.contador()
 
 
 def main():
@@ -105,12 +87,16 @@ def main():
     except ValueError as e:
         p.error(str(e))
 
-    t = NTAG215.esperar()
+    try:
+        t = esperar_tarjeta()
+    except TipoNoSoportado as e:
+        print(f"Tarjeta detectada: UID {e.uid.hex().upper()}")
+        sys.exit(f"[X] No se emitió la tarjeta: {e}")
     uid_hex = t.uid.hex().upper()
     print(f"Tarjeta detectada: UID {uid_hex}")
     reserva = None
     try:
-        cfg = preparar_acceso(t, args.forzar)
+        preparar_acceso(t, args.forzar)
 
         # 1) Reserva en el servidor: crea la cuenta si es nueva y asigna n.º de tarjeta
         peticion = {"uid": uid_hex}
@@ -128,7 +114,7 @@ def main():
         area = formato.codificar_emision(cab, reserva["saldo"], t.uid,
                                          claves.clave_firma(t.uid), reserva["recarga_inicial"])
         print("Grabando...")
-        grabar(t, area, cfg)
+        t.personalizar(area)
         estado, contador = verificar(t, area)
 
         # 3) Confirmar: activa la tarjeta y bloquea las anteriores de la cuenta

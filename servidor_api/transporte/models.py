@@ -68,6 +68,9 @@ class Tarjeta(models.Model):
     recarga_inicial = models.PositiveIntegerField(default=0)
     # La emisión creó la cuenta (si se cancela, la cuenta vacía se elimina)
     creo_cuenta = models.BooleanField(default=False)
+    # Mayor SDMReadCtr aceptado en la página /t (NTAG 424, SUN): un enlace con un
+    # contador igual o menor es una repetición y se rechaza (portal/enlace_sun.py)
+    contador_sdm = models.PositiveIntegerField(default=0)
 
     def __str__(self):
         return f"Tarjeta {self.id} · {self.uid} ({self.estado})"

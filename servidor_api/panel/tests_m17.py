@@ -17,6 +17,10 @@ from pagos.models import ClienteCuenta
 from transporte import servicios
 from transporte.models import Alerta, CambioLista, Cuenta, Movimiento, Tarifa, Tarjeta
 
+from transporte.management.commands import puente_mqtt
+from transporte.sync_v2 import paquetes as p
+from transporte.tests.test_puente_mqtt import PEM, ClienteFalso, leer
+
 from .models import SolicitudReposicion
 
 
@@ -78,6 +82,48 @@ class RoboReposicionTests(TestCase):
         self.assertEqual(self.bloquear().status_code, 409)
         self.assertEqual(CambioLista.objects.filter(version__gt=version).count(), 1)
         self.assertEqual(len(mail.outbox), 1)
+
+    @override_settings(LISTAS_CLAVE_PRIVADA=PEM)
+    def test_flujo_de_bloqueo_de_punta_a_punta_portal_mqtt_y_avisos(self):
+        """#138: portal → CambioLista urgente → puente MQTT → bandeja de salida → uso posterior."""
+        Cliente.objects.create(usuario=self.usuario, cuenta=self.cuenta,
+                               correo="ana@example.test", correo_verificado=True)
+        version = CambioLista.objects.aggregate(m=Max("version"))["m"] or 0
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.bloquear().status_code, 200)
+        cambio = CambioLista.objects.get(version__gt=version)
+        self.assertTrue(cambio.urgente)
+        self.assertIsNone(cambio.difundido_en)
+
+        # El puente MQTT lo difunde firmado a todos los validadores, una sola vez
+        with patch.object(puente_mqtt, "close_old_connections"):
+            puente = puente_mqtt.Puente("mosquitto", 1883, "clave")
+            puente.cliente = ClienteFalso()
+            self.assertEqual(puente.difundir_urgentes(), 1)
+            self.assertEqual(puente.difundir_urgentes(), 0)
+        ((topico, datos),) = puente.cliente.publicados
+        self.assertEqual(topico, "sp/todos/urgente")
+        paquete = leer(datos)  # falla si la firma ECDSA no es la del servidor
+        self.assertEqual(paquete.cuerpo.entradas,
+                         (p.EntradaLista(p.BLOQUEO, p.AGREGAR, self.tarjeta.pk),))
+        self.assertTrue(paquete.cuerpo.urgente)
+        cambio.refresh_from_db()
+        self.assertIsNotNone(cambio.difundido_en)
+
+        # Aviso de bloqueo en la bandeja de salida (M13) y enviado
+        aviso = Notificacion.objects.get(tipo="tarjeta_bloqueada")
+        self.assertEqual(aviso.destinatario, "ana@example.test")
+        self.assertEqual([m.to for m in mail.outbox], [["ana@example.test"]])
+
+        # Un validador que aún no recibió el bloqueo sube un viaje con esa tarjeta
+        evento = {"id": 31, "tipo": "viaje", "tarjeta_id": self.tarjeta.pk,
+                  "fecha": timezone.now().isoformat(), "operacion": 1,
+                  "contador": 2, "monto": 200}
+        with self.captureOnCommitCallbacks(execute=True):
+            servicios.procesar_evento(101, evento)
+        self.assertTrue(Alerta.objects.filter(tipo="uso de tarjeta no activa").exists())
+        self.assertEqual(Notificacion.objects.filter(tipo="uso_tarjeta_bloqueada").count(), 1)
+        self.assertEqual(len(mail.outbox), 2)
 
     def test_bloqueo_rechaza_clave_erronea_y_tarjeta_ajena(self):
         ClienteCuenta.objects.create(usuario=self.usuario, cuenta=self.cuenta)

@@ -132,9 +132,9 @@ if (pagina === 'resultado') {
         poner('#estado', `Pago confirmado: ${soles(o.monto)} acreditados en tu cuenta.`);
         poner('#detalle', 'La carga en la tarjeta se aplicará cuando la acerques a un validador.'); return;
       }
-      if (['fallida', 'rechazada', 'expirada', 'reembolsada'].includes(o.estado)) {
+      if (['fallida', 'rechazada', 'expirada'].includes(o.estado)) {
         cerrarIntento(almacenCompra, claveCompra, id);
-        poner('#estado', o.estado === 'expirada' ? 'La orden expiró.' : o.estado === 'reembolsada' ? 'La recarga fue reembolsada.' : 'El pago no fue aprobado.');
+        poner('#estado', o.estado === 'expirada' ? 'La orden expiró.' : 'El pago no fue aprobado.');
         $('#reintentar').hidden = false; return;
       }
       if (consultas >= 30) { poner('#estado', 'Estamos confirmando tu pago, te avisaremos por correo.'); return; }

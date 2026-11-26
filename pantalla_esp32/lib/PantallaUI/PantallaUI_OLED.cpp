@@ -6,10 +6,12 @@
 //   -DOLED_DIRECCION=0x3D dirección I2C de 7 bits (por defecto 0x3C; la serigrafía
 //                         0X78 / 0X7A del módulo son 0x3C / 0x3D escritas en 8 bits)
 //
-// Cableado: SDA = P21, SCL = P22, los mismos pines que el PN532 (comparten bus).
+// Cableado: SDA = P25, SCL = P33, en un bus I2C propio (Wire, el primer controlador; el PN532 va en Wire1). Antes compartía P21/P22 con el PN532, y una OLED
+// colgada que retiene SCL dejaba también sin lector a la placa (#200): ahora solo se queda sin pantalla.
 #ifdef PANTALLA_OLED
 #include "PantallaUI.h"
 
+#include <BusI2C.h>
 #include <U8g2lib.h>
 #include <Wire.h>
 
@@ -19,16 +21,21 @@
 
 namespace {
 
-constexpr int8_t PIN_SDA = 21;
-constexpr int8_t PIN_SCL = 22;
-// Igual que el PN532: así los dos módulos comparten bus sin cambiarse la velocidad
-constexpr uint32_t VELOCIDAD_I2C = 100000;
+constexpr int8_t PIN_SDA = 25;
+constexpr int8_t PIN_SCL = 33;
+// Con el bus para ella sola va a 400 kHz (el modo rápido del SH1106): una pantalla entera tarda ~25 ms en vez de ~100
+constexpr uint32_t VELOCIDAD_I2C = 400000;
 
+// U8g2 usa Wire. (Sus clases _2ND_HW_I2C, con Wire1, no hacen nada en la ESP32: U8g2 solo las activa si la placa define
+// WIRE_INTERFACES_COUNT, y el núcleo de la ESP32 no lo define. Compilan y no envían nada.) Por eso el PN532 va en Wire1
 #ifdef OLED_SSD1306
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #else
 U8G2_SH1106_128X64_NONAME_F_HW_I2C pantalla(U8G2_R0, U8X8_PIN_NONE);
 #endif
+
+bool oledLista = false;        // false mientras el bus I2C esté bloqueado o la OLED no conteste
+uint32_t ultimoReintentoMs = 0;
 
 constexpr int ANCHO = 128;
 constexpr int ALTO = 64;
@@ -50,6 +57,16 @@ int8_t senalActual = 0;
 uint16_t pendientesActuales = 0;
 uint32_t volverAEsperaEn = 0;   // 0 = la pantalla de espera ya está dibujada
 bool informacionFija = false;   // pantalla de información: no se sustituye sola
+
+// Indicador de sincronización: circulito de radio 3 que gira (le falta un cuarto) en el bloque de 8x8 píxeles de la
+// barra superior que va de x=88 a 95, libre entre las ondas del símbolo de la tarjeta y "P:n". Se redibuja solo ese
+// bloque (updateDisplayArea): por I2C son unos bytes, no la pantalla entera.
+constexpr uint8_t GIRO_BLOQUE_X = 11, GIRO_BLOQUE_Y = 0;  // en bloques de 8 px
+constexpr int GIRO_CX = 91, GIRO_CY = 4, GIRO_R = 3;
+constexpr uint32_t GIRO_PASO_MS = 200;
+bool giroActivo = false;
+uint8_t giroFase = 0;
+uint32_t giroSiguienteMs = 0;
 
 // Escribe `texto` con su borde superior en `y`, centrado entre `x0` y `x1`, con la
 // fuente más grande de la lista en la que cabe (si en ninguna, se recorta con la
@@ -97,6 +114,51 @@ void icono(char tipo, int x, int y, uint8_t color) {
   pantalla.setDrawColor(1);
 }
 
+bool enEspera() { return oledLista && volverAEsperaEn == 0 && !informacionFija; }
+
+// Lo último que se mandó a la OLED, por filas de 8 px (8 filas de 128 bytes, como el búfer de U8g2). Mandar el búfer
+// entero por I2C a 400 kHz son ~40 ms; con esto solo van las filas que cambiaron (#129): un cambio en las dos líneas de
+// la espera son 3 filas, y si no cambió nada, ninguna.
+constexpr int FILAS = ALTO / 8;
+uint8_t enviado[FILAS * ANCHO];
+bool enviadoValido = false;  // tras begin() la pantalla está en blanco y no coincide con la copia
+
+void enviarCambios() {
+  const uint8_t *buf = pantalla.getBufferPtr();
+  if (!enviadoValido) {
+    pantalla.sendBuffer();
+    memcpy(enviado, buf, sizeof(enviado));
+    enviadoValido = true;
+    return;
+  }
+  for (int f = 0; f < FILAS; f++) {
+    uint8_t *antes = enviado + f * ANCHO;
+    const uint8_t *ahora = buf + f * ANCHO;
+    if (memcmp(antes, ahora, ANCHO) == 0) continue;
+    pantalla.updateDisplayArea(0, f, ANCHO / 8, 1);
+    memcpy(antes, ahora, ANCHO);
+  }
+}
+
+void dibujarGiro() {
+  pantalla.setDrawColor(0);
+  pantalla.drawBox(GIRO_BLOQUE_X * 8, GIRO_BLOQUE_Y * 8, 8, 8);
+  pantalla.setDrawColor(1);
+  if (!giroActivo) return;
+  static const uint8_t CUARTOS[4] = {U8G2_DRAW_UPPER_RIGHT, U8G2_DRAW_LOWER_RIGHT, U8G2_DRAW_LOWER_LEFT,
+                                     U8G2_DRAW_UPPER_LEFT};
+  for (uint8_t i = 0; i < 4; i++)
+    if (i != giroFase) pantalla.drawCircle(GIRO_CX, GIRO_CY, GIRO_R, CUARTOS[i]);
+}
+
+void enviarGiro() {
+  dibujarGiro();
+  pantalla.updateDisplayArea(GIRO_BLOQUE_X, GIRO_BLOQUE_Y, 1, 1);
+  // la copia de lo enviado, al día en ese bloque (8 columnas de la fila)
+  const size_t desde = GIRO_BLOQUE_Y * ANCHO + GIRO_BLOQUE_X * 8;
+  memcpy(enviado + desde, pantalla.getBufferPtr() + desde, 8);
+}
+
 void pantallaResultado(char tipo, const String lineas[3]) {
   const char *titulo = tipo == 'P' ? "PASE" : tipo == 'R' ? "RECHAZADA" : "ATENCION";
   pantalla.clearBuffer();
@@ -114,7 +176,7 @@ void pantallaResultado(char tipo, const String lineas[3]) {
   if (lineas[0].length() > 0) y += texto(lineas[0], y, FUENTES_L1) + 2;
   if (lineas[1].length() > 0) y += texto(lineas[1], y, FUENTES_L2) + 2;
   if (lineas[2].length() > 0) texto(lineas[2], y, FUENTES_L3);
-  pantalla.sendBuffer();
+  enviarCambios();
 
   volverAEsperaEn = millis() + TIEMPO_RESULTADO_MS;
   if (volverAEsperaEn == 0) volverAEsperaEn = 1;
@@ -139,8 +201,32 @@ void pantallaEspera() {
   texto("Acerque su tarjeta", 25, FUENTES_ESPERA);
   texto(esperaLinea1, 41, FUENTES_PEQUENA);
   texto(esperaLinea2, 52, FUENTES_PEQUENA);
-  pantalla.sendBuffer();
+  dibujarGiro();
+  enviarCambios();
   volverAEsperaEn = 0;
+}
+
+// Pone en marcha la OLED si su bus I2C está libre y ella responde. A veces, tras un reinicio de la ESP32 (puerto
+// serie, botón EN, watchdog), la OLED, que no se reinicia con ella, deja SCL a nivel bajo y ahí se queda hasta quitar
+// la corriente (medido el 24 nov: al desconectar su SCL el bus quedó libre). Con el bus así, pantalla.begin() de U8g2
+// no vuelve nunca y el watchdog reiniciaría la placa en bucle (#200). Por eso se mira antes y, si el bus está
+// bloqueado, se sigue SIN pantalla y se reintenta cada 5 s. Si solo retiene SDA, se suelta con pulsos de reloj.
+bool intentarArrancar() {
+  Wire.end();  // liberarBusI2C() toma los pines como GPIO; el begin() de abajo se los devuelve al I2C
+  if (liberarBusI2C(PIN_SDA, PIN_SCL) < 0) return false;
+  Wire.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
+  Wire.beginTransmission(OLED_DIRECCION);
+  if (Wire.endTransmission() != 0) return false;   // nadie responde en esa dirección (o el bus se bloqueó)
+
+  pantalla.setI2CAddress(OLED_DIRECCION << 1);   // U8g2 pide la dirección en 8 bits
+  pantalla.begin();
+  enviadoValido = false;
+  pantalla.setBusClock(VELOCIDAD_I2C);
+  pantalla.enableUTF8Print();
+  pantalla.setFontMode(1);   // texto transparente: así se puede escribir en negativo sobre la barra
+  oledLista = true;
+  pantallaEspera();
+  return true;
 }
 
 }  // namespace
@@ -148,20 +234,14 @@ void pantallaEspera() {
 namespace ui {
 
 bool iniciar() {
-  Wire.begin(PIN_SDA, PIN_SCL, VELOCIDAD_I2C);
-  Wire.beginTransmission(OLED_DIRECCION);
-  const bool presente = Wire.endTransmission() == 0;   // ¿responde algo en esa dirección?
-
-  pantalla.setI2CAddress(OLED_DIRECCION << 1);   // U8g2 pide la dirección en 8 bits
-  pantalla.begin();
-  pantalla.setBusClock(VELOCIDAD_I2C);
-  pantalla.enableUTF8Print();
-  pantalla.setFontMode(1);   // texto transparente: así se puede escribir en negativo sobre la barra
-  pantallaEspera();
-  return presente;
+  if (intentarArrancar()) return true;
+  Serial.println(String("#AVISO: la OLED no responde (SCL=") + digitalRead(PIN_SCL) + ", SDA=" + digitalRead(PIN_SDA) +
+                 "): se sigue sin pantalla (el lector sigue cobrando) y se reintenta cada 5 s. Si SCL=0, hay que quitar la corriente de la placa");
+  return false;
 }
 
 void resultado(char tipo, const String &l1, const String &l2, const String &l3) {
+  if (!oledLista) return;
   const String lineas[3] = {l1, l2, l3};
   pantallaResultado(tipo, lineas);
 }
@@ -169,7 +249,7 @@ void resultado(char tipo, const String &l1, const String &l2, const String &l3) 
 void espera(const String &l1, const String &l2) {
   esperaLinea1 = l1;
   esperaLinea2 = l2;
-  if (volverAEsperaEn == 0 && !informacionFija) pantallaEspera();
+  if (oledLista && volverAEsperaEn == 0 && !informacionFija) pantallaEspera();
 }
 
 void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
@@ -178,13 +258,34 @@ void estadoCanal(const char *canal, int8_t senal, uint16_t pendientes) {
   pendientesActuales = pendientes;
 }
 
+void actividad(bool activa) {
+  if (activa == giroActivo) return;
+  giroActivo = activa;
+  giroFase = 0;
+  giroSiguienteMs = millis() + GIRO_PASO_MS;
+  if (enEspera()) enviarGiro();
+}
+
 void actualizar() {
+  if (!oledLista) {
+    if (millis() - ultimoReintentoMs >= 5000) {
+      ultimoReintentoMs = millis();
+      if (intentarArrancar()) Serial.println("#La OLED respondió: pantalla recuperada");
+    }
+    return;
+  }
   if (!informacionFija && volverAEsperaEn != 0 && (int32_t)(millis() - volverAEsperaEn) >= 0) {
     pantallaEspera();
+  }
+  if (giroActivo && enEspera() && (int32_t)(millis() - giroSiguienteMs) >= 0) {
+    giroFase = (giroFase + 1) % 4;
+    giroSiguienteMs = millis() + GIRO_PASO_MS;
+    enviarGiro();
   }
 }
 
 void informacion(const String &titulo, const String lineas[], int n) {
+  if (!oledLista) return;
   informacionFija = true;
   pantalla.clearBuffer();
   pantalla.setFontPosTop();
@@ -205,12 +306,12 @@ void informacion(const String &titulo, const String lineas[], int n) {
       y += texto(lineas[i], y, FUENTE_NORMAL) + 1;
     }
   }
-  pantalla.sendBuffer();
+  enviarCambios();
 }
 
 void cerrarInformacion() {
   informacionFija = false;
-  pantallaEspera();
+  if (oledLista) pantallaEspera();
 }
 
 }  // namespace ui

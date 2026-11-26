@@ -8,6 +8,7 @@ lo que necesita para cobrar sin conexión:
   - recargas remotas pendientes de llegar a las tarjetas
   - cola de eventos (viajes e incidencias) pendientes de subir
   - último n.º de operación visto por tarjeta (detecta copias restauradas)
+  - cobros dudosos: escritos sin poder comprobarlos (#240, como #238 en la ESP32)
 """
 
 import json
@@ -49,6 +50,14 @@ CREATE TABLE IF NOT EXISTS ultima_operacion (
     tarjeta_id INTEGER PRIMARY KEY,
     operacion  INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS cobros_dudosos (  -- uno por tarjeta: el último intento
+    tarjeta_id    INTEGER PRIMARY KEY,
+    operacion     INTEGER NOT NULL,          -- la que se intentó escribir
+    fecha         TEXT NOT NULL,
+    monto         INTEGER NOT NULL,
+    saldo_final   INTEGER NOT NULL,
+    recarga_hasta INTEGER
+);
 """
 
 
@@ -56,11 +65,17 @@ def ahora() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+# Qué pasó con un cobro dudoso, según el registro de la tarjeta al volver a leerla
+NINGUNO, GRABADO, NO_GRABADO, INCIERTO = "ninguno", "grabado", "no grabado", "incierto"
+
+
 class BDValidador:
-    def __init__(self, id_validador: int):
+    def __init__(self, id_validador: int, ruta=None):
+        """ruta: la base SQLite; por defecto datos/validador_<id>.db (las pruebas usan otra)."""
         self.id = id_validador
-        ruta = RAIZ / "datos" / f"validador_{id_validador}.db"
-        ruta.parent.mkdir(parents=True, exist_ok=True)
+        if ruta is None:
+            ruta = RAIZ / "datos" / f"validador_{id_validador}.db"
+            ruta.parent.mkdir(parents=True, exist_ok=True)
         self.bd = sqlite3.connect(ruta)
         self.bd.row_factory = sqlite3.Row
         self.bd.executescript(ESQUEMA)
@@ -102,11 +117,11 @@ class BDValidador:
     # --- Registro --------------------------------------------------------------
 
     def registrar_viaje(self, id_tarjeta, uid, monto, saldo_final, operacion, contador,
-                        recarga_hasta=None):
+                        recarga_hasta=None, fecha=None):
         self.bd.execute(
             "INSERT INTO eventos (tipo, fecha, tarjeta_id, uid, monto, saldo_final, operacion, "
             "contador, recarga_hasta) VALUES ('viaje', ?, ?, ?, ?, ?, ?, ?, ?)",
-            (ahora(), id_tarjeta, uid, monto, saldo_final, operacion, contador, recarga_hasta))
+            (fecha or ahora(), id_tarjeta, uid, monto, saldo_final, operacion, contador, recarga_hasta))
         self.bd.execute(
             "INSERT INTO ultima_operacion (tarjeta_id, operacion) VALUES (?, ?) "
             "ON CONFLICT(tarjeta_id) DO UPDATE SET operacion = MAX(operacion, excluded.operacion)",
@@ -119,6 +134,41 @@ class BDValidador:
             "INSERT INTO eventos (tipo, fecha, tarjeta_id, uid, detalle) VALUES (?, ?, ?, ?, ?)",
             ("fraude" if fraude else "incidencia", ahora(), id_tarjeta, uid, detalle))
         self.bd.commit()
+
+    # --- Cobros dudosos (#240) ----------------------------------------------------
+    # El registro nuevo se escribió, pero la relectura que lo comprueba falló (la tarjeta se retiró justo al final):
+    # puede que la escritura sí terminara y la tarjeta quedara cobrada. Se anota y, la próxima vez que este validador
+    # lee la tarjeta, su registro más reciente dice qué pasó (resolver_cobro_dudoso). No depende del tiempo que pase:
+    # el margen de doble toque solo cubría 60 s.
+
+    def anotar_cobro_dudoso(self, id_tarjeta, operacion, fecha, monto, saldo_final, recarga_hasta=None):
+        """Sustituye al anterior de la misma tarjeta. fecha: ISO 8601, la del intento."""
+        self.bd.execute(
+            "INSERT OR REPLACE INTO cobros_dudosos (tarjeta_id, operacion, fecha, monto, saldo_final, "
+            "recarga_hasta) VALUES (?, ?, ?, ?, ?, ?)",
+            (id_tarjeta, operacion, fecha, monto, saldo_final, recarga_hasta))
+        self.bd.commit()
+
+    def resolver_cobro_dudoso(self, id_tarjeta, operacion, validador):
+        """La tarjeta se volvió a leer y su registro más reciente es (operacion, validador). Si había un cobro
+        dudoso suyo, lo quita y devuelve (resultado, fila):
+          - GRABADO: es la operación anotada y de este validador (la escritura terminó: hay que registrar el viaje)
+          - NO_GRABADO: una operación anterior (no se escribió nada)
+          - INCIERTO: una posterior (pasó por otro validador o punto antes de volver: no se puede saber)
+        (NINGUNO, None) si no había."""
+        fila = self.bd.execute("SELECT * FROM cobros_dudosos WHERE tarjeta_id = ?", (id_tarjeta,)).fetchone()
+        if fila is None:
+            return NINGUNO, None
+        self.bd.execute("DELETE FROM cobros_dudosos WHERE tarjeta_id = ?", (id_tarjeta,))
+        self.bd.commit()
+        if operacion == fila["operacion"] and validador == self.id:
+            return GRABADO, fila
+        if operacion < fila["operacion"]:
+            return NO_GRABADO, fila
+        return INCIERTO, fila
+
+    def cobros_dudosos(self) -> int:
+        return self.bd.execute("SELECT COUNT(*) FROM cobros_dudosos").fetchone()[0]
 
     # --- Sincronización -----------------------------------------------------------
 

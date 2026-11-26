@@ -57,9 +57,13 @@ URLCONF_PORTAL = "portal.urls"
 URLCONF_PRINCIPAL = "config.urls_main"
 
 # Despliegue con HTTPS detrás de Caddy (docker-compose.prod.yml): Caddy recibe
-# HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original.
+# HTTPS y le pasa la petición a Django por HTTP indicando el protocolo original
+# y la IP del cliente (X-Forwarded-For). Sin Caddy delante, esa cabecera la
+# podría inventar el cliente, así que solo se usa con DJANGO_HTTPS=1.
+IP_DESDE_PROXY = False
 if os.environ.get("DJANGO_HTTPS", "0") == "1":
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    IP_DESDE_PROXY = True
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     # Formularios del panel y del portal enviados desde sus dominios
@@ -241,6 +245,11 @@ PAGOS_SECRETO_WEBHOOK = os.environ.get("PAGOS_SECRETO_WEBHOOK", "")
 # sincronización v2. En una línea, con los saltos del PEM como \n: la imprime
 # "manage.py generar_clave_listas". Nunca se sube al repositorio.
 LISTAS_CLAVE_PRIVADA = os.environ.get("LISTAS_CLAVE_PRIVADA", "")
+
+# Verificación SUN de la NTAG 424 DNA (página /t, transporte/sun.py). Vacías = no
+# disponible. SUN_K4_MAESTRAS: "versión:maestra,..." en hexadecimal.
+SUN_K3 = os.environ.get("SUN_K3", "")
+SUN_K4_MAESTRAS = os.environ.get("SUN_K4_MAESTRAS", "")
 
 # Contraseña del usuario "puente" de Mosquitto (sincronización v2 por MQTT)
 MQTT_PUENTE_CLAVE = os.environ.get("MQTT_PUENTE_CLAVE", "")

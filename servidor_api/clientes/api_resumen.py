@@ -13,6 +13,16 @@ from transporte.models import Movimiento, Recarga, Tarjeta
 from .models import Cliente, numero_impreso
 
 
+_NOMBRES_MOVIMIENTO = {"recarga": "Recarga", "emision": "Emisión", "ajuste": "Ajuste", "reverso": "Reverso"}
+
+
+def descripcion_movimiento(fila):
+    """Texto del movimiento para el cliente, p. ej. «Viaje · bus V103»."""
+    if fila.tipo == "viaje":
+        return f"Viaje · bus V{fila.validador}" if fila.validador else "Viaje"
+    return _NOMBRES_MOVIMIENTO.get(fila.tipo, fila.tipo.capitalize())
+
+
 def datos_cliente(cuenta):
     cliente = Cliente.objects.filter(cuenta_id=cuenta.pk).first()
     return ({"nombre": cuenta.nombre,
@@ -41,7 +51,8 @@ def resumen(request):
         ultimo = Movimiento.objects.filter(tarjeta_id=tarjeta.pk, tipo="viaje").order_by(
             "-fecha").values_list("fecha", flat=True).first()
         salida_tarjetas.append({
-            "id": tarjeta.pk, "numero_impreso": numero_impreso(tarjeta),
+            # C4: los 9 dígitos seguidos; los espacios son solo para imprimirlo
+            "id": tarjeta.pk, "numero_impreso": numero_impreso(tarjeta).replace(" ", ""),
             "estado": tarjeta.estado, "emitida": tarjeta.emitida.isoformat(),
             "ultimo_uso": ultimo.isoformat() if ultimo else None,
         })
@@ -87,12 +98,9 @@ def movimientos(request):
     if pagina > paginas:
         return error("validacion", "Página fuera de rango", 400)
     filas = consulta[(pagina - 1) * 20:pagina * 20]
-    nombres = {"recarga": "Recarga", "emision": "Emisión", "ajuste": "Ajuste",
-               "reverso": "Reverso"}
     resultados = []
     for fila in filas:
-        descripcion = (f"Viaje · bus V{fila.validador}" if fila.validador else "Viaje") \
-            if fila.tipo == "viaje" else nombres.get(fila.tipo, fila.tipo.capitalize())
+        descripcion = descripcion_movimiento(fila)
         resultados.append({"id": fila.pk, "fecha": fila.fecha.isoformat(),
                            "tipo": fila.tipo, "monto": fila.monto,
                            "saldo_final": fila.saldo_final, "descripcion": descripcion,

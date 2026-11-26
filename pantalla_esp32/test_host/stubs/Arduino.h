@@ -14,3 +14,4 @@ class String {
 
 extern uint32_t relojFalso;
 inline uint32_t millis() { return relojFalso; }
+inline void delay(uint32_t) {}

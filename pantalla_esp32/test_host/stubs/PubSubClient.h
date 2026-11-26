@@ -31,7 +31,8 @@ class PubSubClient {
   bool publish(const char *topic, const uint8_t *payload, unsigned int n, bool) {
     temas.emplace_back(topic); publicado.assign(reinterpret_cast<const char *>(payload), n); return true;
   }
-  bool loop() { return conectado_; }
+  static inline int vueltas = 0;  // cuántas veces se llamó a loop()
+  bool loop() { ++vueltas; return conectado_; }
   bool connected() { return conectado_; }
   void disconnect() { conectado_ = false; }
   void inyectar(const char *topic, const uint8_t *datos, unsigned int n) {

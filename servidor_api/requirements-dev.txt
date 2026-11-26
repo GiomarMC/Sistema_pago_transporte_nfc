@@ -1,0 +1,6 @@
+# Solo para los tests (CI y local); la imagen de Docker usa requirements.txt.
+# Validan las respuestas de la API contra el contrato C4 (docs/contratos/api-cliente-v1.yaml).
+-r requirements.txt
+PyYAML==6.0.4
+jsonschema==4.26.0
+rfc3339-validator==0.1.4
