@@ -23,7 +23,9 @@ from api_cliente import ErrorAPI, SinConexion
 from config import formato_soles
 from pantalla import Pantalla, SinPantalla
 from tarjeta import claves, formato
-from tarjeta.ntag215 import ErrorTarjeta, NTAG215
+from tarjeta.base import (ErrorTarjeta, TarjetaAjena, TarjetaFisica, TipoNoSoportado,
+                          abrir_tarjeta, esperar_retirada)
+from tarjeta.lector import esperar_conexion
 from validador_local import GRABADO, INCIERTO, BDValidador
 
 # Un segundo toque en este mismo validador dentro de este margen no se cobra
@@ -47,26 +49,26 @@ def grabar_bloqueo(t, cab, clave):
     """Escribe el estado 'bloqueada' en la propia tarjeta: así la rechazan también
     los validadores que aún no tienen la lista negra actualizada."""
     cab.estado = formato.BLOQUEADA
-    t.escribir_paginas(formato.PAG_CABECERA, cab.a_bytes(t.uid, clave))
+    t.escribir_cabecera(cab.a_bytes(t.uid, clave))
 
 
-def cobrar(t: NTAG215, bdv: BDValidador):
+def cobrar(t: TarjetaFisica, bdv: BDValidador):
     """Devuelve un Cobro. Lanza Rechazo si no se permite el paso."""
     uid_hex = t.uid.hex().upper()
-    pwd, pack = claves.contrasena(t.uid)
     try:
-        if t.autenticar(pwd) != pack:
-            raise Rechazo("Tarjeta no válida", "No reconocida")
+        t.autenticar()
+    except TarjetaAjena:
+        raise Rechazo("Tarjeta no válida", "No reconocida")
     except ErrorTarjeta:
         raise Rechazo("Tarjeta no válida", "No emitida por el sistema")
 
     clave = claves.clave_firma(t.uid)
     try:
-        est = formato.decodificar(t.leer(formato.PAG_INICIO, formato.PAG_FIN), t.uid, clave)
+        est = formato.decodificar(t.leer_area(), t.uid, clave)
     except formato.ErrorFormato as e:
         bdv.registrar_incidencia(0, uid_hex, f"tarjeta alterada: {e}", fraude=True)
         raise Rechazo("Tarjeta no válida", "Datos alterados")
-    contador = t.contador_nfc()
+    contador = t.contador()
     cab, reg = est.cabecera, est.registro
 
     if cab.estado == formato.BLOQUEADA:
@@ -121,12 +123,8 @@ def cobrar(t: NTAG215, bdv: BDValidador):
         raise Rechazo("Saldo insuficiente", f"Saldo {formato_soles(disponible)}")
 
     nuevo = formato.Registro(disponible - precio, reg.operacion + 1, ahora, bdv.id, recarga_hasta)
-    pagina = formato.PAG_REGISTROS[est.ranura_libre]
-    datos = nuevo.a_bytes(t.uid, clave, cab)
     try:
-        t.escribir_paginas(pagina, datos)
-        if t.leer(pagina, pagina + len(datos) // 4 - 1) != datos:
-            raise ErrorTarjeta("verificación de escritura")
+        t.escribir_registro(est.ranura_libre, nuevo.a_bytes(t.uid, clave, cab))
     except ErrorTarjeta:
         # No se sabe si la escritura terminó (puede que solo fallara la relectura). Se anota y, en la próxima
         # lectura de esta tarjeta, su registro dirá si quedó cobrada (#240). Si no terminó, el registro anterior
@@ -144,6 +142,34 @@ def cobrar(t: NTAG215, bdv: BDValidador):
         f"{nombre_tarifa.capitalize()} {formato_soles(precio)}",
         f"Saldo {formato_soles(nuevo.saldo)}",
         f"Recarga +{formato_soles(abono)}" if abono else ""))
+
+
+def atender_toque(conexion, bdv: BDValidador, pantalla):
+    """Abre la tarjeta recién acercada, cobra y muestra el resultado."""
+    inicio = time.perf_counter()
+    hora = datetime.now().strftime("%H:%M:%S")
+    t = None
+    try:
+        try:
+            t = abrir_tarjeta(conexion)
+        except TipoNoSoportado:
+            raise Rechazo("Tarjeta no válida", "No emitida por el sistema")
+        cobro = cobrar(t, bdv)
+        ms = (time.perf_counter() - inicio) * 1000
+        pantalla.pasa(*cobro.lineas)
+        print(f"{hora}  [PASA]      {cobro.mensaje:<44} saldo "
+              f"{formato_soles(cobro.saldo):>10}  ({ms:.0f} ms)")
+    except Rechazo as e:
+        ms = (time.perf_counter() - inicio) * 1000
+        (pantalla.aviso if e.aviso else pantalla.rechazo)(e.motivo, e.detalle)
+        etiqueta = "[REINTENTE]" if e.aviso else "[RECHAZADA]"
+        print(f"{hora}  {etiqueta} {str(e):<44} {'':>16}  ({ms:.0f} ms)")
+    except ErrorTarjeta as e:
+        pantalla.aviso("Acerque de nuevo", "Lectura fallida")
+        print(f"{hora}  [ERROR]     {e}. Vuelva a acercar la tarjeta")
+    finally:
+        if t is not None:
+            t.cerrar()
 
 
 def intentar_sincronizar(bdv, sin_red):
@@ -201,33 +227,15 @@ def main():
     proxima_sync = time.monotonic() + args.sync_cada
     try:
         while True:
-            t = NTAG215.esperar(mensaje=None, timeout=1.0)
-            if t is None:
+            conexion = esperar_conexion(mensaje=None, timeout=1.0)
+            if conexion is None:
                 pantalla.mantener()
                 if time.monotonic() >= proxima_sync:
                     actualizar_espera(intentar_sincronizar(bdv, args.sin_red))
                     proxima_sync = time.monotonic() + args.sync_cada
                 continue
-
-            inicio = time.perf_counter()
-            hora = datetime.now().strftime("%H:%M:%S")
-            try:
-                cobro = cobrar(t, bdv)
-                ms = (time.perf_counter() - inicio) * 1000
-                pantalla.pasa(*cobro.lineas)
-                print(f"{hora}  [PASA]      {cobro.mensaje:<44} saldo "
-                      f"{formato_soles(cobro.saldo):>10}  ({ms:.0f} ms)")
-            except Rechazo as e:
-                ms = (time.perf_counter() - inicio) * 1000
-                (pantalla.aviso if e.aviso else pantalla.rechazo)(e.motivo, e.detalle)
-                etiqueta = "[REINTENTE]" if e.aviso else "[RECHAZADA]"
-                print(f"{hora}  {etiqueta} {str(e):<44} {'':>16}  ({ms:.0f} ms)")
-            except ErrorTarjeta as e:
-                pantalla.aviso("Acerque de nuevo", "Lectura fallida")
-                print(f"{hora}  [ERROR]     {e}. Vuelva a acercar la tarjeta")
-            finally:
-                t.cerrar()
-            NTAG215.esperar_retirada()
+            atender_toque(conexion, bdv, pantalla)
+            esperar_retirada()
     except KeyboardInterrupt:
         print("\nCerrando validador.")
         intentar_sincronizar(bdv, args.sin_red)

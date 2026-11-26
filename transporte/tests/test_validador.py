@@ -1,6 +1,6 @@
 """Cobros dudosos del validador de PC (#240) con NTAG215 en memoria (la TarjetaVirtual del simulador).
 
-    cd transporte && python3 -m unittest test_validador
+    cd transporte && python3 -m unittest tests.test_validador
 """
 
 import tempfile
@@ -11,11 +11,17 @@ from unittest import mock
 
 import validador
 from simular_tarjetas import emitir
-from tarjeta import formato
-from tarjeta.ntag215 import ErrorTarjeta
+from tarjeta import claves, formato
+from tarjeta.ntag215 import Tarjeta215
+from tarjeta.base import ErrorTarjeta
 from validador_local import BDValidador
 
 PRECIO = 130  # tarifa 1 (general) de config.TARIFAS
+
+
+def tarjeta(tv, **opciones):
+    """La NTAG215 virtual vista como TarjetaFisica (contrato C3, #198), igual que en los programas."""
+    return Tarjeta215(NtagVirtual(tv, **opciones), claves.contrasena)
 
 
 class NtagVirtual:
@@ -66,7 +72,7 @@ class CobrosDudosos(unittest.TestCase):
     def cobro_sin_comprobar(self, tv, **opciones):
         """Primera pasada: la escritura se hace y la relectura falla."""
         with self.assertRaises(validador.Rechazo) as r:
-            validador.cobrar(NtagVirtual(tv, **opciones), self.bdv)
+            validador.cobrar(tarjeta(tv, **opciones), self.bdv)
         self.assertEqual((r.exception.motivo, r.exception.aviso), ("Acerque de nuevo", True))
         self.assertEqual(self.bdv.cobros_dudosos(), 1)
 
@@ -76,7 +82,7 @@ class CobrosDudosos(unittest.TestCase):
         self.assertEqual(self.registro(tv).saldo, 500 - PRECIO)  # la tarjeta sí quedó cobrada
         self.assertEqual(self.eventos(self.bdv), [])
 
-        cobro = validador.cobrar(NtagVirtual(tv), self.bdv)  # vuelve a acercarla enseguida
+        cobro = validador.cobrar(tarjeta(tv), self.bdv)  # vuelve a acercarla enseguida
         self.assertEqual(cobro.mensaje, "ya pagado")
         self.assertEqual(self.registro(tv).saldo, 500 - PRECIO)  # sin segundo cobro
         viajes = self.eventos(self.bdv)
@@ -88,7 +94,7 @@ class CobrosDudosos(unittest.TestCase):
         tv = emitir(900000202, 1, 500)
         self.cobro_sin_comprobar(tv, falla_relectura=True)
         with mock.patch.object(validador, "MARGEN_DOBLE_TOQUE", timedelta(0)):  # como si pasara más de 60 s
-            cobro = validador.cobrar(NtagVirtual(tv), self.bdv)
+            cobro = validador.cobrar(tarjeta(tv), self.bdv)
         self.assertEqual(cobro.saldo, 500 - 2 * PRECIO)  # el viaje nuevo, una sola vez
         self.assertEqual(self.registro(tv).saldo, 500 - 2 * PRECIO)
         viajes = self.eventos(self.bdv)
@@ -98,7 +104,7 @@ class CobrosDudosos(unittest.TestCase):
         self.assertIsNotNone(viajes[1]["contador"])
 
         # Una tercera pasada inmediata ya no registra nada más
-        validador.cobrar(NtagVirtual(tv), self.bdv)
+        validador.cobrar(tarjeta(tv), self.bdv)
         self.assertEqual(len(self.eventos(self.bdv)), 2)
 
     def test_escritura_no_terminada_se_olvida(self):
@@ -107,7 +113,7 @@ class CobrosDudosos(unittest.TestCase):
         self.cobro_sin_comprobar(tv)
         self.assertEqual(self.registro(tv).saldo, 500)
 
-        cobro = validador.cobrar(NtagVirtual(tv), self.bdv)
+        cobro = validador.cobrar(tarjeta(tv), self.bdv)
         self.assertEqual(cobro.saldo, 500 - PRECIO)
         viajes = self.eventos(self.bdv)
         self.assertEqual([(v["operacion"], v["saldo_final"]) for v in viajes], [(2, 500 - PRECIO)])
@@ -118,11 +124,11 @@ class CobrosDudosos(unittest.TestCase):
         tv = emitir(900000204, 1, 500)
         self.cobro_sin_comprobar(tv, falla_relectura=True)  # op. 2, grabada
         otro = self.validador(102)
-        validador.cobrar(NtagVirtual(tv), otro)  # op. 3, en el 102
+        validador.cobrar(tarjeta(tv), otro)  # op. 3, en el 102
         self.assertEqual(self.registro(tv).operacion, 3)
 
         with mock.patch.object(validador, "MARGEN_DOBLE_TOQUE", timedelta(0)):
-            validador.cobrar(NtagVirtual(tv), self.bdv)  # op. 4, de vuelta en el 101
+            validador.cobrar(tarjeta(tv), self.bdv)  # op. 4, de vuelta en el 101
         incidencias = self.eventos(self.bdv, "incidencia")
         self.assertEqual([i["detalle"] for i in incidencias], ["cobro dudoso op 2"])
         self.assertEqual([v["operacion"] for v in self.eventos(self.bdv)], [4])  # la op. 2 no se da por viaje
@@ -133,12 +139,12 @@ class CobrosDudosos(unittest.TestCase):
         self.cobro_sin_comprobar(tv, falla_relectura=True)
         self.bdv.bd.close()
         self.bdv = self.validador(101)  # el validador se reinició
-        validador.cobrar(NtagVirtual(tv), self.bdv)
+        validador.cobrar(tarjeta(tv), self.bdv)
         self.assertEqual([v["operacion"] for v in self.eventos(self.bdv)], [2])
 
     def test_cobro_normal_no_anota_nada(self):
         tv = emitir(900000206, 1, 500)
-        validador.cobrar(NtagVirtual(tv), self.bdv)
+        validador.cobrar(tarjeta(tv), self.bdv)
         self.assertEqual(self.bdv.cobros_dudosos(), 0)
         self.assertEqual([v["operacion"] for v in self.eventos(self.bdv)], [2])
 
