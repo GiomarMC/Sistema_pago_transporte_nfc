@@ -1,9 +1,9 @@
 # Personalización de la NTAG 424 DNA (M1-02)
 
-> **Estado: borrador parcial.** Este documento solo fija lo que ya está cerrado
-> técnicamente y verificado contra los documentos de NXP. Las secciones marcadas
-> **PENDIENTE** dependen de decisiones abiertas del módulo M1 y no se deben
-> implementar hasta que se cierren (ver [§12](#12-decisiones-pendientes)).
+> **Estado: decisiones A, B, D, F y C' cerradas (25 nov 2026).** Queda
+> **PENDIENTE** solo SDMCtrRet (§8.3) y la conformidad de firmware con la
+> entrada M de AN10922 (M2-04, #47); ver [§12](#12-decisiones). Lo que dependa
+> de algo pendiente no se debe implementar hasta que se cierre.
 > Nada de lo que hay aquí se ha probado todavía con una tarjeta NTAG 424 real.
 
 Objetivo: que `personalizar_424.py` (M1-06), el controlador Python (M1-04), el
@@ -94,6 +94,7 @@ Comandos que usa la personalización (DS §10.2, Tabla 22, p. 44):
 | ISOSelectFile | `00 A4 …` | Plain | DS §10.9.1, p. 77 |
 | AuthenticateEV2First (parte 1 / parte 2) | `90 71 …` / `90 AF …` | — | DS §10.4.1, p. 46 |
 | ChangeKey | `90 C4 …` | Full | DS §10.6.1, p. 62 |
+| GetKeyVersion | `90 64 …` | MAC | DS §10.6.2 |
 | ChangeFileSettings | `90 5F …` | Full | DS §10.7.1, p. 65 |
 | GetFileSettings | `90 F5 …` | MAC | DS §10.7.2, p. 69 |
 | GetFileCounters | `90 F6 …` | Full | DS §10.7.3, p. 71 |
@@ -203,11 +204,44 @@ ejemplo oficial (abajo). No usar `zlib.crc32` sin complementar.
 | CMAC / MACt | `EA5D2E0CBFE24C0BCBCD501D21060EE6` / `5D0CE20BCD1D06E6` |
 | C-APDU | `90C4000029022CF362B7BF4311FF3BE1DAA295E8C68DE09050560D19B9E16C2393AE9CD1FAC75D0CE20BCD1D06E600` |
 
-**PENDIENTE (decisión A, M1-05):** qué valores toman K0–K4 (diversificación
-AN10922 con la entrada M de 16 bytes, aún sin conformidad de firmware), qué
-`KeyVer` se graba y en qué orden se cambian. K3 no se diversifica (AN12196
-§3.4.2, p. 10). No se documenta todavía el caso «cambiar la clave con la que se
-está autenticado» (AN12196 §5.16.2, p. 38).
+### 6.1 Claves de SubePe (decisión A, cerrada)
+
+Diversificación AN10922 con la entrada M de 16 bytes de M1-05 (#39,
+`transporte/tarjeta/an10922.py`): `K = AES-CMAC(maestra, 01 ‖ UID ‖ "SubePe" ‖
+ranura ‖ versión ‖ 00)`, una maestra AES-128 por ranura.
+
+| Clave | Valor | Quién tiene la maestra (o la clave) | Para qué |
+|---|---|---|---|
+| K0 | Diversificada, ranura 0 | Solo la estación de emisión (`personalizar_424.py`, M1-06) | Cambiar claves y permisos; reescribir el NDEF |
+| K1 | Diversificada, ranura 1 | Validadores (firmware M2-04 y validador de PC) | Leer el archivo 03 |
+| K2 | Diversificada, ranura 2 | Validadores | Leer y escribir el archivo 03 (cobros y recargas) |
+| K3 | **Común**, sin diversificar | Solo el servidor (`SUN_K3`) | SDMMetaRead: cifra PICCData |
+| K4 | Diversificada, ranura 4 | Solo el servidor (`SUN_K4_MAESTRAS`) | SDMFileRead: SDMMAC del SUN |
+
+- K3 no se diversifica porque el servidor no conoce el UID antes de descifrar
+  PICCData (AN12196 §3.4.2, p. 10).
+- **KeyVer = `01`** en las cinco claves; coincide con el byte `versión` de M. Una
+  rotación futura usa `02`, etc.; el servidor prueba las maestras K4
+  configuradas de la más nueva a la más antigua (#203).
+- Ninguna clave ni maestra va al repositorio.
+- Al personalizar, la estación de emisión necesita además los valores de K1–K4
+  de esa tarjeta para grabarlos. Cómo los obtiene (maestras cargadas en la
+  estación o claves ya diversificadas que le entrega el servidor) lo define
+  M1-06 (#40); no cambia lo que queda grabado en la tarjeta.
+
+### 6.2 Orden de ChangeKey
+
+Todo en la misma sesión autenticada con **K0 de fábrica** (ceros):
+
+1. ChangeKey de K1, K2, K3 y K4 (21 B de KeyData cada una, OldKey = ceros).
+2. **K0 al final** (17 B). Al cambiar la clave con la que se está autenticado,
+   la sesión termina y la respuesta llega sin MAC (AN12196 §5.16.2, p. 38).
+   Cualquier paso posterior necesita un AuthenticateEV2First nuevo con la K0
+   diversificada (§13, paso 7).
+
+Si la tarjeta se retira entre 1 y 2, K0 sigue a ceros y la personalización se
+puede repetir desde el principio, porque la estación conoce las claves nuevas de
+K1–K4 (para cambiarlas otra vez, OldKey pasa a ser la diversificada).
 
 ## 7. Escrituras interrumpidas (*tearing*)
 
@@ -232,8 +266,10 @@ La hoja de datos dice:
 2. **Se mantiene el doble registro A/B** del contrato C3: la atomicidad por
    trama no sustituye al mecanismo de dos registros, que además protege frente
    a una tarjeta retirada entre dos comandos.
-3. **PENDIENTE (coordinación con firmware):** confirmar que el tamaño de trama
-   del ACR122U y del PN532 admite esos 47 B + 6 B de APDU sin encadenar.
+3. **Tamaño de trama (cerrado):** los 47 B + 6 B de APDU caben sin encadenar.
+   El firmware reserva 96 B de datos por trama del PN532
+   (`pantalla_esp32/lib/LectorNFC/LectorPN532.cpp`, `MAX_DATOS`), y el ACR122U
+   transmite APDU cortas de hasta 255 B. No comprobado con una NTAG 424 real.
 
 ## 8. Archivo 02: NDEF con SUN
 
@@ -276,10 +312,15 @@ p. 28.
 - `SDMMAC = MACt(SesSDMFileReadMACKey, DynamicFileData[SDMMACInputOffset … SDMMACOffset − 1])`,
   con el mismo truncado que la mensajería segura (DS §9.3.8.1, p. 40).
 
-**PENDIENTE (decisión D):** sobre qué datos se calcula el SDMMAC
-(SDMMACInputOffset). AN12196 da los dos casos: entrada vacía
-(SDMMACInputOffset = SDMMACOffset, §3.4.4.2.1, p. 14) y entrada no vacía
-(§3.4.4.2.2, p. 17).
+**Decisión D (cerrada en #203): entrada vacía.** SDMMACInputOffset =
+SDMMACOffset = `3C 00 00`, así que `SDMMAC = MACt(SesSDMFileReadMACKey, vacío)`
+(AN12196 §3.4.4.2.1, p. 14, con vector oficial: `94EED9EE65337086`). El MAC
+sigue ligado al UID y al contador porque entran en la clave de sesión: si se
+altera `p`, cambia el UID o el contador descifrado y el MAC no coincide.
+
+**Decisión C' (cerrada en #203):** el servidor guarda el último SDMReadCtr
+aceptado en `Tarjeta.contador_sdm` y solo acepta un enlace con contador
+**estrictamente mayor**, considerando todas las emisiones del mismo UID.
 
 ### 8.3 ChangeFileSettings del archivo 02
 
@@ -301,31 +342,62 @@ Codificación de AccessRights en el cable, según la descomposición de AN12196
 Tabla 18: primer byte = `ReadWrite ‖ Change`, segundo = `Read ‖ Write` (un
 nibble cada uno). Así, `00 E0` es ReadWrite = 0, Change = 0, Read = E, Write = 0.
 
-**PENDIENTE:**
+Campos que fijan las decisiones de §6.1 y §8.2:
 
-- AccessRights del archivo 02 (Write, ReadWrite): se propone `00 E0`, pero
-  está ligada a la decisión de custodia de claves (A).
-- SDMCtrRet (quién puede leer el contador con GetFileCounters): decisión C'
-  (`contador_sdm`).
-- SDMMACInputOffset: decisión D.
+| Campo | Valor | Motivo |
+|---|---|---|
+| AccessRights | `00 E0` | Read = E (el celular lee el SUN), Write = ReadWrite = Change = K0: solo la emisión reescribe el NDEF (decisión A) |
+| SDMMACInputOffset | `3C 00 00` | Decisión D: igual a SDMMACOffset |
 
-Hasta que se cierren, el comando completo **no está definido**.
+SDMAccessRights en el cable (AN12196 Tabla 18, `F121`): primer byte = `RFU(F) ‖
+SDMCtrRet`, segundo = `SDMMetaRead ‖ SDMFileRead`. Para SubePe: `F? 34`.
+
+Comando (CmdData de 15 B, CommMode.Full con K0):
+
+```
+FileNo  FileOption AccessRights SDMOptions SDMAccessRights PICCDataOffset SDMMACInputOffset SDMMACOffset
+02      40         00 E0        C1         F? 34           19 00 00       3C 00 00          3C 00 00
+```
+
+**PENDIENTE: SDMCtrRet** (el nibble `?`), quién puede leer el contador con
+GetFileCounters. Nadie lo necesita: el servidor lee el contador del PICCData
+descifrado (C'). Se propone `F` (sin acceso), que no expone nada nuevo; las
+pruebas del simulador usan `2` solo como ejemplo. Hasta que se decida, el
+comando completo **no está definido**.
 
 ## 9. Archivo 03: área lógica de C3
 
 C3 fija el uso: offsets 0–71 del archivo 03, lectura con K1, escritura con K2,
 cambio con K0, CommMode.Full.
 
-**PENDIENTE (decisión B):** el valor exacto de AccessRights (en particular
-ReadWrite) y el ChangeFileSettings correspondiente. De fábrica el archivo ya
-está en CommMode.Full pero con Read = 2 y Write = 3 (DS Tabla 8, p. 12;
-Tabla 13, p. 14), así que **hay que cambiarlo**.
+De fábrica el archivo ya está en CommMode.Full pero con Read = 2 y Write = 3
+(DS Tabla 8, p. 12; Tabla 13, p. 14), así que **hay que cambiarlo**.
+
+**Decisión B (cerrada):**
+
+| Read | Write | ReadWrite | Change | CommMode |
+|---|---|---|---|---|
+| K1 | K2 | K2 | K0 | Full |
+
+- En el cable (§8.3): `ReadWrite ‖ Change` = `20`, `Read ‖ Write` = `12`.
+- ReadWrite = K2 permite leer y escribir en la misma sesión (cobro con
+  relectura) sin autenticarse dos veces; quien solo tiene K1 únicamente lee.
+
+```
+FileNo  FileOption  AccessRights
+03      03          20 12
+```
+
+ChangeFileSettings en CommMode.Full con K0; CmdData de 3 B, sin SDM.
 
 ## 10. Contador de autenticaciones fallidas
 
-**PENDIENTE (decisión F):** valores del límite y del retardo, y si se
-configuran al personalizar. Referencia: AN12196 §6.4, p. 43, y el código
-`91AD AUTHENTICATION_DELAY` (DS Tabla 23, p. 45).
+**Decisión F (cerrada): no se activa.** La personalización no envía ningún
+SetConfiguration del contador de autenticaciones fallidas (AN12196 §6.4, p. 43).
+Motivo: un límite mal elegido, o un validador con una clave equivocada, podría
+inutilizar tarjetas de clientes de forma permanente. La tarjeta queda con lo que
+traiga de fábrica, que no se ha comprobado con una tarjeta real. El código
+`91AD AUTHENTICATION_DELAY` (DS Tabla 23, p. 45) se sigue tratando como error.
 
 ## 11. Vectores verificados
 
@@ -340,29 +412,46 @@ es propio de SubePe.
 | Descifrado de PICCData | AN12196 §3.4.2.2 | K3 = 00…00 | `C704DE5F1EACC0403D0000DA5CF60941` |
 | Clave de sesión SUN | AN12196 §3.3 | K4 = 00…00 | `3A3E8110E05311F7A3FCF0D969BF2B48` |
 
-## 12. Decisiones pendientes
+## 12. Decisiones
 
-| Sección | Decisión | Bloquea |
+| Sección | Decisión | Estado |
 |---|---|---|
-| §6 | A: custodia y valores de K0–K4, KeyVer, orden de ChangeKey; M de AN10922 sin conformidad de firmware (M1-05, M2-04) | M1-06 |
-| §7 | Tamaño de trama del ACR122U/PN532 (firmware) | M1-04, M1-07 |
-| §8.2, §8.3 | D: SDMMACInput | M1-03 (SUN), M1-08 |
-| §8.3 | C': SDMCtrRet y uso de `contador_sdm` | M1-06, M1-08 |
-| §9 | B: AccessRights del archivo 03 | M1-03 (errores de acceso), M1-04, M1-06 |
-| §10 | F: contador de autenticaciones fallidas | M1-06 |
-| §13 | Orden completo de la personalización | M1-06 |
+| §6.1, §6.2 | A: valores y custodia de K0–K4, KeyVer `01`, ChangeKey de K1–K4 y K0 al final | Cerrada (25 nov) |
+| §6.1 | Entrada M de AN10922 (#39) | **Pendiente:** conformidad de firmware (M2-04, #47) |
+| §7 | Tamaño de trama del ACR122U/PN532 | Cerrada (25 nov) |
+| §8.2 | D: SDMMACInput vacío | Cerrada (#203) |
+| §8.2 | C': `contador_sdm` estrictamente creciente por UID | Cerrada (#203) |
+| §8.3 | SDMCtrRet | **Pendiente** (se propone `F`); bloquea M1-06 |
+| §9 | B: AccessRights del archivo 03 (`20 12`, Full) | Cerrada (25 nov) |
+| §10 | F: contador de autenticaciones fallidas sin activar | Cerrada (25 nov) |
+| §13 | Orden completo de la personalización | Cerrado, salvo el byte de SDMCtrRet |
 
 ## 13. Orden de la personalización
 
-**PENDIENTE.** Esqueleto, a completar cuando se cierren las decisiones de §12:
+Una tarjeta de fábrica (cinco claves a cero, archivos como en §2):
 
 1. ISOSelectFile de la aplicación (§3.1).
-2. AuthenticateEV2First con K0 de fábrica (§4).
-3. Escribir el NDEF del archivo 02 (§8.1) y el área inicial del archivo 03.
-4. ChangeFileSettings del archivo 03 (§9) y del archivo 02 (§8.3). Activar SDM
-   pone SDMReadCtr a cero (§8.2).
-5. ChangeKey de K1–K4 y, por último, K0 (§6).
-6. Verificación en una sesión nueva: GetFileSettings de 02 y 03, autenticación
-   con las claves nuevas y lectura del área.
+2. AuthenticateEV2First con **K0 de fábrica** (§4).
+3. WriteData del NDEF de 76 B en el archivo 02 (§8.1). De fábrica el archivo
+   02 es Plain con Write = E, así que se puede escribir ahora; después del paso
+   5 solo lo reescribe K0.
+4. ChangeFileSettings del archivo 03: `03 2012` (§9).
+5. ChangeFileSettings del archivo 02 con SDM (§8.3). Activar SDM pone
+   SDMReadCtr a cero (§8.2).
+6. ChangeKey de K1, K2, K3 y K4, y **por último K0** (§6.2). La sesión termina.
+7. AuthenticateEV2First con la **K2 diversificada** y escritura del área inicial
+   del archivo 03 (C3): cada cabecera y cada registro en un solo WriteData
+   en Full (§7). De fábrica el archivo 03 tenía Write = K3, por eso no se
+   escribe en la sesión de K0.
+8. Verificación, cada una en una sesión nueva:
+   - con la K0 diversificada: GetFileSettings de 02 y 03 coinciden con §8.3 y §9;
+   - con la K1 diversificada: ReadData del área del archivo 03;
+   - sin autenticar: ISOReadBinary del archivo 02 da una URL SUN que el servidor
+     acepta (deja `contador_sdm` en 1).
 
-Que el paso 5 vaya al final, y el orden dentro de él, depende de la decisión A.
+**Tarjeta retirada a mitad.** La estación intenta autenticarse con K0 a ceros:
+si funciona, repite desde el paso 1, y en el paso 6 usa como OldKey la de
+fábrica o la diversificada según el KeyVer de cada clave (GetKeyVersion:
+`00` = de fábrica, `01` = ya cambiada); si da `91AE`, prueba con la K0 diversificada y, si funciona,
+sigue desde el paso 7. Escribir el área del paso 7 dos veces es inocuo porque
+la tarjeta aún no se ha entregado.
