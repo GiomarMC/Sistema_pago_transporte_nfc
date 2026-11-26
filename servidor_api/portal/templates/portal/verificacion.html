@@ -3,7 +3,12 @@
 {% if resultado == "autentica" %}
 <div class="pagina-cabecera"><h1>Tarjeta SubePe auténtica</h1><p>Esta tarjeta fue emitida por SubePe.</p></div>
 <p>Estado: <span class="estado {{ estado }}">{% if estado == "bloqueada" %}Bloqueada{% else %}Activa{% endif %}</span></p>
-<a class="boton primario ancho" href="{{ portal_base }}ingresar/" data-nav>Ver mi saldo</a>
+{% if dueno %}<div id="datos-dueno">
+<p>Tu saldo: <strong id="saldo-dueno">{{ dueno.saldo }}</strong></p>
+{% if dueno.ultimo %}<p>Último movimiento: <span id="ultimo-movimiento">{{ dueno.ultimo.descripcion }} · {{ dueno.ultimo.monto }} · {{ dueno.ultimo.fecha }}</span></p>{% else %}<p>Todavía no hay movimientos.</p>{% endif %}
+</div>
+<a class="boton primario ancho" href="{{ portal_base }}" data-nav>Ir a mi cuenta</a>
+{% else %}<a class="boton primario ancho" href="{{ portal_base }}ingresar/" data-nav>Ver mi saldo</a>{% endif %}
 {% elif resultado == "no_disponible" %}
 <div class="pagina-cabecera"><h1>Verificación no disponible</h1><p>Todavía no podemos comprobar tarjetas desde el celular. Inténtalo más adelante.</p></div>
 <a class="boton secundario ancho" href="{{ portal_base }}ingresar/" data-nav>Ver mi saldo</a>

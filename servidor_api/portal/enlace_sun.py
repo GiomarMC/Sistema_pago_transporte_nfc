@@ -56,9 +56,11 @@ class EnlaceSun:
 
 @dataclass(frozen=True)
 class ResultadoSun:
-    """Lo único que muestra la página pública: nunca saldo ni nombre."""
+    """Lo único que muestra la página pública: nunca saldo ni nombre. cuenta_id no se
+    muestra: sirve para saber si quien abre el enlace es el dueño (M20-02)."""
 
     estado: str  # ACTIVA o BLOQUEADA
+    cuenta_id: int | None = None
 
     def __post_init__(self):
         if self.estado not in (ACTIVA, BLOQUEADA):
@@ -109,4 +111,4 @@ def verificar_enlace(enlace: EnlaceSun) -> ResultadoSun:
         pk=tarjeta.pk, contador_sdm__lt=lectura.contador).update(contador_sdm=lectura.contador)
     if not aceptado:
         raise _rechazar("contador repetido", tarjeta=tarjeta.pk, contador=lectura.contador, anterior=anterior)
-    return ResultadoSun(ACTIVA if tarjeta.estado == Tarjeta.Estado.ACTIVA else BLOQUEADA)
+    return ResultadoSun(ACTIVA if tarjeta.estado == Tarjeta.Estado.ACTIVA else BLOQUEADA, tarjeta.cuenta_id)
