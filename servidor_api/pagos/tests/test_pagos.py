@@ -136,7 +136,7 @@ class PagosTests(TestCase):
         self.assertEqual(OrdenRecarga.objects.get(pk=orden.pk).estado, "acreditada")
 
     def test_una_orden_acreditada_no_se_reembolsa(self):
-        # #102: las recargas no son reembolsables (docs/pagos.md)
+        # #102: las recargas no son reembolsables
         orden = self.orden()
         self.pagar(orden)
         orden.refresh_from_db()

@@ -30,3 +30,10 @@ INFORME-AVANCE-NFC.md
 # --- Compilación de la ESP32 (PlatformIO) ---
 pantalla_esp32/.pio/
 herramientas/c1_falso_clave.pem
+
+# --- Documentos: no van al repositorio (solo los README y lo que usan) ---
+# Se conservan los contratos (los usan los tests y la CI) y el PDF que enlazan los README.
+docs/*
+!docs/contratos/
+!docs/informe-conexiones-validador-esp32.pdf
+/resumen.md
