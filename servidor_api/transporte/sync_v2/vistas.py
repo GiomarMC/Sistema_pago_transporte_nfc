@@ -1,9 +1,8 @@
 """Endpoint HTTP de la sincronización v2 (M9-04): POST /api/v2/paquetes/.
 
 El cuerpo son paquetes C1 concatenados (application/octet-stream, hasta 64 KB);
-la respuesta, los paquetes del servidor también concatenados. Lo usan el
-validador por WiFi (via = "http") y el celular del conductor que retransmite lo
-que recibe del bus por BLE (via = "ble").
+la respuesta, los paquetes del servidor también concatenados. Lo usa el
+validador por WiFi (via = "http").
 """
 
 from django.http import HttpResponse
@@ -12,7 +11,7 @@ from rest_framework.throttling import UserRateThrottle
 from rest_framework.views import APIView
 
 from transporte import servicios
-from transporte.permisos import EsConductorOValidador, EsValidador
+from transporte.permisos import EsValidador
 
 from .paquetes import PaqueteInvalido, separar
 from .servicio import procesar
@@ -33,7 +32,7 @@ def _error(estado, mensaje):
 
 
 class Paquetes(APIView):
-    permission_classes = [EsConductorOValidador]
+    permission_classes = [EsValidador]
     throttle_classes = [LimitePaquetes]
 
     def post(self, request):
@@ -51,10 +50,7 @@ class Paquetes(APIView):
         if not cuerpo:
             return _error(400, "el cuerpo está vacío")
 
-        if EsValidador().has_permission(request, self):
-            via, portador = "http", request.user.validador.numero
-        else:
-            via, portador = "ble", None
+        via, portador = "http", request.user.validador.numero
         try:
             paquetes = separar(cuerpo)
         except PaqueteInvalido as e:

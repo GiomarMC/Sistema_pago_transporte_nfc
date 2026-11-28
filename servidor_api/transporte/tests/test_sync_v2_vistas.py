@@ -5,14 +5,12 @@ from itertools import count
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.core.cache import cache
 from django.test import TestCase, override_settings
 from rest_framework.authtoken.models import Token
 from rest_framework.test import APIClient
 
 from transporte.models import Alerta, EventoRecibido, Validador
-from transporte.permisos import GRUPO_CONDUCTORES
 from transporte.sync_v2 import paquetes as p
 
 CLAVE = ec.generate_private_key(ec.SECP256R1())
@@ -39,10 +37,8 @@ class Paquetes(TestCase):
             numero=101, usuario=Usuario.objects.create(username="validador-101"))
         self.v102 = Validador.objects.create(
             numero=102, usuario=Usuario.objects.create(username="validador-102"))
-        conductor = Usuario.objects.create(username="conductor")
-        conductor.groups.add(Group.objects.get_or_create(name=GRUPO_CONDUCTORES)[0])
-        self.conductor = cliente(conductor)
         self.bus = cliente(self.v101.usuario)
+        self.bus102 = cliente(self.v102.usuario)
 
     def hola(self, origen=101):
         v = {101: self.v101, 102: self.v102}[origen]
@@ -123,14 +119,6 @@ class Paquetes(TestCase):
         self.assertEqual((acuse.cabecera.destino, acuse.cuerpo.hasta_evento), (102, 1))
         self.assertEqual(EventoRecibido.objects.get().validador, self.v102)
 
-    def test_conductor_retransmite_por_ble(self):
-        r = self.post(self.conductor, self.eventos(1) + self.hola())
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(EventoRecibido.objects.get().via, "ble")
-        self.v101.refresh_from_db()
-        self.assertEqual(self.v101.ultimo_hola["via"], "ble")
-        self.assertIsNone(self.v101.ultimo_hola["portador"])
-
     def test_paquete_invalido_dentro_del_flujo_no_corta_los_demas(self):
         malo = bytearray(self.eventos(9))
         malo[-1] ^= 1
@@ -146,4 +134,4 @@ class Paquetes(TestCase):
         estados = [self.post(self.bus, hola).status_code for _ in range(61)]
         self.assertEqual(estados[:60], [200] * 60)
         self.assertEqual(estados[60], 429)
-        self.assertEqual(self.post(self.conductor, hola).status_code, 200, "es por usuario")
+        self.assertEqual(self.post(self.bus102, hola).status_code, 200, "es por usuario")

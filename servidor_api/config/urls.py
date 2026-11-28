@@ -11,7 +11,6 @@ urlpatterns = [
     # Quien escribe solo el dominio llega al panel (o a su pantalla de ingreso)
     path("", RedirectView.as_view(pattern_name="panel:inicio")),
     path("panel/", include("panel.urls")),
-    path("conductor/", include("conductor.urls")),
     path("admin/", admin.site.urls),
     path("api/", include("transporte.urls")),
     path("api/pagos/", include("pagos.urls")),

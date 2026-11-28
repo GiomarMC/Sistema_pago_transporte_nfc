@@ -1,13 +1,13 @@
 """
 Procesamiento de los paquetes C1 que suben los validadores (M9-03).
 
-procesar() es la única entrada: la usan el endpoint HTTP (M9-04), el puente MQTT
-(M9-06) y el relé del conductor (M16). Recibe los bytes de un paquete, sin importar
+procesar() es la única entrada: la usan el endpoint HTTP (M9-04) y el puente MQTT
+(M9-06). Recibe los bytes de un paquete, sin importar
 quién lo trajo, y devuelve los paquetes de respuesta ya firmados por el servidor.
 
 - La firma se verifica con la clave del validador de ORIGEN, no con la del
-  portador: un bus vecino (ESP-NOW) o el celular del conductor (BLE) solo
-  transportan bytes y no pueden alterarlos sin que la firma falle.
+  portador: un bus vecino (ESP-NOW) solo transporta bytes y no puede
+  alterarlos sin que la firma falle.
 - EVENTOS → cada evento nuevo pasa por servicios.procesar_evento() (la misma
   lógica de cobro, fraude y recargas que la v1) → ACUSE.
 - HOLA → ACUSE + LISTAS pendientes (o foto completa) + TARIFAS si cambiaron.
