@@ -22,7 +22,8 @@ from tarjeta import apdu424 as a
 from tarjeta.base import (TAM_AREA, TAM_CABECERA, TAM_REGISTRO, OFFSET_REGISTROS, AutenticacionRechazada,
                           ErrorTarjeta, TarjetaAjena)
 
-__all__ = ["NTAG424", "Tarjeta424", "ComandoRechazado", "transmitir_pcsc", "claves_validador",
+__all__ = ["NTAG424", "Tarjeta424", "ComandoRechazado", "transmitir_pcsc", "chip_pcsc", "abrir_pcsc",
+           "claves_validador",
            "PLAIN", "MAC", "FULL"]
 
 Transmitir = Callable[[bytes], bytes]
@@ -192,6 +193,24 @@ class NTAG424:
         """ChangeFileSettings en CommMode.Full (DS §10.7.1, p. 65)."""
         self.comando(a.INS_CHANGE_FILE_SETTINGS, bytes([archivo]), ajustes, FULL, "ChangeFileSettings")
 
+    def version_clave(self, numero: int) -> int:
+        """GetKeyVersion (DS §10.6.2): KeyVer de la clave; 00h = de fábrica."""
+        datos = self.comando(a.INS_GET_KEY_VERSION, bytes([numero]), modo=MAC if self.sesion else PLAIN,
+                             nombre="GetKeyVersion")
+        if len(datos) != 1:
+            raise ErrorTarjeta(f"GetKeyVersion: {len(datos)} bytes")
+        return datos[0]
+
+    def leer_ndef(self) -> bytes:
+        """El archivo 02 como lo lee un celular: sin autenticar, con ISOSelectFile de E104h e
+        ISOReadBinary (DS §10.9). Con SDM, trae el SUN y sube SDMReadCtr."""
+        self.seleccionar_aplicacion()
+        for nombre, apdu in (("ISOSelectFile E104", "00A4000002E104"), ("ISOReadBinary", "00B0000000")):
+            datos, sw = self._apdu(bytes.fromhex(apdu))
+            if sw != a.SW_ISO_OK:
+                raise ComandoRechazado(nombre, sw)
+        return datos
+
     def cambiar_clave(self, numero: int, nueva: bytes, anterior: bytes, version: int) -> None:
         """ChangeKey (DS §10.6.1, p. 62); exige sesión con K0. Si se cambia la clave
         de la sesión, la tarjeta la cierra y responde sin MAC (AN12196 §5.16.2)."""
@@ -300,13 +319,18 @@ def transmitir_pcsc(conexion) -> Transmitir:
     return transmitir
 
 
-def abrir_pcsc(conexion, claves: ClavesValidador) -> Tarjeta424:
-    """Tarjeta424 sobre una conexión PC/SC; el UID se pide al lector (GET DATA, FF CA)."""
+def chip_pcsc(conexion) -> NTAG424:
+    """NTAG424 sobre una conexión PC/SC; el UID se pide al lector (GET DATA, FF CA)."""
     transmitir = transmitir_pcsc(conexion)
     uid, sw = a.separar_sw(transmitir(bytes.fromhex("FFCA000000")))
     if sw != a.SW_ISO_OK:
         raise ErrorTarjeta(f"el lector no devolvió el UID ({sw:04X})")
-    return Tarjeta424(NTAG424(transmitir, uid, cerrar=conexion.disconnect), claves)
+    return NTAG424(transmitir, uid, cerrar=conexion.disconnect)
+
+
+def abrir_pcsc(conexion, claves: ClavesValidador) -> Tarjeta424:
+    """Tarjeta424 sobre una conexión PC/SC."""
+    return Tarjeta424(chip_pcsc(conexion), claves)
 
 
 def claves_validador(maestra_k1: bytes, maestra_k2: bytes, version: int = 1) -> ClavesValidador:

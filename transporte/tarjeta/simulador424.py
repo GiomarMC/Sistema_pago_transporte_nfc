@@ -20,6 +20,9 @@ archivo) lanza NotImplementedError para que ninguna prueba dependa de un
 comportamiento inventado. Tampoco AuthenticateEV2NonFirst, LRP ni el contador de
 autenticaciones fallidas (decisión F).
 
+GetKeyVersion (para personalizar_424.py, M1-06): libre en claro, con MAC si hay
+sesión, como GetFileSettings. Sin contrastar con una tarjeta real.
+
 Simplificaciones de la parte b, sin contrastar con una tarjeta real:
   - SDMReadCtr sube con la primera lectura sin autenticar del archivo 02 tras
     acercar la tarjeta o seleccionar un archivo; las siguientes lecturas de esa
@@ -309,6 +312,7 @@ class Simulador424:
             a.INS_CHANGE_FILE_SETTINGS: (1, self._prep_change_file_settings,
                                          self._change_file_settings),
             a.INS_CHANGE_KEY: (1, self._prep_change_key, self._change_key),
+            a.INS_GET_KEY_VERSION: (1, self._prep_get_key_version, self._get_key_version),
         }
         if ins not in comandos:
             self._perder_autenticacion()
@@ -445,6 +449,18 @@ class Simulador424:
         tamano = len(archivo.datos).to_bytes(3, "little")
         sdm = archivo.sdm.crudo if archivo.sdm else b""
         return bytes([0x00, archivo.opcion]) + derechos_en_cable(archivo.derechos) + tamano + sdm, False
+
+    # --- GetKeyVersion (DS §10.6.2) --------------------------------------------------
+
+    def _prep_get_key_version(self, cabecera: bytes) -> int:
+        if cabecera[0] >= _NUM_CLAVES:
+            raise _Error(a.NO_SUCH_KEY)
+        return COMM_MAC if self.sesion is not None else COMM_PLAIN
+
+    def _get_key_version(self, cabecera: bytes, cuerpo: bytes):
+        if cuerpo:
+            raise _Error(a.LENGTH_ERROR)
+        return bytes([self.versiones[cabecera[0]]]), False
 
     # --- GetFileCounters (DS §10.7.3) -----------------------------------------------
 
