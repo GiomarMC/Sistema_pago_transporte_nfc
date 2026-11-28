@@ -90,7 +90,6 @@ INSTALLED_APPS = [
     'libro',
     'clientes',
     'notificaciones',
-    'conductor',
 ]
 
 MIDDLEWARE = [

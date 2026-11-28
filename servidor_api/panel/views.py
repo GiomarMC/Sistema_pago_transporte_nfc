@@ -15,7 +15,7 @@ from django.utils.dateparse import parse_date
 
 from transporte import servicios
 from transporte.models import Alerta, CambioLista, Cuenta, Movimiento, Recarga, Tarjeta, Validador
-from transporte.permisos import GRUPO_CONDUCTORES, GRUPO_OPERADORES, GRUPO_SOLICITUDES
+from transporte.permisos import GRUPO_OPERADORES, GRUPO_SOLICITUDES
 from libro.models import CuentaContable
 from pagos.models import EventoPasarela, OrdenRecarga
 from clientes.comprobante import comprobante as renderizar_comprobante
@@ -347,12 +347,10 @@ def solicitar_acceso(request):
 def usuarios(request):
     User = get_user_model()
     pendientes = User.objects.filter(groups__name=GRUPO_SOLICITUDES).order_by("date_joined")
-    con_acceso = list(
-        User.objects.filter(Q(groups__name__in=[GRUPO_OPERADORES, GRUPO_CONDUCTORES]) | Q(is_staff=True))
+    con_acceso = (
+        User.objects.filter(Q(groups__name=GRUPO_OPERADORES) | Q(is_staff=True))
         .distinct().order_by("-is_superuser", "username")
     )
-    for usuario in con_acceso:
-        usuario.es_conductor = usuario.groups.filter(name=GRUPO_CONDUCTORES).exists()
     return render(request, "panel/usuarios.html", {
         "titulo": "Usuarios", "pendientes": pendientes, "con_acceso": con_acceso,
     })
@@ -371,16 +369,6 @@ def gestionar_usuario(request, usuario_id):
             usuario.groups.remove(Group.objects.get(name=GRUPO_SOLICITUDES))
             usuario.groups.add(Group.objects.get(name=GRUPO_OPERADORES))
             messages.success(request, f"{usuario.username} ya puede entrar al panel.")
-        elif accion in {"conductor", "operador"}:
-            if usuario == request.user or usuario.is_superuser:
-                return HttpResponseBadRequest("No se puede cambiar el rol de un administrador ni el propio.")
-            usuario.groups.remove(*Group.objects.filter(name__in=[
-                GRUPO_SOLICITUDES, GRUPO_OPERADORES, GRUPO_CONDUCTORES]))
-            destino = GRUPO_CONDUCTORES if accion == "conductor" else GRUPO_OPERADORES
-            usuario.groups.add(Group.objects.get(name=destino))
-            usuario.is_staff = False
-            usuario.save(update_fields=["is_staff"])
-            messages.success(request, f"{usuario.username} ahora tiene el rol {destino}.")
         elif accion == "rechazar":
             usuario.delete()
             messages.success(request, f"Solicitud de {usuario.username} rechazada y eliminada.")
