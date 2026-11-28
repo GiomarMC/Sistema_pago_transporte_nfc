@@ -35,8 +35,8 @@ PERMITIDAS = {
     "creada": {"pendiente"},
     "pendiente": {"pagada", "fallida", "expirada"},
     "pagada": {"acreditada"},
-    # Sin reembolsos (#102): una orden acreditada ya no cambia. Las recargas no se devuelven
-    # (docs/pagos.md); un error se corrige con un ajuste de saldo hecho por un operador.
+    # Sin reembolsos (#102): una orden acreditada ya no cambia. Las recargas no se devuelven;
+    # un error se corrige con un ajuste de saldo hecho por un operador.
 }
 
 
