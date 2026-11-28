@@ -20,67 +20,57 @@ class VecinosFalsos : public Vecinos {
 
 int main() {
   EnlaceFalso wifi("wifi", 1);
-  CanalFalso mqtt("mqtt-wifi", 1), ble("ble", 3);
+  CanalFalso mqtt("mqtt-wifi", 1);
   VecinosFalsos vecinos;
-  GestorEnlaces gestor(wifi, mqtt, &ble, &vecinos);
+  GestorEnlaces gestor(wifi, mqtt, &vecinos);
   gestor.iniciar();
   assert(wifi.encendidos() == 1 && vecinos.canalInicial == 1);
 
-  // Sin WiFi, BLE sirve la cola solo cuando el conductor la solicita.
+  // Sin WiFi no hay canal de subida.
   wifi.ponerEstado(EstadoEnlace::Conectando);
-  gestor.atender(100, false);
-  assert(gestor.activo() == nullptr);
-  gestor.atender(101, true);
-  assert(gestor.activo() == &ble && gestor.codigoEnlace() == 3);
-  assert(gestor.iniciarIntercambio());
+  gestor.atender(100);
+  assert(gestor.activo() == nullptr && strcmp(gestor.icono(), "-") == 0 && gestor.codigoEnlace() == 0);
+  assert(!gestor.iniciarIntercambio());
 
-  // El WiFi recuperado espera diez segundos y no interrumpe el intercambio.
+  // Con el WiFi listo, el canal se activa enseguida.
   wifi.ponerEstado(EstadoEnlace::Listo);
-  gestor.atender(1000, true);
-  gestor.atender(10999, true);
-  assert(gestor.activo() == &ble);
-  gestor.atender(11001, true);
-  assert(gestor.activo() == &ble);
-  gestor.terminarIntercambio();
-  gestor.atender(11002, true);
-  assert(gestor.activo() == &mqtt && strcmp(gestor.icono(), "W") == 0);
+  gestor.atender(1000);
+  assert(gestor.activo() == &mqtt && strcmp(gestor.icono(), "W") == 0 && gestor.codigoEnlace() == 1);
 
   // ESP-NOW sigue en paralelo y se pausa si el AP usa otro canal.
-  gestor.atender(12000, true, 6);
-  assert(vecinos.pausado && vecinos.atenciones >= 4);
-  gestor.atender(12001, true, 1);
+  gestor.atender(12000, 6);
+  assert(vecinos.pausado && vecinos.atenciones >= 3);
+  gestor.atender(12001, 1);
   assert(!vecinos.pausado && vecinos.cambios == 2);
 
-  // La caída de WiFi permite cambiar a BLE al terminar el intercambio.
+  // Si el WiFi cae a mitad de un intercambio, el canal se suelta al terminarlo.
   assert(gestor.iniciarIntercambio());
+  assert(!gestor.iniciarIntercambio());  // uno a la vez
   wifi.ponerEstado(EstadoEnlace::Error);
   mqtt.ponerListo(false);
-  gestor.atender(12002, true);
+  gestor.atender(12002);
   assert(gestor.activo() == &mqtt);
   gestor.terminarIntercambio();
-  gestor.atender(12003, true);
-  assert(gestor.activo() == &ble && strcmp(gestor.icono(), "BT") == 0);
-  gestor.atender(12004, false);
+  gestor.atender(12003);
   assert(gestor.activo() == nullptr);
 
   // Un enlace caído no puede iniciar un intercambio nuevo antes de atenderlo.
   wifi.ponerEstado(EstadoEnlace::Listo);
   mqtt.ponerListo(true);
-  gestor.atender(12005, false);
+  gestor.atender(12005);
   wifi.ponerEstado(EstadoEnlace::Error);
   assert(!gestor.iniciarIntercambio());
 
-  // El gestor no consume eventos pendientes cuando no hay enlace.
+  // El gestor no consume eventos pendientes; la telemetría es la del WiFi.
   gestor.pendientes(45);
   assert(gestor.pendientes() == 45);
   wifi.ponerEstado(EstadoEnlace::Listo);
-  mqtt.ponerListo(true);
   wifi.ponerSenal(-33);
   wifi.sumarBytes(120, 300);
-  gestor.atender(13000, false);
+  gestor.atender(13000);
   assert(gestor.activo() == &mqtt && gestor.senal() == -33);
   assert(gestor.consumoBytes() == 420 && gestor.pendientes() == 45);
   gestor.sincronizado(13000);
   assert(gestor.ultimaSincronizacionMs() == 13000);
-  puts("M15 gestor: WiFi/BLE, histéresis, intercambio, ESP-NOW y telemetría OK");
+  puts("M15 gestor: WiFi, intercambio, ESP-NOW y telemetría OK");
 }

@@ -279,9 +279,9 @@ void SincronizadorV2::tomarHora(uint32_t horaServidor, uint32_t ahoraMs, bool re
   // Un ACUSE más viejo que otro ya aceptado no hace retroceder el reloj
   if (horaCrudaMax_ != 0 && horaServidor + TOLERANCIA_HORA_S < horaCrudaMax_) return;
   if (horaServidor > horaCrudaMax_) horaCrudaMax_ = horaServidor;
-  // Por BLE o reenviado por otro bus llegó con retraso: se compensa
+  // Reenviado por otro bus llegó con retraso: se compensa
   const uint8_t enlace = canalActual_ ? canalActual_->codigoEnlace() : sp::WIFI;
-  const bool relevado = relevadoPorVecino || enlace == sp::BLE || enlace == sp::REENVIADO;
+  const bool relevado = relevadoPorVecino || enlace == sp::REENVIADO;
   horaServidor_ = horaServidor + (relevado ? RETRASO_RELE_S : 0);
   millisHora_ = ahoraMs;
 }

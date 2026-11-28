@@ -1,5 +1,5 @@
-// Tramas "EN" de BLE y ESP-NOW (contrato C1 5.10): un paquete C1 de hasta 2048 B viaja
-// partido en fragmentos de 220 B como mucho. Lo usan M7 (BLE) y M8 (ESP-NOW).
+// Tramas "EN" de ESP-NOW (contrato C1 5.10): un paquete C1 de hasta 2048 B viaja
+// partido en fragmentos de 220 B como mucho. Lo usa M8 (ESP-NOW).
 //
 // Trama (<= 240 B, little-endian):
 //   'E' 'N' | clase | reservado | validador emisor(2) | ...según la clase

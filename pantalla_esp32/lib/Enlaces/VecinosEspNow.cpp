@@ -93,8 +93,7 @@ void VecinosEspNow::iniciar(uint8_t canalWifi) {
   // Sin ahorro de energía del WiFi: con el STA conectado a un AP, el modo por defecto (modem sleep) apaga la radio
   // entre balizas del AP y se pierde casi todo lo de ESP-NOW (medido: 1 baliza de cada ~8 entre dos placas con WiFi;
   // el vecino aparecía y se perdía cada 10 s). El framework guarda el valor y lo vuelve a aplicar en cada arranque
-  // del STA. Cuesta corriente, pero el validador va enchufado. Ojo con BLE (M7): WiFi+Bluetooth a la vez exigen
-  // modem sleep.
+  // del STA. Cuesta corriente, pero el validador va enchufado.
   WiFi.setSleep(false);
   fijarCanal();
   if (esp_now_init() != ESP_OK) {

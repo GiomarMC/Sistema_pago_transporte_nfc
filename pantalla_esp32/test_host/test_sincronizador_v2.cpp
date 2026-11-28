@@ -512,14 +512,10 @@ void horaDelAcuse() {
 }
 
 void horaPorCanalesRetransmitidos() {
-  // Por BLE y reenviado por otro bus el paquete tarda más: el contrato estima 2 s
-  Escenario ble("ble", sp::BLE);
-  llega(ble, ACUSE_107_HASTA_30, 7000);
-  assert(ble.s.horaServidor() == HORA_SERVIDOR_PRUEBA + 2 && ble.s.millisHora() == 7000);
-
+  // Reenviado por otro bus el paquete tarda más: el contrato estima 2 s
   Escenario rele("espnow", sp::REENVIADO);
   llega(rele, ACUSE_107_HASTA_30, 9000);
-  assert(rele.s.horaServidor() == HORA_SERVIDOR_PRUEBA + 2);
+  assert(rele.s.horaServidor() == HORA_SERVIDOR_PRUEBA + 2 && rele.s.millisHora() == 9000);
 
   Escenario wifi("mqtt-wifi", sp::WIFI);
   llega(wifi, ACUSE_107_HASTA_30, 9000);
@@ -530,7 +526,7 @@ void horaDentroDeTresSegundos() {
   // El servidor firma el ACUSE a la hora H y llega con `retrasoMs` de demora. A los 5 minutos
   // la hora del validador debe estar a ±3 s de la del servidor, sea cual sea el camino.
   struct Camino { const char *nombre; uint8_t enlace; uint32_t retrasoMs; };
-  const Camino caminos[] = {{"mqtt-wifi", sp::WIFI, 300}, {"ble", sp::BLE, 2000}, {"espnow", sp::REENVIADO, 2000}};
+  const Camino caminos[] = {{"mqtt-wifi", sp::WIFI, 300}, {"espnow", sp::REENVIADO, 2000}};
   for (const Camino &c : caminos) {
     Escenario e(c.nombre, c.enlace);
     const uint32_t llegada = 10000 + c.retrasoMs;  // el ACUSE se firmó en el ms 10000

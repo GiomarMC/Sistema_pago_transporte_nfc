@@ -1,6 +1,6 @@
 // Consumo de datos por canal y por día (M3-06): /consumo.bin.
 //
-// Cuenta los bytes enviados (tx) y recibidos (rx) por WiFi, BLE y ESP-NOW, uno por día (fecha
+// Cuenta los bytes enviados (tx) y recibidos (rx) por canal, uno por día (fecha
 // AAAAMMDD en UTC, como las horas de los eventos) y conserva los últimos 31 días. De ahí salen
 // bytesTxHoy y bytesRxHoy del paquete HOLA (C1 5.4): la suma de los tres canales de hoy.
 //
@@ -22,6 +22,8 @@
 
 #include "ArchivoAtomico.h"
 
+// BLE (1) queda reservado y sin uso desde que se descartó (27 nov): se conserva para no cambiar el formato de
+// /consumo.bin.
 enum class CanalDatos : uint8_t { WIFI = 0, BLE = 1, ESPNOW = 2 };
 
 struct DiaConsumo {

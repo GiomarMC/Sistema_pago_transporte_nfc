@@ -1,15 +1,12 @@
 // Contrato C2: canal que mueve paquetes C1 completos.
 //
-// Puede ser MQTT sobre un Enlace (WiFi) o BLE. El sincronizador (M4) solo
-// conoce esta interfaz. Implementaciones: CanalMqtt(Enlace&) (M15), CanalBle (M7);
-// para tests, CanalFalso.
+// El canal de subida es MQTT sobre un Enlace (WiFi): CanalMqtt(Enlace&) (M15). El sincronizador (M4)
+// solo conoce esta interfaz; para tests, CanalFalso. Sin BLE (descartado el 27 nov).
 //
-// Reglas del gestor (las implementa M15, pero los módulos las asumen desde ya):
-// - Un solo canal de subida activo a la vez. Prioridad: WiFi > BLE.
-// - Un canal de más prioridad que pasa a listo toma el control tras el intercambio en
-//   curso y 10 s estable. Nunca se corta un paquete a medias.
-// - BLE solo se activa con un celular conectado que pide la cola.
-// - Sin canal listo, los eventos esperan en la cola local de la microSD.
+// Reglas del gestor (M15):
+// - Un solo canal de subida, y nunca se corta un paquete a medias: si el WiFi cae durante un
+//   intercambio, el canal se suelta al terminarlo.
+// - Sin canal listo, los eventos esperan en la cola local de la microSD (y pueden salir por ESP-NOW).
 #pragma once
 
 #include <stddef.h>
@@ -18,8 +15,8 @@
 class CanalPaquetes {
  public:
   virtual ~CanalPaquetes() = default;
-  virtual const char *nombre() const = 0;    // "mqtt-wifi" | "ble"
-  virtual uint8_t codigoEnlace() const = 0;  // 1 (WiFi) o 3 (BLE)
+  virtual const char *nombre() const = 0;    // "mqtt-wifi"
+  virtual uint8_t codigoEnlace() const = 0;  // 1 (WiFi), C1 5.4
   virtual bool listo() const = 0;            // puede enviar ahora
   virtual void atender() = 0;                // en cada loop()
   virtual bool enviar(const uint8_t *paquete, size_t largo) = 0;

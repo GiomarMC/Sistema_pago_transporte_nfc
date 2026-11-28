@@ -48,7 +48,7 @@ class ClienteNulo : public Client {
 // --- CanalFalso ----------------------------------------------------------------------------
 
 void test_el_hola_sale_por_el_canal_byte_a_byte() {
-  CanalFalso canal("ble", sp::BLE);
+  CanalFalso canal("espnow", sp::REENVIADO);
   size_t largo = enviarHola(canal, 7);
   TEST_ASSERT_GREATER_THAN(0, largo);
   TEST_ASSERT_EQUAL(1, canal.enviados());
@@ -60,7 +60,7 @@ void test_el_hola_sale_por_el_canal_byte_a_byte() {
   TEST_ASSERT_TRUE(sp::desempaquetar(buf, largo, claveDe, nullptr, paq));
   TEST_ASSERT_EQUAL_UINT8(sp::HOLA, paq.cabecera.tipo);
   TEST_ASSERT_EQUAL_UINT32(7, paq.cabecera.secuencia);
-  TEST_ASSERT_EQUAL_UINT8(sp::BLE, paq.hola.enlace);
+  TEST_ASSERT_EQUAL_UINT8(sp::REENVIADO, paq.hola.enlace);
   TEST_ASSERT_EQUAL(0, canal.enviados());
 }
 
@@ -116,13 +116,13 @@ void test_paquete_que_no_cabe_se_descarta() {
 }
 
 void test_nombre_codigo_y_atender() {
-  CanalFalso ble("ble", sp::BLE);
-  CanalPaquetes &c = ble;
-  TEST_ASSERT_EQUAL_STRING("ble", c.nombre());
-  TEST_ASSERT_EQUAL_UINT8(sp::BLE, c.codigoEnlace());
+  CanalFalso vecino("espnow", sp::REENVIADO);
+  CanalPaquetes &c = vecino;
+  TEST_ASSERT_EQUAL_STRING("espnow", c.nombre());
+  TEST_ASSERT_EQUAL_UINT8(sp::REENVIADO, c.codigoEnlace());
   c.atender();
   c.atender();
-  TEST_ASSERT_EQUAL_UINT32(2, ble.atenciones());
+  TEST_ASSERT_EQUAL_UINT32(2, vecino.atenciones());
   CanalFalso porDefecto;
   TEST_ASSERT_EQUAL_STRING("mqtt-wifi", porDefecto.nombre());
   TEST_ASSERT_EQUAL_UINT8(sp::WIFI, porDefecto.codigoEnlace());
