@@ -91,3 +91,8 @@ g++ -std=c++17 -Wall -Wextra -Werror -Itest_host -Isrc/validador -Ilib/Enlaces -
     lib/Almacenamiento/TarifasGuardadas.cpp lib/Almacenamiento/PaquetesGuardados.cpp lib/Almacenamiento/AplicadorListas.cpp \
     /tmp/subepe-uecc.o test_host/test_intercambio.cpp -lmbedcrypto -o /tmp/subepe-m8-test-intercambio
 /tmp/subepe-m8-test-intercambio
+# M2-04 (#47): diversificación AN10922 con los vectores de Python (M1-05); vectores.h debe estar al día con el JSON
+python3 ../herramientas/vectores_an10922_a_h.py --comprobar
+g++ -std=c++17 -Wall -Wextra -Werror -Ilib/TarjetaTransporte -Itest/test_claves424 \
+    lib/TarjetaTransporte/Claves424.cpp test_host/test_claves424.cpp -lmbedcrypto -o /tmp/subepe-47-test-claves
+/tmp/subepe-47-test-claves
