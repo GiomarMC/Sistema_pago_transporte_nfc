@@ -466,9 +466,9 @@ pantalla_esp32/
 |-- lib/
 |   |-- PantallaUI/             Pantallas de espera, PASE, RECHAZADA y ATENCION
 |   |-- TarjetaTransporte/      Formato de la tarjeta y firmas (copia exacta del Python)
-|   |-- ProtocoloSP/            Paquetes C1 de la sincronización v2 y fragmentos BLE/ESP-NOW
+|   |-- ProtocoloSP/            Paquetes C1 de la sincronización v2 y fragmentos de ESP-NOW
 |   |-- micro-ecc/              Copia de micro-ecc 1.0.0 para verificar ECDSA (ver abajo)
-|   |-- Enlaces/                Interfaces de enlace del contrato C2 (WiFi, BLE, ESP-NOW) y sus falsos para tests
+|   |-- Enlaces/                Interfaces de enlace del contrato C2 (WiFi, ESP-NOW) y sus falsos para tests
 |   `-- LectorNFC/              Interfaz del lector, LectorPN532 (el del validador) y LectorPuente
 |-- test/test_formato/          Test del formato contra ejemplos del Python
 |-- test/test_protocolo/        Test de los paquetes C1 contra docs/contratos/vectores_c1.json

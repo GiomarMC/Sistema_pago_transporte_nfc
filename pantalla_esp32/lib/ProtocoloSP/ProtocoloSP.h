@@ -37,7 +37,7 @@ constexpr uint8_t BLOQUEO = 1, RECARGA = 2;
 constexpr uint8_t AGREGAR = 1, QUITAR = 2;       // op de BLOQUEO
 constexpr uint8_t PENDIENTE = 1, APLICADA = 2;   // op de RECARGA
 
-// Enlace del HOLA (C1 5.4). El 2 queda reservado (era 4G; el validador no lleva módem).
+// Enlace del HOLA (C1 5.4). El 2 (era 4G) y el 3 (era BLE) quedan reservados y sin uso.
 constexpr uint8_t WIFI = 1, BLE = 3, REENVIADO = 4;
 
 constexpr size_t TAM_EVENTO = 64;  // un evento en el cable (y en /eventos.bin)

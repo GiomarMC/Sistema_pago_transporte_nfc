@@ -1,7 +1,7 @@
 // Paquetes que el validador guarda en la microSD para entregarlos después (M3-05).
 //
-//   PaquetesAjenos   /ajenos/<origen>-<secuencia>.bin   EVENTOS de OTROS buses (llegaron por ESP-NOW o
-//                    BLE) que el servidor aún no ha confirmado. Hasta 500; al pasar el límite se
+//   PaquetesAjenos   /ajenos/<origen>-<secuencia>.bin   EVENTOS de OTROS buses (llegaron por ESP-NOW)
+//                    que el servidor aún no ha confirmado. Hasta 500; al pasar el límite se
 //                    borra el más antiguo. Un ACUSE del servidor para ese origen borra los que cubre.
 //   PaquetesFirmados /firmados/<desde>-<hasta>.bin      LISTAS firmados por el servidor (ECDSA), para
 //                    pasárselos a otros buses (M8). Los 50 más recientes.

@@ -1,7 +1,7 @@
 // Sincronizador v2 (M4-01): intercambio de paquetes C1 con el servidor por cualquier canal.
 //
 // Sustituye al sincronizador v1 (JSON sobre HTTP). Solo conoce CanalPaquetes, así que sirve
-// igual para MQTT sobre WiFi, para BLE o para canales falsos en las pruebas.
+// igual para MQTT sobre WiFi o para canales falsos en las pruebas.
 //
 // Qué hace, en cada vuelta de loop() (C1 5.x):
 //   - Al pasar el canal a "listo" manda un HOLA, y otro cada 5 minutos.
@@ -122,7 +122,7 @@ class SincronizadorV2 {
   static constexpr uint8_t PAQUETES_SIN_ACUSE = 3;
   static constexpr uint32_t REENVIO_MS = 30000;   // sin acuse en este tiempo, se reenvía
   static constexpr uint32_t HOLA_MS = 300000;     // un HOLA cada 5 minutos
-  // Un ACUSE que llega por BLE o por otro bus (ESP-NOW) lleva más retraso (C1): el contrato
+  // Un ACUSE que llega por otro bus (ESP-NOW) lleva más retraso (C1): el contrato
   // estima 2 s, que se suman a la hora que trae
   static constexpr uint32_t RETRASO_RELE_S = 2;
   // Una hora anterior a la ya aceptada en más de esto se descarta: la firma es válida, pero
@@ -149,7 +149,7 @@ class SincronizadorV2 {
     bytesRx_ = bytesRx;
   }
 
-  // Un paquete que llegó por otro camino que el canal de subida: de un vecino por ESP-NOW (o del celular por BLE).
+  // Un paquete que llegó por otro camino que el canal de subida: de un vecino por ESP-NOW.
   //   - EVENTOS de otro validador: se guarda para llevarlo al servidor (no se puede verificar su firma)
   //   - ACUSE, LISTAS y TARIFAS del servidor: se verifican (ECDSA) igual que si vinieran del servidor. Los
   //     LISTAS y TARIFAS valen aunque vayan dirigidos a otro validador: su contenido es el mismo para todos y la

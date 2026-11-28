@@ -674,7 +674,7 @@ void iniciarSyncV2() {
   const bool soloVecinos = almacen.config("subida") == "vecinos";
   if (soloVecinos && !nuevo->vecinos) log("subida=vecinos sin espnow=on: no hay por dónde subir los eventos");
   CanalPaquetes &subida = soloVecinos ? static_cast<CanalPaquetes &>(canalSinServidor) : *nuevo->canal;
-  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, subida, nullptr, nuevo->vecinos.get()));
+  nuevo->gestor.reset(new GestorEnlaces(enlaceWifi, subida, nuevo->vecinos.get()));
   nuevo->gestor->canalEspNow(canalEspNow);
   canalEspNowConfigurado = canalEspNow;
   enlaceWifi.alElegirCanal(alCanalDelWifi);
@@ -722,7 +722,7 @@ void servicioSyncV2() {
       v2->vecinos->permitirBusqueda(!enlaceWifi.conectando() && !enlaceWifi.escaneando());
     }
     PASO("loop: sync v2, gestor de enlaces");
-    v2->gestor->atender(ahora, false, canalWifi);
+    v2->gestor->atender(ahora, canalWifi);
     canal = v2->gestor->activo();
   } else if (v2->vecinos) {
     v2->vecinos->atender();  // sin WiFi el gestor no corre: ESP-NOW se atiende aquí
